@@ -576,6 +576,14 @@ def update_transport_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     return get_repository().update_transport_settings(settings=settings)
 
 
+def reset_database_data(wipe_all: bool = False) -> None:
+    return get_repository().reset_database_data(wipe_all=wipe_all)
+
+
+def seed_test_data() -> None:
+    return get_repository().seed_test_data()
+
+
 # SQLite backwards-compatibility helpers
 def get_db_path() -> str:
     from db_sqlite import DB_PATH

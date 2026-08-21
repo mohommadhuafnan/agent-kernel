@@ -90,7 +90,7 @@ async def get_dashboard():
         "total_volunteers": len(all_vols),
         "total_organizations": len(all_orgs),
         "registered_organizations": len(all_orgs),
-        "active_users": max(len(all_users), 1),
+        "active_users": len(all_users),
         "pending_actions": len(pending_donations),
         "status_distribution": stats.get("status_distribution", {}),
         "recent_activity": recent_events,
@@ -782,7 +782,7 @@ async def reset_demo(request: Request):
         )
 
     try:
-        database.reset_database_data()
+        database.reset_database_data(wipe_all=False)
         database.seed_test_data()
         return JSONResponse(content={
             "status": "success",
@@ -790,6 +790,19 @@ async def reset_demo(request: Request):
         })
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Database reset operation failed.")
+
+
+@router.post("/api/reset-all")
+async def reset_all_data():
+    """Completely wipe all data, donations, tasks, volunteers, orgs, users, messages, and audit logs to start fresh from 0."""
+    try:
+        database.reset_database_data(wipe_all=True)
+        return JSONResponse(content={
+            "status": "success",
+            "message": "All data wiped successfully. Application is starting fresh from 0."
+        })
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Reset operation failed: {exc}")
 
 
 def get_router() -> APIRouter:

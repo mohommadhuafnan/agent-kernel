@@ -26,7 +26,6 @@ from agentkernel.api import RESTAPI, AgentRESTRequestHandler
 # Initialize active database backend (SQLite / MongoDB Atlas) on cold start
 try:
     database.setup_database()
-    database.seed_test_data()
 except Exception as init_err:
     print(f"[Vercel Init] Database setup notice: {init_err}")
 

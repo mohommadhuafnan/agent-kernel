@@ -245,8 +245,8 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def reset_database_data(self) -> None:
-        """Reset donations, pickup tasks, and notifications for demo resets."""
+    def reset_database_data(self, wipe_all: bool = False) -> None:
+        """Reset donations, pickup tasks, users, and dynamic records. If wipe_all=True, wipe all entities."""
         pass
 
     # Reimbursements (Accounting Ledger)

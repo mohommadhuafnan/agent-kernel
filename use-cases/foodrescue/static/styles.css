@@ -1339,3 +1339,28 @@ body {
     display: none;
   }
 }
+
+.btn-danger {
+  background-color: var(--status-rose);
+  color: var(--text-white);
+}
+
+.btn-danger:hover {
+  background-color: #dc2626;
+}
+
+.reset-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background-color: var(--status-rose-bg);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+}
+
+.reset-info {
+  display: flex;
+  flex-direction: column;
+}

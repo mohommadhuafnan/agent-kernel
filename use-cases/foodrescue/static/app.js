@@ -1084,6 +1084,31 @@ const App = (function () {
     return map[status] || 'slate';
   }
 
+  async function handleResetAllData() {
+    const confirmed = confirm(
+      '⚠️ ARE YOU SURE?\n\nThis will permanently delete all temporary test data, donations, active pickups, recipient organizations, volunteers, users, and WhatsApp chat history.\n\nThe application will start completely fresh from 0.'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/reset-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        alert('✅ Application database wiped cleanly. All counters and tables are reset to 0.');
+        state.activeConversationPhone = null;
+        await fetchAllData();
+        switchTab('dashboard');
+      } else {
+        alert('Reset failed: ' + (res.detail || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to reset database.');
+    }
+  }
+
   // Public Interface
   return {
     init,
@@ -1103,6 +1128,7 @@ const App = (function () {
     handleCreateDonation,
     handleCreateVolunteer,
     handleTriggerSimulateModal,
+    handleResetAllData,
     openModal,
     closeModal,
     approveReimbursement,

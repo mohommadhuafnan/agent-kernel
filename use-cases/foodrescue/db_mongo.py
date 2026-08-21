@@ -667,7 +667,7 @@ class MongoRepository(BaseRepository):
             "status_distribution": status_distribution,
         }
 
-    def reset_database_data(self) -> None:
+    def reset_database_data(self, wipe_all: bool = False) -> None:
         """Reset donations, pickup tasks, and notifications for demo resets."""
         self.pickup_location_history_col.delete_many({})
         self.reimbursements_col.delete_many({})
@@ -677,6 +677,10 @@ class MongoRepository(BaseRepository):
         self.audit_events_col.delete_many({})
         self.users_col.delete_many({})
         self.messages_col.delete_many({})
+        if wipe_all:
+            self.volunteers_col.delete_many({})
+            self.organizations_col.delete_many({})
+            self.donors_col.delete_many({})
 
     # Reimbursements (Accounting Ledger)
     def create_reimbursement_record(

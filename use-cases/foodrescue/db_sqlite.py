@@ -888,12 +888,24 @@ class SQLiteRepository(BaseRepository):
             "status_distribution": status_distribution,
         }
 
-    def reset_database_data(self) -> None:
+    def reset_database_data(self, wipe_all: bool = False) -> None:
         self.setup_database()
         conn = self._get_connection()
         with conn:
             cursor = conn.cursor()
-            for tbl in ["messages", "pickup_location_history", "reimbursements", "pickup_tasks", "notifications", "donations", "audit_events", "users"]:
+            tables = [
+                "messages",
+                "pickup_location_history",
+                "reimbursements",
+                "pickup_tasks",
+                "notifications",
+                "donations",
+                "audit_events",
+                "users"
+            ]
+            if wipe_all:
+                tables.extend(["volunteers", "organizations", "donors"])
+            for tbl in tables:
                 try:
                     cursor.execute(f"DELETE FROM {tbl}")
                 except sqlite3.OperationalError:
