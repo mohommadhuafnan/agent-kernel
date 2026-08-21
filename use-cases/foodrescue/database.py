@@ -293,8 +293,8 @@ def get_dashboard_stats() -> Dict[str, Any]:
     return get_repository().get_dashboard_stats()
 
 
-def reset_database_data() -> None:
-    get_repository().reset_database_data()
+def reset_database_data(wipe_all: bool = False) -> None:
+    get_repository().reset_database_data(wipe_all=wipe_all)
 
 
 # Reimbursements Delegation

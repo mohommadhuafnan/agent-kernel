@@ -6,9 +6,8 @@ from google.adk.agents import Agent
 import tools
 import database
 
-# Initialize database to make sure tables exist
+# Initialize database to make sure tables and indexes exist
 database.setup_database()
-database.seed_test_data()
 
 
 # Model candidate pool (prioritized by highest quota and reliability)
