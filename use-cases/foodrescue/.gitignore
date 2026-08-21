@@ -1,0 +1,32 @@
+# Environment variables and secrets
+.env
+*.env
+.env.local
+.env.*.local
+*.secret
+credentials.json
+token.json
+
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & artifacts
+*.db
+*.sqlite
+*.sqlite3
+foodrescue.db
+
+.vercel

@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodRescue AI — AI-Powered Surplus Food Coordination Platform</title>
+  <meta name="description" content="AI-powered surplus food coordination platform matching donors, recipient organizations, and volunteer couriers across multi-turn sessions using Agent Kernel and Gemini.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand-container">
+        <div class="brand-logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1 class="brand-title">FoodRescue <span class="brand-badge">AI</span></h1>
+          <p class="brand-subtitle">AI-Powered Surplus-Food Coordination</p>
+        </div>
+      </div>
+
+      <!-- 7 Main Navigation Tabs -->
+      <nav class="nav-menu">
+        <!-- 1. Dashboard -->
+        <button class="nav-item active" data-tab="dashboard" id="nav-dashboard">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9"></rect>
+            <rect x="14" y="3" width="7" height="5"></rect>
+            <rect x="14" y="12" width="7" height="9"></rect>
+            <rect x="3" y="16" width="7" height="5"></rect>
+          </svg>
+          <span>Dashboard</span>
+        </button>
+
+        <!-- 2. AI Assistant -->
+        <button class="nav-item" data-tab="chat" id="nav-chat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>AI Assistant</span>
+          <span class="nav-badge pulse">Live</span>
+        </button>
+
+        <!-- 3. Donations -->
+        <button class="nav-item" data-tab="donations" id="nav-donations">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <span>Donations</span>
+          <span class="nav-counter" id="badge-donations-count">0</span>
+        </button>
+
+        <!-- 4. Organizations -->
+        <button class="nav-item" data-tab="organizations" id="nav-organizations">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21h18"></path>
+            <path d="M5 21V7l8-4v18"></path>
+            <path d="M19 21V11l-6-3"></path>
+            <path d="M9 9h1"></path>
+            <path d="M9 13h1"></path>
+            <path d="M9 17h1"></path>
+          </svg>
+          <span>Organizations</span>
+          <span class="nav-counter" id="badge-organizations-count">0</span>
+        </button>
+
+        <!-- 5. Volunteers -->
+        <button class="nav-item" data-tab="volunteers" id="nav-volunteers">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span>Volunteers</span>
+          <span class="nav-counter" id="badge-volunteers-count">0</span>
+        </button>
+
+        <!-- 6. Pickups -->
+        <button class="nav-item" data-tab="pickups" id="nav-pickups">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="1" y="3" width="15" height="13"></rect>
+            <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+            <circle cx="5.5" cy="18.5" r="2.5"></circle>
+            <circle cx="18.5" cy="18.5" r="2.5"></circle>
+          </svg>
+          <span>Pickups</span>
+          <span class="nav-counter" id="badge-pickups-count">0</span>
+        </button>
+
+        <!-- 7. Reimbursements -->
+        <button class="nav-item" data-tab="reimbursements" id="nav-reimbursements">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+            <line x1="2" y1="10" x2="22" y2="10"></line>
+          </svg>
+          <span>Reimbursements</span>
+          <span class="nav-counter" id="badge-reimbursements-count">0</span>
+        </button>
+
+        <!-- 8. Session / Activity -->
+        <button class="nav-item" data-tab="session" id="nav-session">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path>
+          </svg>
+          <span>Session / Activity</span>
+          <span class="nav-badge active-pill">Active</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Architecture Snapshot -->
+      <div class="sidebar-arch-card">
+        <div class="arch-header">
+          <span class="arch-icon">⚡</span>
+          <span>Agent Kernel Engine</span>
+        </div>
+        <div class="arch-steps">
+          <div class="arch-node active">Web / REST API</div>
+          <div class="arch-arrow">↓</div>
+          <div class="arch-node">ADK Coordinator</div>
+          <div class="arch-arrow">↓</div>
+          <div class="arch-node highlight">Gemini Multi-Model Pool</div>
+          <div class="arch-arrow">↓</div>
+          <div class="arch-node">14 Tools • MongoDB / SQLite</div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="backend-status">
+          <div class="status-indicator online" id="server-status-dot"></div>
+          <div class="status-text">
+            <span class="status-title" id="server-status-title">Agent Kernel Connected</span>
+            <span class="status-sub" id="server-status-sub">Gemini Coordinator Live</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-container">
+      <!-- Top Header Bar -->
+      <header class="top-header">
+        <div class="header-left">
+          <div class="active-tab-title" id="page-title">Dashboard Overview</div>
+          <div class="header-session-tag">
+            <span class="session-label">Session ID:</span>
+            <span class="session-val" id="header-session-id">session-donor-101</span>
+            <button class="btn-icon-small" id="btn-copy-session" title="Copy Session ID">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button class="btn-icon-small" id="btn-new-session" title="New Session">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="btn btn-secondary btn-sm" id="btn-run-demo-flow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Run 3-Turn Demo</span>
+          </button>
+          
+          <button class="btn btn-primary btn-sm" id="btn-open-donation-modal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Report Donation</span>
+          </button>
+
+          <button class="btn btn-icon" id="btn-refresh-all" title="Refresh Live Data">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: DASHBOARD -->
+      <section class="tab-content active" id="tab-dashboard">
+        <!-- FIRST SCREEN HERO EXPLAINER (Mandatory Competition Overview) -->
+        <div class="hero-explainer-card glass glow-emerald">
+          <div class="hero-header-row">
+            <div class="hero-title-group">
+              <div class="hero-badge">Autonomous Coordination Platform</div>
+              <h2 class="hero-main-title">FOODRESCUE AI</h2>
+              <p class="hero-tagline">"AI-powered surplus-food coordination"</p>
+            </div>
+            <div class="hero-status-pill">
+              <span class="live-dot pulse"></span>
+              <span id="data-source-badge">Live Production Database (MongoDB Atlas)</span>
+            </div>
+          </div>
+
+          <!-- 4 Core Pillars Overview (Small, Clear Area) -->
+          <div class="hero-four-pillars">
+            <div class="pillar-box">
+              <div class="pillar-icon bg-emerald-light">📦</div>
+              <div class="pillar-content">
+                <h4 class="pillar-title">1. Donors Report Surplus</h4>
+                <p class="pillar-desc">Restaurants & hotels report surplus meals via natural language chat or structured inputs.</p>
+              </div>
+            </div>
+
+            <div class="pillar-arrow">→</div>
+
+            <div class="pillar-box">
+              <div class="pillar-icon bg-blue-light">🤝</div>
+              <div class="pillar-content">
+                <h4 class="pillar-title">2. AI Matches Recipient</h4>
+                <p class="pillar-desc">Agent Kernel evaluates food type, quantity, dietary rules, and proximity to match food banks.</p>
+              </div>
+            </div>
+
+            <div class="pillar-arrow">→</div>
+
+            <div class="pillar-box">
+              <div class="pillar-icon bg-purple-light">🚴</div>
+              <div class="pillar-content">
+                <h4 class="pillar-title">3. AI Assigns Volunteers</h4>
+                <p class="pillar-desc">Autonomous tool ranking selects available volunteer couriers based on location and vehicle type.</p>
+              </div>
+            </div>
+
+            <div class="pillar-arrow">→</div>
+
+            <div class="pillar-box">
+              <div class="pillar-icon bg-amber-light">🚚</div>
+              <div class="pillar-content">
+                <h4 class="pillar-title">4. System Tracks Logistics</h4>
+                <p class="pillar-desc">Complete 7-stage live tracking monitors pickup progress from donor collection to delivery.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- UN Sustainable Development Goals (SDG) Alignment Section -->
+          <div class="hero-sdg-bar">
+            <span class="sdg-badge-label">UN SDG Alignment:</span>
+            <div class="sdg-pill">
+              <span class="sdg-icon">🎯</span>
+              <span><strong>SDG 2: Zero Hunger</strong> (Target 2.1 — Access to Food)</span>
+            </div>
+            <div class="sdg-pill">
+              <span class="sdg-icon">♻️</span>
+              <span><strong>SDG 12: Responsible Consumption</strong> (Target 12.3 — Halving Food Waste)</span>
+            </div>
+            <div class="sdg-pill">
+              <span class="sdg-icon">🌿</span>
+              <span><strong>SDG 13: Climate Action</strong> (Methane Mitigation)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 Core Dashboard KPIs Grid -->
+        <div class="kpi-grid">
+          <!-- 1. Total Donations -->
+          <div class="kpi-card glass glow-blue">
+            <div class="kpi-icon-wrap bg-blue-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Total Donations</span>
+              <div class="kpi-value" id="kpi-total-donations">0</div>
+              <span class="kpi-sub blue" id="kpi-seeded-note">Live & seeded records</span>
+            </div>
+          </div>
+
+          <!-- 2. Meals/Items Rescued -->
+          <div class="kpi-card glass glow-emerald">
+            <div class="kpi-icon-wrap bg-emerald-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Meals / Items Rescued</span>
+              <div class="kpi-value" id="kpi-food-rescued">0 <span class="kpi-unit">units</span></div>
+              <span class="kpi-sub green">Portions prevented from waste</span>
+            </div>
+          </div>
+
+          <!-- 3. Active Pickups -->
+          <div class="kpi-card glass glow-amber">
+            <div class="kpi-icon-wrap bg-amber-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Active Pickups</span>
+              <div class="kpi-value" id="kpi-active-rescues">0</div>
+              <span class="kpi-sub amber">Tasks in progress</span>
+            </div>
+          </div>
+
+          <!-- 4. Matched Organizations -->
+          <div class="kpi-card glass glow-purple">
+            <div class="kpi-icon-wrap bg-purple-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2">
+                <path d="M3 21h18"></path>
+                <path d="M5 21V7l8-4v18"></path>
+                <path d="M19 21V11l-6-3"></path>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Matched Organizations</span>
+              <div class="kpi-value" id="kpi-total-orgs">0</div>
+              <span class="kpi-sub purple">Charities, shelters & banks</span>
+            </div>
+          </div>
+
+          <!-- 5. Available Volunteers -->
+          <div class="kpi-card glass glow-cyan">
+            <div class="kpi-icon-wrap bg-cyan-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Available Volunteers</span>
+              <div class="kpi-value" id="kpi-volunteers-ready">0</div>
+              <span class="kpi-sub cyan" id="kpi-total-volunteers">0 registered</span>
+            </div>
+          </div>
+
+          <!-- 6. Completed Deliveries -->
+          <div class="kpi-card glass glow-teal">
+            <div class="kpi-icon-wrap bg-emerald-light">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-title">Completed Deliveries</span>
+              <div class="kpi-value" id="kpi-completed-deliveries">0</div>
+              <span class="kpi-sub green">Verified delivered food</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Main Sections -->
+        <div class="dashboard-grid">
+          <!-- Active Rescues & Status Distribution -->
+          <div class="dash-card glass">
+            <div class="card-header">
+              <div class="card-title-group">
+                <h3 class="card-title">Live Donation Lifecycle Pipeline</h3>
+                <span class="card-subtitle">Real-time status breakdown across the 7-stage lifecycle</span>
+              </div>
+              <button class="btn-link" id="btn-view-all-donations">View All Donations →</button>
+            </div>
+            
+            <div class="lifecycle-pipeline-bars" id="pipeline-status-bars">
+              <div class="loading-spinner"></div>
+            </div>
+
+            <div class="recent-donations-mini" id="recent-donations-container">
+              <div class="loading-spinner"></div>
+            </div>
+          </div>
+
+          <!-- Activity & Notification Stream -->
+          <div class="dash-card glass">
+            <div class="card-header">
+              <div class="card-title-group">
+                <h3 class="card-title">Live Coordination Activity Stream</h3>
+                <span class="card-subtitle">Real-time Agent Kernel event & notification audit log</span>
+              </div>
+              <span class="badge badge-subtle">Audit Trail</span>
+            </div>
+
+            <div class="notification-stream" id="notifications-stream">
+              <div class="loading-spinner"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: AI ASSISTANT (Natural Language Multi-Turn Coordination) -->
+      <section class="tab-content" id="tab-chat">
+        <div class="chat-layout">
+          <!-- Chat Left: Conversation Area -->
+          <div class="chat-main glass">
+            <div class="chat-header">
+              <div class="chat-agent-info">
+                <div class="agent-avatar">
+                  <span>🤖</span>
+                  <div class="agent-pulse"></div>
+                </div>
+                <div>
+                  <h3 class="chat-agent-name">FoodRescue AI Assistant</h3>
+                  <p class="chat-agent-meta">Agent Kernel ADK • Gemini-powered Coordinator • 14 Bound Tools</p>
+                </div>
+              </div>
+              
+              <div class="chat-header-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-run-demo-chat">
+                  <span>▶ 3-Turn Demo</span>
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-clear-chat">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Suggestion Chips Grouped by Capability -->
+            <div class="chat-suggestions-wrapper">
+              <div class="chat-suggestions-header">
+                <span>Try Judge Test Prompts:</span>
+              </div>
+              <div class="chat-suggestions">
+                <!-- 1. Donation Creation -->
+                <button class="chip" data-prompt="I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3 ready from now until 7 PM.">
+                  🍱 1. Create Donation (d1)
+                </button>
+                <!-- 2. Multi-turn detail update -->
+                <button class="chip" data-prompt="They need to be collected before 7 PM.">
+                  ⏰ 2. Multi-Turn Update (Turn 2)
+                </button>
+                <!-- 3. Matching & Volunteer Assignment -->
+                <button class="chip" data-prompt="Find a matching organization, create pickup task, and assign an available volunteer.">
+                  🤝 3. Match Org & Volunteer (Turn 3)
+                </button>
+                <!-- 4. Pickup Tracking -->
+                <button class="chip" data-prompt="What is the current status and session context of my active donation?">
+                  🔍 4. Track Active Pickup
+                </button>
+                <!-- 5. Status Transition -->
+                <button class="chip" data-prompt="Update the pickup task status for my active donation to EN_ROUTE.">
+                  🚗 5. Mark En Route
+                </button>
+              </div>
+            </div>
+
+            <!-- Messages Log -->
+            <div class="chat-messages" id="chat-messages-log">
+              <!-- Welcome Message -->
+              <div class="chat-bubble-row assistant">
+                <div class="bubble-avatar">🤖</div>
+                <div class="bubble-content">
+                  <div class="bubble-header">
+                    <span class="bubble-sender">FoodRescue AI Assistant</span>
+                    <span class="bubble-time">Just now</span>
+                  </div>
+                  <div class="bubble-text">
+                    <p>👋 Hello! I am the <strong>FoodRescue AI Assistant</strong> powered by <strong>Agent Kernel</strong> and <strong>Gemini</strong>.</p>
+                    <p>I coordinate surplus food logistics through natural language:</p>
+                    <ul class="welcome-capabilities-list">
+                      <li><strong>Natural-Language Donation Creation</strong>: Extract food type, quantities, dietary labels, location, and deadlines.</li>
+                      <li><strong>Multi-Turn Memory</strong>: Update details in subsequent messages without losing previous context.</li>
+                      <li><strong>Autonomous Organization Matching</strong>: Match donor surplus with verified community kitchens & food banks.</li>
+                      <li><strong>Volunteer Courier Assignment</strong>: Find and dispatch available volunteers based on proximity.</li>
+                      <li><strong>Lifecycle Progression Tracking</strong>: Monitor tasks across all 7 stages to confirmed delivery.</li>
+                    </ul>
+                    <div class="bubble-callout">
+                      💡 <strong>Quick Demonstration</strong>: Click <strong>"▶ 3-Turn Demo"</strong> in the top bar to watch a full multi-turn coordination flow automated in seconds!
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chat Input Bar -->
+            <div class="chat-input-container">
+              <form id="chat-input-form" class="chat-form">
+                <textarea 
+                  id="chat-user-prompt" 
+                  rows="2" 
+                  placeholder="Tell FoodRescue AI about your donation or command (e.g. 'I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3')..." 
+                  required
+                ></textarea>
+                <div class="chat-form-bottom">
+                  <div class="chat-form-hints">
+                    <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line</span>
+                  </div>
+                  <button type="submit" class="btn btn-primary" id="btn-send-chat">
+                    <span>Send Command</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Chat Right: Active Working Memory & Quick Actions -->
+          <div class="chat-sidebar glass">
+            <!-- Active Working Memory Card -->
+            <div class="sidebar-block">
+              <div class="block-header">
+                <span class="block-title">🧠 Active Session Memory</span>
+                <span class="badge badge-pill badge-primary" id="chat-workflow-badge">IDLE</span>
+              </div>
+              
+              <div class="memory-card" id="chat-active-memory-card">
+                <div class="memory-row">
+                  <span class="mem-lbl">Donation ID:</span>
+                  <span class="mem-val highlight" id="mem-active-don-id">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Donor ID:</span>
+                  <span class="mem-val" id="mem-active-donor-id">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Food Details:</span>
+                  <span class="mem-val" id="mem-active-food">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Location:</span>
+                  <span class="mem-val" id="mem-active-loc">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Deadline:</span>
+                  <span class="mem-val" id="mem-active-deadline">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Recipient Org:</span>
+                  <span class="mem-val text-blue" id="mem-active-org">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Volunteer:</span>
+                  <span class="mem-val text-amber" id="mem-active-vol">None</span>
+                </div>
+                <div class="memory-row">
+                  <span class="mem-lbl">Pickup Task:</span>
+                  <span class="mem-val" id="mem-active-task">None</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Step Actions -->
+            <div class="sidebar-block">
+              <div class="block-header">
+                <span class="block-title">⚡ Step-by-Step Lifecycle Triggers</span>
+              </div>
+              <div class="quick-action-buttons">
+                <button class="btn btn-secondary btn-block text-left" id="btn-quick-create-d1">
+                  <span>1️⃣ Create 40 Meals (d1)</span>
+                </button>
+                <button class="btn btn-secondary btn-block text-left" id="btn-quick-update-time">
+                  <span>2️⃣ Update Deadline to 7 PM</span>
+                </button>
+                <button class="btn btn-secondary btn-block text-left" id="btn-quick-match-assign">
+                  <span>3️⃣ Match Org & Assign Volunteer</span>
+                </button>
+                <button class="btn btn-secondary btn-block text-left" id="btn-quick-en-route">
+                  <span>4️⃣ Mark Task En Route</span>
+                </button>
+                <button class="btn btn-secondary btn-block text-left" id="btn-quick-delivered">
+                  <span>5️⃣ Confirm Delivery Complete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: DONATIONS & 7-STAGE LIFECYCLE TRACKER -->
+      <section class="tab-content" id="tab-donations">
+        <div class="donations-view-container">
+          <!-- Active Donation 7-Stage Visual Lifecycle Stepper Card -->
+          <div class="stepper-showcase glass" id="active-lifecycle-showcase">
+            <div class="stepper-header">
+              <div class="stepper-info">
+                <div class="badge badge-pill badge-primary">Active Visual Lifecycle</div>
+                <h3 class="stepper-title" id="stepper-don-title">Select a donation to track its 7-stage lifecycle</h3>
+              </div>
+              <div class="stepper-actions" id="stepper-action-buttons">
+                <!-- Dynamic actions rendered based on active stage -->
+              </div>
+            </div>
+
+            <!-- The Exact 7-Stage Stepper: AVAILABLE -> MATCHED -> PICKUP PENDING -> PICKUP ASSIGNED -> EN ROUTE -> COLLECTED -> DELIVERED -->
+            <div class="lifecycle-steps" id="lifecycle-steps-bar">
+              <div class="step-node" data-stage="AVAILABLE">
+                <div class="step-circle">1</div>
+                <div class="step-name">AVAILABLE</div>
+                <div class="step-sub">Donation Created</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="MATCHED">
+                <div class="step-circle">2</div>
+                <div class="step-name">MATCHED</div>
+                <div class="step-sub">Org Accepted</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="PICKUP_PENDING">
+                <div class="step-circle">3</div>
+                <div class="step-name">PICKUP PENDING</div>
+                <div class="step-sub">Task Created</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="PICKUP_ASSIGNED">
+                <div class="step-circle">4</div>
+                <div class="step-name">PICKUP ASSIGNED</div>
+                <div class="step-sub">Volunteer Ready</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="EN_ROUTE">
+                <div class="step-circle">5</div>
+                <div class="step-name">EN ROUTE</div>
+                <div class="step-sub">Courier In Transit</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="COLLECTED">
+                <div class="step-circle">6</div>
+                <div class="step-name">COLLECTED</div>
+                <div class="step-sub">Food Picked Up</div>
+              </div>
+              <div class="step-line"></div>
+
+              <div class="step-node" data-stage="DELIVERED">
+                <div class="step-circle">7</div>
+                <div class="step-name">DELIVERED</div>
+                <div class="step-sub">Delivered to Org</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filter and Search Toolbar -->
+          <div class="toolbar-card glass">
+            <div class="toolbar-left">
+              <div class="search-input-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="donation-search-input" placeholder="Search donations by ID, food, location, donor...">
+              </div>
+
+              <div class="status-filter-pills" id="status-filter-group">
+                <button class="pill active" data-filter="ALL">All</button>
+                <button class="pill" data-filter="AVAILABLE">Available</button>
+                <button class="pill" data-filter="MATCHED">Matched</button>
+                <button class="pill" data-filter="PICKUP_ASSIGNED">Assigned</button>
+                <button class="pill" data-filter="EN_ROUTE">En Route</button>
+                <button class="pill" data-filter="COLLECTED">Collected</button>
+                <button class="pill" data-filter="DELIVERED">Delivered</button>
+              </div>
+            </div>
+
+            <div class="toolbar-right">
+              <button class="btn btn-primary btn-sm" id="btn-new-donation-tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Report Donation</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Donations Table -->
+          <div class="donations-table-wrap glass">
+            <table class="data-table" id="donations-data-table">
+              <thead>
+                <tr>
+                  <th>Donation ID</th>
+                  <th>Food & Quantity</th>
+                  <th>Dietary Info</th>
+                  <th>Pickup Location</th>
+                  <th>Time Window</th>
+                  <th>Lifecycle Status</th>
+                  <th>Created At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="donations-table-body">
+                <tr>
+                  <td colspan="8" class="text-center py-6">
+                    <div class="loading-spinner"></div>
+                    <p class="text-muted mt-2">Loading live donation records...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: RECIPIENT ORGANIZATIONS -->
+      <section class="tab-content" id="tab-organizations">
+        <div class="view-header-banner glass">
+          <div>
+            <h3 class="view-title">Verified Recipient Organizations</h3>
+            <p class="view-subtitle">Community kitchens, food banks, and shelters partnered with FoodRescue AI for autonomous donation dispatch.</p>
+          </div>
+          <span class="badge badge-primary" id="header-org-count">0 Partners</span>
+        </div>
+
+        <div class="cards-grid" id="organizations-grid-container">
+          <div class="loading-spinner"></div>
+        </div>
+      </section>
+
+      <!-- TAB 5: VOLUNTEERS -->
+      <section class="tab-content" id="tab-volunteers">
+        <div class="view-header-banner glass">
+          <div>
+            <h3 class="view-title">Registered Volunteer Couriers</h3>
+            <p class="view-subtitle">Active community volunteers and logistics couriers dispatched autonomously for food pickups and deliveries.</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="badge badge-amber" id="header-vol-count">0 Volunteers</span>
+            <button class="btn btn-primary btn-sm" id="btn-open-volunteer-modal">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              <span>Register Volunteer</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="cards-grid" id="volunteers-grid-container">
+          <div class="loading-spinner"></div>
+        </div>
+      </section>
+
+      <!-- TAB 6: PICKUPS & LOGISTICS -->
+      <section class="tab-content" id="tab-pickups">
+        <div class="view-header-banner glass">
+          <div>
+            <h3 class="view-title">Pickup & Delivery Logistics Tasks</h3>
+            <p class="view-subtitle">Active and completed pickup tasks with dynamic routing, road distance estimation, live opt-in GPS, and travel reimbursement.</p>
+          </div>
+          <span class="badge badge-cyan" id="header-pickups-count">0 Tasks</span>
+        </div>
+
+        <!-- Live Route & GPS Visualizer Card -->
+        <div class="logistics-map-card glass mb-6">
+          <div class="logistics-card-header">
+            <div class="logistics-header-left">
+              <span class="logistics-icon">🗺️</span>
+              <div>
+                <h4 class="logistics-card-title">Live Route Geometry & GPS Tracking</h4>
+                <p class="logistics-card-subtitle">Visualizes origin donor, volunteer courier live GPS position, and destination charity with road distance & ETA.</p>
+              </div>
+            </div>
+            <div class="logistics-header-right">
+              <span class="gps-status-badge inactive" id="global-gps-badge">
+                <span class="gps-pulse"></span> GPS Tracking Inactive
+              </span>
+              <button class="btn btn-secondary btn-sm" id="btn-toggle-live-gps">
+                <span>🛰️ Start Live GPS</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="route-canvas-container">
+            <canvas id="route-map-canvas" width="900" height="220"></canvas>
+            <div class="route-stats-overlay" id="route-stats-overlay">
+              <div class="route-stat-item">
+                <span class="stat-lbl">Route Distance</span>
+                <span class="stat-val" id="stat-route-distance">-- km</span>
+              </div>
+              <div class="route-stat-item">
+                <span class="stat-lbl">Estimated ETA</span>
+                <span class="stat-val" id="stat-route-eta">-- min</span>
+              </div>
+              <div class="route-stat-item">
+                <span class="stat-lbl">Transport Mode</span>
+                <span class="stat-val" id="stat-transport-mode">Motorbike</span>
+              </div>
+              <div class="route-stat-item">
+                <span class="stat-lbl">Est. Reimbursement</span>
+                <span class="stat-val text-emerald" id="stat-route-reimb">-- LKR</span>
+              </div>
+              <div class="route-stat-item">
+                <span class="stat-lbl">Routing Provider</span>
+                <span class="stat-val" id="stat-routing-provider">Haversine / Google</span>
+              </div>
+            </div>
+          </div>
+          <div class="route-disclaimer-bar">
+            <span>ℹ️ <strong>Logistics Notice:</strong> Reimbursement is an internal accounting estimate for volunteer travel expenses. No financial transactions or credit card payments occur.</span>
+          </div>
+        </div>
+
+        <div class="donations-table-wrap glass">
+          <table class="data-table" id="pickups-data-table">
+            <thead>
+              <tr>
+                <th>Task ID</th>
+                <th>Donation ID</th>
+                <th>Recipient Org</th>
+                <th>Assigned Courier</th>
+                <th>Route (Pickup ➔ Delivery)</th>
+                <th>Distance & Cost</th>
+                <th>GPS Status</th>
+                <th>Task Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="pickups-table-body">
+              <tr>
+                <td colspan="9" class="text-center py-6">
+                  <div class="loading-spinner"></div>
+                  <p class="text-muted mt-2">Loading live pickup tasks...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 7: VOLUNTEER REIMBURSEMENTS LEDGER -->
+      <section class="tab-content" id="tab-reimbursements">
+        <div class="view-header-banner glass">
+          <div>
+            <h3 class="view-title">Volunteer Travel Reimbursement Ledger</h3>
+            <p class="view-subtitle">Accounting records for volunteer mileage and travel reimbursement. Strictly non-profit civic ledger — no payment gateway or real banking transfers.</p>
+          </div>
+          <div class="reimb-header-kpis">
+            <span class="badge badge-emerald" id="header-reimb-total">Pool: 0 LKR</span>
+            <span class="badge badge-amber" id="header-reimb-pending">0 Pending</span>
+          </div>
+        </div>
+
+        <!-- Ledger Disclaimer Banner -->
+        <div class="alert-banner-glass mb-6">
+          <div class="alert-icon">⚖️</div>
+          <div>
+            <div class="alert-title">Non-Profit Civic Accounting Ledger</div>
+            <div class="alert-body">This prototype records estimated volunteer travel reimbursement amounts based on transparent distance calculations. It does not process real monetary transactions, credit card payments, or online bank transfers.</div>
+          </div>
+        </div>
+
+        <div class="donations-table-wrap glass">
+          <table class="data-table" id="reimbursements-data-table">
+            <thead>
+              <tr>
+                <th>Reimbursement ID</th>
+                <th>Volunteer</th>
+                <th>Pickup Task</th>
+                <th>Distance (km)</th>
+                <th>Rate / km</th>
+                <th>Transport Mode</th>
+                <th>Estimated Amount</th>
+                <th>Status</th>
+                <th>Created At</th>
+                <th>Administrative Actions</th>
+              </tr>
+            </thead>
+            <tbody id="reimbursements-table-body">
+              <tr>
+                <td colspan="10" class="text-center py-6">
+                  <div class="loading-spinner"></div>
+                  <p class="text-muted mt-2">Loading reimbursement ledger records...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 8: SESSION / ACTIVITY -->
+      <section class="tab-content" id="tab-session">
+        <div class="session-inspector-layout">
+          <!-- Session Header Banner -->
+          <div class="session-banner glass">
+            <div class="session-banner-left">
+              <div class="session-icon-wrap">🧠</div>
+              <div>
+                <h2 class="session-banner-title">Agent Kernel Multi-Turn Session Memory</h2>
+                <p class="session-banner-subtitle">
+                  Inspect the persistent <code>KeyValueCache</code> maintaining state across multi-turn conversations without reprompting.
+                </p>
+              </div>
+            </div>
+
+            <div class="session-banner-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-refresh-session">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>Refresh Memory</span>
+              </button>
+
+              <button class="btn btn-danger btn-sm" id="btn-clear-session-state">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                <span>Clear Context</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Session Grid Details -->
+          <div class="session-details-grid">
+            <!-- Left: Structured Session Variables -->
+            <div class="session-card glass">
+              <h3 class="session-card-title">Structured Session Variables</h3>
+              <div class="session-kv-list" id="session-kv-container">
+                <!-- Rendered via JS -->
+              </div>
+            </div>
+
+            <!-- Right: Architecture Explainer & Activity Stream -->
+            <div class="session-card glass">
+              <h3 class="session-card-title">Multi-Turn Continuity Architecture</h3>
+              <div class="arch-explainer">
+                <div class="arch-box">
+                  <div class="turn-title">Turn 1: Initial Partial Input</div>
+                  <div class="turn-desc">"I have 40 vegetarian lunch boxes in Colombo 3."</div>
+                  <div class="turn-result">→ Creates donation record & sets <code>current_donation_id</code></div>
+                </div>
+
+                <div class="arch-box">
+                  <div class="turn-title">Turn 2: Incremental Detail Update</div>
+                  <div class="turn-desc">"They need to be collected before 7 PM."</div>
+                  <div class="turn-result">→ Looks up active donation from cache & updates deadline without re-asking</div>
+                </div>
+
+                <div class="arch-box">
+                  <div class="turn-title">Turn 3: Lifecycle Continuation</div>
+                  <div class="turn-desc">"Find a matching organization and assign a volunteer."</div>
+                  <div class="turn-result">→ Matches org, creates pickup task, and assigns courier automatically</div>
+                </div>
+              </div>
+
+              <div class="session-raw-json-block">
+                <span class="raw-title">Raw Sanitized Session Payload:</span>
+                <pre id="session-raw-json">{}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: CREATE DONATION -->
+  <div class="modal-backdrop" id="modal-create-donation">
+    <div class="modal-container glass">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">📦</span>
+          <div>
+            <h3 class="modal-title">Report Surplus Food Donation</h3>
+            <p class="modal-subtitle">Submits a natural language coordination request to the FoodRescue AI Assistant</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-close-modal">✕</button>
+      </div>
+
+      <form id="form-create-donation" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-donor-id">Donor Account</label>
+            <select id="input-donor-id" required>
+              <option value="d1">d1 — Grand Hotel Colombo</option>
+              <option value="d2">d2 — City Bakery Colombo</option>
+              <option value="custom_donor">Custom Donor</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="input-food-type">Food Type / Description</label>
+            <input type="text" id="input-food-type" placeholder="e.g. Vegetarian Lunch Boxes, Prepared Meals, Fresh Bread" required value="Vegetarian Meal Boxes">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-quantity">Quantity</label>
+            <input type="number" id="input-quantity" min="1" step="1" required value="40">
+          </div>
+
+          <div class="form-group">
+            <label for="input-unit">Unit</label>
+            <select id="input-unit" required>
+              <option value="boxes">boxes / packets</option>
+              <option value="meals">meals / portions</option>
+              <option value="kg">kilograms (kg)</option>
+              <option value="loaves">loaves / items</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-dietary">Dietary Classification</label>
+            <input type="text" id="input-dietary" placeholder="e.g. Vegetarian, Halal, Vegan, Standard" value="Vegetarian">
+          </div>
+
+          <div class="form-group">
+            <label for="input-location">Pickup Location</label>
+            <input type="text" id="input-location" placeholder="e.g. Colombo 3, Galle Road, Colombo 7" required value="Colombo 3">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-available-from">Available From</label>
+            <input type="text" id="input-available-from" placeholder="e.g. Now, 11:30 AM" required value="Now">
+          </div>
+
+          <div class="form-group">
+            <label for="input-deadline">Pickup Deadline</label>
+            <input type="text" id="input-deadline" placeholder="e.g. 07:00 PM, End of Day" required value="07:00 PM">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-donation">
+            <span>Coordinate via AI Assistant</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: REGISTER VOLUNTEER -->
+  <div class="modal-backdrop" id="modal-create-volunteer">
+    <div class="modal-container glass">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">🚴</span>
+          <div>
+            <h3 class="modal-title">Register Volunteer Courier</h3>
+            <p class="modal-subtitle">Add a community volunteer to the autonomous surplus-food dispatch roster</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-close-volunteer-modal">✕</button>
+      </div>
+
+      <form id="form-create-volunteer" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-vol-name">Full Name</label>
+            <input type="text" id="input-vol-name" placeholder="e.g. Nuwan Fernando, Sara Jayasinghe" required value="Nuwan Fernando">
+          </div>
+
+          <div class="form-group">
+            <label for="input-vol-phone">Contact Phone</label>
+            <input type="tel" id="input-vol-phone" placeholder="e.g. +94 77 987 6543" required value="+94779876543">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-vol-area">Service Area / Coverage</label>
+            <input type="text" id="input-vol-area" placeholder="e.g. Colombo 3, Colombo 7, Dehiwala" required value="Colombo 3, Colombo 7">
+          </div>
+
+          <div class="form-group">
+            <label for="input-vol-transport">Transport Mode</label>
+            <select id="input-vol-transport" required>
+              <option value="Motorbike">Motorbike (50 LKR/km)</option>
+              <option value="Electric Bike">Electric Bike (25 LKR/km)</option>
+              <option value="Bicycle">Bicycle (25 LKR/km)</option>
+              <option value="Car">Car (80 LKR/km)</option>
+              <option value="Van">Van (120 LKR/km)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-vol-availability">Availability Window</label>
+            <input type="text" id="input-vol-availability" placeholder="e.g. immediate, evenings, weekends" required value="immediate, evenings">
+          </div>
+
+          <div class="form-group">
+            <label for="input-vol-location">Base Location</label>
+            <input type="text" id="input-vol-location" placeholder="e.g. Colombo 3" value="Colombo 3">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-volunteer-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-volunteer">
+            <span>Register Courier</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- APPLICATION SCRIPTS -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

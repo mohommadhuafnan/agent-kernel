@@ -1,0 +1,16 @@
+session:
+  type: in_memory
+
+test:
+  mode: fuzzy
+
+api:
+  custom_router_prefix: ""
+
+whatsapp:
+  agent: foodrescue_coordinator
+  verify_token: "foodrescue_meta_verify_token"
+  phone_number_id: "1285744151285887"
+  business_account_id: "2279553849254105"
+  app_id: "1591721079088296"
+  business_id: "1697813834850499"

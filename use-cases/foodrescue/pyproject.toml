@@ -1,0 +1,24 @@
+[project]
+name = "foodrescue"
+version = "0.1.0"
+description = "FoodRescue AI Coordinator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,adk,api,whatsapp]>=0.8.1",
+    "pymongo>=4.17.0",
+    "pyreadline3; sys_platform == 'win32'",
+]
+
+
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.1",
+    "mongomock>=4.3.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.uv]
+package = false

@@ -11,3 +11,7 @@ pytest-report.xml
 *.pip-cache
 .kiro
 .claude/settings.local.json
+*.db
+*.sqlite
+*.sqlite3
+foodrescue.db
