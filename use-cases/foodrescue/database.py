@@ -452,16 +452,20 @@ def create_or_update_user(
     phone: str,
     display_name: Optional[str] = None,
     preferred_language: str = "en",
+    preferred_response_mode: str = "text",
     user_role: str = "unknown",
     onboarding_completed: bool = False,
+    default_location: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     return get_repository().create_or_update_user(
         phone=phone,
         display_name=display_name,
         preferred_language=preferred_language,
+        preferred_response_mode=preferred_response_mode,
         user_role=user_role,
         onboarding_completed=onboarding_completed,
+        default_location=default_location,
         metadata=metadata
     )
 
@@ -470,8 +474,106 @@ def set_user_language(phone: str, language: str) -> bool:
     return get_repository().set_user_language(phone=phone, language=language)
 
 
+def set_user_response_mode(phone: str, mode: str) -> bool:
+    return get_repository().set_user_response_mode(phone=phone, mode=mode)
+
+
 def set_onboarding_completed(phone: str, completed: bool = True) -> bool:
     return get_repository().set_onboarding_completed(phone=phone, completed=completed)
+
+
+def update_user_profile(
+    phone: str,
+    display_name: Optional[str] = None,
+    preferred_language: Optional[str] = None,
+    preferred_response_mode: Optional[str] = None,
+    user_role: Optional[str] = None,
+    default_location: Optional[str] = None,
+    active_donation_id: Optional[str] = None,
+    active_task_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    return get_repository().update_user_profile(
+        phone=phone,
+        display_name=display_name,
+        preferred_language=preferred_language,
+        preferred_response_mode=preferred_response_mode,
+        user_role=user_role,
+        default_location=default_location,
+        active_donation_id=active_donation_id,
+        active_task_id=active_task_id,
+        metadata=metadata
+    )
+
+
+def get_user_conversation_state(phone: str) -> Dict[str, Any]:
+    return get_repository().get_user_conversation_state(phone=phone)
+
+
+def set_user_conversation_state(phone: str, state: Dict[str, Any]) -> bool:
+    return get_repository().set_user_conversation_state(phone=phone, state=state)
+
+
+def clear_user_conversation_state(phone: str) -> bool:
+    return get_repository().clear_user_conversation_state(phone=phone)
+
+
+def save_draft_donation(phone: str, draft_data: Dict[str, Any]) -> Dict[str, Any]:
+    return get_repository().save_draft_donation(phone=phone, draft_data=draft_data)
+
+
+def get_draft_donation(phone: str) -> Optional[Dict[str, Any]]:
+    return get_repository().get_draft_donation(phone=phone)
+
+
+def clear_draft_donation(phone: str) -> bool:
+    return get_repository().clear_draft_donation(phone=phone)
+
+
+def get_all_users() -> List[Dict[str, Any]]:
+    return get_repository().get_all_users()
+
+
+def get_all_donors() -> List[Dict[str, Any]]:
+    return get_repository().get_all_donors()
+
+
+def record_message(
+    phone: str,
+    sender: str,
+    text: str,
+    is_voice: bool = False,
+    transcript: Optional[str] = None,
+    timestamp: Optional[str] = None
+) -> Dict[str, Any]:
+    return get_repository().record_message(
+        phone=phone,
+        sender=sender,
+        text=text,
+        is_voice=is_voice,
+        transcript=transcript,
+        timestamp=timestamp
+    )
+
+
+def get_all_conversations() -> List[Dict[str, Any]]:
+    return get_repository().get_all_conversations()
+
+
+def get_conversation_messages(phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+    return get_repository().get_conversation_messages(phone=phone, limit=limit)
+
+
+def get_all_audit_events(limit: int = 100) -> List[Dict[str, Any]]:
+    return get_repository().get_all_audit_events(limit=limit)
+
+
+def get_transport_settings() -> Dict[str, Any]:
+    return get_repository().get_transport_settings()
+
+
+def update_transport_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    return get_repository().update_transport_settings(settings=settings)
 
 
 # SQLite backwards-compatibility helpers

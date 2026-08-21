@@ -56,11 +56,100 @@ async def serve_static(file_path: str):
     return FileResponse(full_path, media_type=media_type)
 
 
+@router.get("/api/dashboard")
 @router.get("/api/stats")
-async def get_stats():
-    """Get aggregated dashboard KPIs and metrics."""
+async def get_dashboard():
+    """Get comprehensive aggregated dashboard KPIs, operational metrics, and activity stream."""
     stats = database.get_dashboard_stats()
-    return JSONResponse(content={"status": "success", "stats": stats})
+    all_users = database.get_all_users()
+    all_orgs = database.get_all_organizations()
+    all_vols = database.get_all_volunteers()
+    avail_vols = database.get_available_volunteers()
+    all_tasks = database.get_all_pickup_tasks()
+    all_dons = database.get_all_donations()
+    recent_events = database.get_all_audit_events(limit=15)
+
+    pending_donations = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING"]]
+    active_pickups = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED", "PICKED_UP"]]
+    completed_pickups = [t for t in all_tasks if t.get("status") in ["COMPLETED", "DELIVERED"]]
+
+    total_qty = float(stats.get("total_food_quantity", 0.0) or 0.0)
+    food_rescued_kg = round(total_qty * 0.45, 1)
+    co2_saved_kg = round(total_qty * 2.5, 1)
+
+    enriched_stats = {
+        "total_donations": len(all_dons),
+        "total_food_quantity": round(total_qty, 1),
+        "meals_rescued": int(total_qty),
+        "food_rescued_kg": food_rescued_kg,
+        "co2_saved_kg": co2_saved_kg,
+        "available_donations": len([d for d in all_dons if d.get("status") == "AVAILABLE"]),
+        "active_pickups": len(active_pickups),
+        "completed_deliveries": len(completed_pickups),
+        "available_volunteers": len(avail_vols),
+        "total_volunteers": len(all_vols),
+        "total_organizations": len(all_orgs),
+        "registered_organizations": len(all_orgs),
+        "active_users": max(len(all_users), 1),
+        "pending_actions": len(pending_donations),
+        "status_distribution": stats.get("status_distribution", {}),
+        "recent_activity": recent_events,
+        "system_health": "operational",
+        "backend": os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite")
+    }
+    return JSONResponse(content={"status": "success", "stats": enriched_stats})
+
+
+@router.get("/api/users")
+async def get_users_endpoint():
+    """Get list of all registered WhatsApp and platform users with language, roles, and status."""
+    users = database.get_all_users()
+    return JSONResponse(content={"status": "success", "count": len(users), "users": users})
+
+
+@router.get("/api/donors")
+async def get_donors_endpoint():
+    """Get list of all registered food donor partners."""
+    donors = database.get_all_donors()
+    return JSONResponse(content={"status": "success", "count": len(donors), "donors": donors})
+
+
+class DonationCreateRequest(BaseModel):
+    food_type: str = Field(..., min_length=2, max_length=128)
+    quantity: float = Field(..., gt=0)
+    unit: Optional[str] = Field("portions", max_length=32)
+    dietary_info: Optional[str] = Field("Standard", max_length=64)
+    location: str = Field(..., min_length=2, max_length=128)
+    donor_name: Optional[str] = Field("Community Donor", max_length=128)
+    donor_phone: Optional[str] = Field("+94770001001", max_length=32)
+    pickup_deadline: Optional[str] = Field("Before 8 PM", max_length=64)
+
+
+@router.post("/api/donations")
+async def create_donation_endpoint(body: DonationCreateRequest):
+    """Create a new food donation record directly from the web dashboard."""
+    import uuid
+    import tools
+    don_id = f"don-{uuid.uuid4().hex[:8]}"
+    d_id = f"d-{uuid.uuid4().hex[:6]}"
+    database.create_donor_record(donor_id=d_id, name=body.donor_name, phone=body.donor_phone, location=body.location)
+    don = database.create_donation_record(
+        donation_id=don_id,
+        donor_id=d_id,
+        food_type=body.food_type,
+        quantity=body.quantity,
+        unit=body.unit or "portions",
+        dietary_info=body.dietary_info or "Standard",
+        location=body.location,
+        available_from="Now",
+        deadline=body.pickup_deadline or "Before 8 PM"
+    )
+    # Trigger matching via operational tool
+    try:
+        tools.find_matching_organizations(food_type=body.food_type, location=body.location)
+    except Exception:
+        pass
+    return JSONResponse(content={"status": "success", "donation": don, "message": "Donation created successfully."})
 
 
 @router.get("/api/donations")
@@ -94,6 +183,318 @@ async def get_donation_detail(donation_id: str):
         "donation": don,
         "donor": donor,
         "pickup_tasks": enriched_tasks,
+    })
+
+
+@router.get("/api/conversations")
+async def get_conversations_endpoint():
+    """Get list of all active conversation threads with latest messages and user profiles."""
+    convs = database.get_all_conversations()
+    return JSONResponse(content={"status": "success", "count": len(convs), "conversations": convs})
+
+
+@router.get("/api/conversations/{phone}/messages")
+async def get_conversation_messages_endpoint(phone: str, limit: int = Query(100, ge=1, le=500)):
+    """Get chronological message history for a specific WhatsApp phone number."""
+    msgs = database.get_conversation_messages(phone=phone, limit=limit)
+    user = database.get_user_by_phone(phone)
+    return JSONResponse(content={
+        "status": "success",
+        "phone_number": phone,
+        "user": user,
+        "count": len(msgs),
+        "messages": msgs
+    })
+
+
+class ConversationSimulateRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    is_voice: Optional[bool] = Field(False)
+
+
+@router.post("/api/conversations/{phone}/simulate")
+async def simulate_conversation_message_endpoint(phone: str, body: ConversationSimulateRequest):
+    """Simulate sending an incoming WhatsApp message from a user for live dashboard demonstrations."""
+    from resilient_executor import run_resilient_chat
+    import whatsapp_handler
+
+    session_id = f"whatsapp:{phone}"
+    prompt_text = body.message.strip()
+
+    # Record user message
+    database.record_message(
+        phone=phone,
+        sender="user",
+        text=prompt_text,
+        is_voice=bool(body.is_voice),
+        transcript=prompt_text if body.is_voice else None
+    )
+
+    # Process through resilient coordinator
+    chat_result = await run_resilient_chat(
+        prompt=prompt_text,
+        session_id=session_id,
+        preferred_agent="foodrescue_coordinator"
+    )
+    reply_text = chat_result.get("result", "Thank you. Your request was received.")
+
+    # Record agent reply
+    database.record_message(
+        phone=phone,
+        sender="agent",
+        text=reply_text,
+        is_voice=False
+    )
+
+    msgs = database.get_conversation_messages(phone=phone)
+    return JSONResponse(content={
+        "status": "success",
+        "phone_number": phone,
+        "reply": reply_text,
+        "messages": msgs
+    })
+
+
+@router.get("/api/live-operations")
+async def get_live_operations_endpoint():
+    """Get real-time operational rescue pipeline stages."""
+    all_dons = database.get_all_donations()
+    all_tasks = database.get_all_pickup_tasks()
+
+    task_by_don = {t.get("donation_id"): t for t in all_tasks}
+    operations = []
+
+    for don in all_dons:
+        don_id = don.get("id")
+        status = don.get("status", "AVAILABLE").upper()
+        task = task_by_don.get(don_id, {})
+
+        # Compute pipeline step (1 to 7)
+        stage_map = {
+            "AVAILABLE": {"step": 1, "label": "Donation Available", "badge": "available"},
+            "MATCHED": {"step": 2, "label": "Organization Matched", "badge": "matched"},
+            "ASSIGNED": {"step": 3, "label": "Volunteer Assigned", "badge": "assigned"},
+            "EN_ROUTE": {"step": 4, "label": "Pickup In Progress", "badge": "in_transit"},
+            "COLLECTED": {"step": 5, "label": "Food Collected", "badge": "collected"},
+            "PICKED_UP": {"step": 5, "label": "Food Collected", "badge": "collected"},
+            "DELIVERING": {"step": 6, "label": "Out for Delivery", "badge": "delivering"},
+            "DELIVERED": {"step": 7, "label": "Delivered & Rescued", "badge": "completed"},
+            "COMPLETED": {"step": 7, "label": "Delivered & Rescued", "badge": "completed"},
+            "CANCELLED": {"step": 0, "label": "Cancelled", "badge": "cancelled"},
+        }
+        info = stage_map.get(status, {"step": 1, "label": status, "badge": "pending"})
+
+        # Enrich entities
+        donor = database.get_donor_record(don.get("donor_id", ""))
+        org = database.get_organization_record(task.get("organization_id", "")) if task else None
+        vol = database.get_volunteer_record(task.get("volunteer_id", "")) if task else None
+
+        operations.append({
+            "donation_id": don_id,
+            "task_id": task.get("id"),
+            "food_type": don.get("food_type"),
+            "quantity": don.get("quantity"),
+            "unit": don.get("unit", "portions"),
+            "dietary_info": don.get("dietary_information", "Standard"),
+            "status": status,
+            "stage_step": info["step"],
+            "stage_label": info["label"],
+            "stage_badge": info["badge"],
+            "pickup_location": don.get("pickup_location"),
+            "delivery_location": task.get("delivery_location") or (org.get("location") if org else "Recipient Kitchen"),
+            "pickup_deadline": don.get("pickup_deadline"),
+            "donor_name": donor.get("name") if donor else "Donor Partner",
+            "organization_name": org.get("name") if org else (task.get("organization_name") or "Awaiting Recipient"),
+            "volunteer_name": vol.get("name") if vol else (task.get("volunteer_name") or "Awaiting Volunteer"),
+            "volunteer_phone": vol.get("phone") if vol else None,
+            "transport_mode": vol.get("transport_mode") if vol else "Motorbike",
+            "estimated_distance_km": task.get("total_distance_km", 4.8),
+            "estimated_duration_mins": task.get("pickup_duration_minutes", 15) + task.get("delivery_duration_minutes", 20),
+            "estimated_transport_cost": task.get("estimated_transport_cost", 350.0),
+            "created_at": don.get("created_at"),
+            "updated_at": don.get("updated_at") or don.get("created_at")
+        })
+
+    return JSONResponse(content={"status": "success", "count": len(operations), "operations": operations})
+
+
+@router.get("/api/agent-events")
+async def get_agent_events_endpoint(limit: int = Query(100, ge=1, le=500)):
+    """Get safe operational audit events representing Agent Kernel decisions and actions."""
+    events = database.get_all_audit_events(limit=limit)
+    return JSONResponse(content={"status": "success", "count": len(events), "events": events})
+
+
+@router.get("/api/locations")
+async def get_map_locations_endpoint():
+    """Get privacy-preserving operational coordinates for map display."""
+    # Pre-defined known coordinates for major hub regions in Sri Lanka
+    hub_coords = {
+        "colombo": {"lat": 6.9271, "lng": 79.8612},
+        "colombo 1": {"lat": 6.9360, "lng": 79.8450},
+        "colombo 3": {"lat": 6.9040, "lng": 79.8540},
+        "colombo 4": {"lat": 6.8880, "lng": 79.8580},
+        "colombo 5": {"lat": 6.8780, "lng": 79.8650},
+        "colombo 7": {"lat": 6.9100, "lng": 79.8700},
+        "dehiwala": {"lat": 6.8510, "lng": 79.8650},
+        "nugegoda": {"lat": 6.8700, "lng": 79.8900},
+        "mount lavinia": {"lat": 6.8350, "lng": 79.8650},
+        "kandy": {"lat": 7.2906, "lng": 80.6337},
+        "galle": {"lat": 6.0535, "lng": 80.2210},
+    }
+
+    all_orgs = database.get_all_organizations()
+    all_vols = database.get_all_volunteers()
+    all_tasks = database.get_all_pickup_tasks()
+
+    markers = []
+
+    # 1. Organization recipient hubs (public operational facilities)
+    for o in all_orgs:
+        loc_str = str(o.get("location", "Colombo 7")).lower()
+        coords = hub_coords.get(loc_str, hub_coords["colombo 7"])
+        markers.append({
+            "id": f"org-{o.get('id')}",
+            "type": "organization",
+            "title": o.get("name"),
+            "subtitle": f"Accepted: {o.get('accepted_food_types')[:40]}...",
+            "latitude": coords["lat"],
+            "longitude": coords["lng"],
+            "location_name": o.get("location"),
+            "status": "active"
+        })
+
+    # 2. Volunteer couriers
+    for v in all_vols:
+        loc_str = str(v.get("location", "Colombo 3")).lower()
+        coords = hub_coords.get(loc_str, hub_coords["colombo 3"])
+        # Slight jitter for visual clarity if overlapping
+        lat_offset = (hash(v.get("id", "")) % 10 - 5) * 0.002
+        lng_offset = (hash(v.get("id", "")[::-1]) % 10 - 5) * 0.002
+        markers.append({
+            "id": f"vol-{v.get('id')}",
+            "type": "volunteer",
+            "title": v.get("name"),
+            "subtitle": f"Status: {v.get('current_status', 'available').title()} • {v.get('transport_mode', 'Motorbike')}",
+            "latitude": coords["lat"] + lat_offset,
+            "longitude": coords["lng"] + lng_offset,
+            "location_name": v.get("location"),
+            "status": v.get("current_status", "available")
+        })
+
+    # 3. Active pickups
+    for t in all_tasks:
+        if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED"]:
+            p_loc = str(t.get("pickup_location", "Colombo")).lower()
+            coords = hub_coords.get(p_loc, hub_coords["colombo"])
+            markers.append({
+                "id": f"pickup-{t.get('id')}",
+                "type": "pickup_point",
+                "title": f"Pickup Task {t.get('id')}",
+                "subtitle": f"Deliver to: {t.get('delivery_location')}",
+                "latitude": coords["lat"] + 0.003,
+                "longitude": coords["lng"] - 0.002,
+                "location_name": t.get("pickup_location"),
+                "status": t.get("status")
+            })
+
+    return JSONResponse(content={
+        "status": "success",
+        "center": {"lat": 6.9271, "lng": 79.8612, "zoom": 13},
+        "count": len(markers),
+        "markers": markers
+    })
+
+
+@router.get("/api/reports")
+async def get_reports_endpoint():
+    """Get aggregated impact analytics and reporting metrics."""
+    stats = database.get_dashboard_stats()
+    total_qty = float(stats.get("total_food_quantity", 0.0) or 0.0)
+    all_vols = database.get_all_volunteers()
+    all_orgs = database.get_all_organizations()
+    all_dons = database.get_all_donations()
+
+    # Regional distribution
+    region_counts = {}
+    for d in all_dons:
+        loc = d.get("pickup_location", "Colombo").title()
+        region_counts[loc] = region_counts.get(loc, 0) + 1
+
+    # Volunteer rankings
+    vol_leaders = []
+    for v in all_vols:
+        vol_leaders.append({
+            "name": v.get("name"),
+            "transport_mode": v.get("transport_mode", "Motorbike"),
+            "completed_pickups": v.get("completed_pickups", 0),
+            "status": v.get("current_status", "available")
+        })
+    vol_leaders.sort(key=lambda x: x["completed_pickups"], reverse=True)
+
+    return JSONResponse(content={
+        "status": "success",
+        "summary": {
+            "total_meals_rescued": int(total_qty),
+            "total_food_kg": round(total_qty * 0.45, 1),
+            "co2_emissions_prevented_kg": round(total_qty * 2.5, 1),
+            "water_saved_litres": int(total_qty * 140),
+            "financial_value_lkr": int(total_qty * 450),
+            "active_partners": len(all_orgs),
+            "active_couriers": len(all_vols)
+        },
+        "regional_distribution": region_counts,
+        "volunteer_leaderboard": vol_leaders
+    })
+
+
+@router.get("/api/settings")
+async def get_settings_endpoint():
+    """Get system transport configuration and WhatsApp integration health."""
+    transport_cfg = database.get_transport_settings()
+    wa_status = {
+        "phone_number": "+94 75 526 3482",
+        "phone_number_id": "1285744151285887",
+        "waba_id": "2279553849254105",
+        "app_id": "1591721079088296",
+        "webhook_url": "https://foodrescue-ai-ten.vercel.app/whatsapp/webhook",
+        "verify_token_configured": bool(os.environ.get("WHATSAPP_VERIFY_TOKEN")),
+        "access_token_configured": bool(os.environ.get("WHATSAPP_ACCESS_TOKEN")),
+        "database_backend": os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite"),
+        "status": "ONLINE"
+    }
+    return JSONResponse(content={
+        "status": "success",
+        "transport_cost": transport_cfg,
+        "whatsapp_integration": wa_status
+    })
+
+
+class SettingsUpdateRequest(BaseModel):
+    base_fare: Optional[float] = Field(None, ge=0)
+    cost_per_km: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field("LKR", max_length=10)
+    vehicle_multipliers: Optional[dict] = Field(None)
+
+
+@router.post("/api/settings")
+async def update_settings_endpoint(body: SettingsUpdateRequest):
+    """Update dynamic transport reimbursement calculation rates."""
+    current = database.get_transport_settings()
+    if body.base_fare is not None:
+        current["base_fare"] = body.base_fare
+    if body.cost_per_km is not None:
+        current["cost_per_km"] = body.cost_per_km
+    if body.currency:
+        current["currency"] = body.currency
+    if body.vehicle_multipliers:
+        current["vehicle_multipliers"] = body.vehicle_multipliers
+
+    updated = database.update_transport_settings(current)
+    return JSONResponse(content={
+        "status": "success",
+        "transport_cost": updated,
+        "message": "Transport cost configuration updated successfully."
     })
 
 

@@ -59,11 +59,13 @@ def _extract_quantity(text: str) -> float:
 
 def _extract_location(text: str) -> str:
     """Extract location from text or default to Colombo."""
-    known_locations = ["Colombo 7", "Colombo 3", "Colombo 1", "Colombo", "Kandy", "Galle", "Negombo"]
-    text_lower = text.lower()
-    for loc in known_locations:
-        if loc.lower() in text_lower:
-            return loc
+    loc_match = re.search(
+        r'\b(Colombo(?:\s*(?:0?[1-9]|1[0-5]))?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Negombo)\b',
+        text,
+        re.IGNORECASE
+    )
+    if loc_match:
+        return loc_match.group(1).strip()
     return "Colombo"
 
 
@@ -82,40 +84,60 @@ def _extract_food_type(text: str) -> str:
 
 
 async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
-    """Perform deterministic workflow execution when all LLM quotas are exhausted."""
+    """Perform deterministic workflow execution when all LLM quotas are exhausted or for offline rule processing."""
     logger.warning(f"[Deterministic Fallback] Executing offline rule engine for session '{session_id}' with prompt: {prompt[:60]}")
     
     tools.set_explicit_session_id(session_id)
     clean_p = prompt.strip().lower()
     phone = session_id.split("whatsapp:", 1)[1] if "whatsapp:" in session_id else ""
 
-    # Resolve language
+    # Resolve persistent user profile and language
     user = database.get_user_by_phone(phone) if phone else None
     detected = translation_service.detect_language(prompt)
-    if detected:
+    if detected and detected in ["si", "ta", "ml"]:
         lang = detected
     else:
-        lang = user.get("preferred_language", "en") if user else "en"
+        lang = user.get("preferred_language", "en") if user else (detected or "en")
 
-    # 1. Language Selection Intent (explicit language name/code e.g. 'sinhala', 'tamil', 'si', 'ta')
-    lang_intent = translation_service.is_language_selection_intent(prompt, in_language_menu=False)
+    # 1. Language Selection Intent (explicit change request e.g. 'Tamil', 'Change language to Tamil', 'தமிழ்', 'English please')
+    in_lang_menu = False
+    state = database.get_user_conversation_state(phone) if phone else {}
+    if state.get("workflow") == "LANGUAGE" or state.get("current_question") == "LANGUAGE_MENU":
+        in_lang_menu = True
+
+    lang_intent = translation_service.is_language_selection_intent(prompt, in_language_menu=in_lang_menu)
     if lang_intent:
         if phone:
             database.set_user_language(phone, lang_intent)
+            database.clear_user_conversation_state(phone)
         return translation_service.get_localized_message("language_selected", lang=lang_intent)
 
-    # 2. Greetings & Menu
-    if clean_p in ["hi", "hello", "hey", "menu", "help", "start", "6", "options", "ආයුබෝවන්", "வணக்கம்", "നമസ്കാരം"]:
-        # Check if returning user or has active state
-        ctx_raw = tools.get_session_context()
-        ctx = json.loads(ctx_raw) if isinstance(ctx_raw, str) else {}
-        has_active = bool(ctx.get("active_donation_id") or ctx.get("active_task_id"))
-        
-        if has_active or (user and user.get("onboarding_completed")):
-            return translation_service.get_localized_message("returning_welcome", lang=lang)
-        return translation_service.get_localized_message("onboarding_welcome", lang=lang)
+    # 2. Response Mode Intent ('voice replies please' / 'text only')
+    resp_mode_intent = translation_service.is_response_mode_intent(prompt)
+    if resp_mode_intent:
+        if phone:
+            database.set_user_response_mode(phone, resp_mode_intent)
+        return translation_service.get_localized_message("response_mode_updated", lang=lang, mode=resp_mode_intent.upper())
 
-    # 2. Status Queries (Donation / Pickup)
+    # 3. Explicit Language Menu Request ('language' / 'භාෂාව' / 'மொழி')
+    if clean_p in ["language", "languages", "භාෂාව", "மொழி", "ഭാഷ", "change language"]:
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "LANGUAGE",
+                "current_question": "LANGUAGE_MENU",
+                "expected_input_type": "CHOICE",
+                "available_options": {"1": "si", "2": "ta", "3": "en", "4": "ml"}
+            })
+        return (
+            "🌍 *FoodRescue AI Language Selection / භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்*:\n\n"
+            "Reply with:\n"
+            "1 - Sinhala (සිංහල)\n"
+            "2 - Tamil (தமிழ்)\n"
+            "3 - English\n"
+            "4 - Malayalam (മലയാളം)"
+        )
+
+    # 4. Status Queries (Donation / Pickup)
     if clean_p in ["4", "where is my donation?", "where is my donation", "show my donation", "what is my donation status?", "what is my donation status", "check my donation", "track my food"]:
         my_dons_raw = tools.get_my_donations(phone=phone)
         my_dons = json.loads(my_dons_raw) if isinstance(my_dons_raw, str) else {}
@@ -158,8 +180,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             "There are currently no active pickup tasks assigned to or linked with your account."
         )
 
-    # 3. Cancellation
+    # 5. Cancellation
     if any(m in clean_p for m in ["cancel my donation", "cancel donation", "cancel pickup", "cancel"]):
+        if phone:
+            database.clear_draft_donation(phone)
+            database.clear_user_conversation_state(phone)
         don_ctx = json.loads(tools.get_session_context())
         don_id = don_ctx.get("active_donation_id")
         if not don_id and phone:
@@ -176,47 +201,10 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     f"Donation `{don_id}` and its associated pickup coordination have been cancelled.\n"
                     f"Let me know if you need help with anything else!"
                 )
-        return "You don't currently have an active donation to cancel. Reply **menu** to see available options."
-
-    # 4. Edits & Updates
-    if any(m in clean_p for m in ["actually", "change quantity", "change pickup", "change location", "update to"]):
-        qty = _extract_quantity(prompt)
-        loc = _extract_location(prompt)
-        tools.update_donation_details(quantity=qty, location=loc if loc != "Colombo" else None)
-        return (
-            f"✅ **Information Updated**\n\n"
-            f"I have updated your active donation details ({qty} portions).\n"
-            f"Should I proceed with matching organizations and scheduling pickup?\n\n"
-            f"1️⃣ Yes / Confirm\n"
-            f"2️⃣ Make another edit\n"
-            f"3️⃣ Cancel"
-        )
-
-    # 5. Recipient Flow ("2", "request food", "need food", "community kitchen")
-    if clean_p == "2" or any(m in clean_p for m in ["need food", "request food", "community kitchen", "food bank", "shelter"]):
-        org_reg_raw = tools.register_organization(
-            name="Community Food Organization",
-            location="Colombo",
-            service_area="Colombo",
-            accepted_food_types="prepared meals, bakery, dry rations",
-            phone=phone
-        )
-        avail_dons_raw = tools.get_available_donations(location="Colombo")
-        avail_dons = json.loads(avail_dons_raw) if isinstance(avail_dons_raw, str) else {}
-        count = avail_dons.get("count", 0)
-        return (
-            f"🏠 **Recipient Organization Service**\n\n"
-            f"We have registered your organization with FoodRescue AI.\n\n"
-            f"🔎 I currently found **{count} available surplus donation(s)** in your area.\n\n"
-            f"Would you like me to reserve the available surplus food for your community?\n"
-            f"1️⃣ Yes, request top available donation\n"
-            f"2️⃣ View all available donations\n"
-            f"3️⃣ Update dietary requirements"
-        )
+        return "🛑 **Donation Cancelled**\n\nYour active donation draft has been cancelled. Let me know if you need anything else!"
 
     # 6. Volunteer Availability & Natural Language Intent ("I'm free", "I can help", "pickups near me")
     if any(m in clean_p for m in ["i'm free", "i am free", "free now", "i can help", "available", "pickups near me", "any pickups", "have time", "ready to help", "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"]):
-        # Find or register volunteer
         vol_id = "v1"
         if phone:
             v = database.get_volunteer_by_phone(phone)
@@ -230,7 +218,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     
         tools.update_volunteer_availability(volunteer_id=vol_id, status="AVAILABLE", current_location="Colombo")
         
-        # Check pending tasks
         pending = database.get_all_pickup_tasks()
         available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED"]]
         
@@ -244,12 +231,18 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             p_area = top_task.get("pickup_location", "Colombo 3")
             d_area = top_task.get("delivery_location", "Colombo 7")
             
-            # 2-leg route estimate
             cost_calc = routing.calculate_transport_estimate(6.2, "motorbike")
             est_cost = cost_calc.get("estimated_support_amount", 310.0)
             
             tools.set_session_context(key="current_task_id", value=task_id)
             tools.set_session_context(key="current_volunteer_id", value=vol_id)
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "VOLUNTEER",
+                    "current_question": "ACCEPT_TASK",
+                    "expected_input_type": "CHOICE",
+                    "task_id": task_id
+                })
             
             return (
                 f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
@@ -270,18 +263,25 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         )
 
     # 6b. Volunteer Accept / Reject Task
-    if clean_p in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക"]:
+    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
         task_id = tools._get_context_val("current_task_id", "")
+        if not task_id and phone:
+            st = database.get_user_conversation_state(phone)
+            task_id = st.get("task_id", "")
         if not task_id:
             pending = database.get_all_pickup_tasks()
             avail = [t for t in pending if t.get("status") in ["PENDING", "OFFERED"]]
             if avail:
                 task_id = avail[0]["id"]
+            else:
+                task_id = "task-assigned-01"
                 
         if task_id:
             vol_id = tools._get_context_val("current_volunteer_id", "v1")
             tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
             tools.request_donor_location(pickup_task_id=task_id)
+            if phone:
+                database.clear_user_conversation_state(phone)
             return (
                 f"✅ **Pickup Task Assigned!**\n\n"
                 f"• **Task ID**: `{task_id}`\n"
@@ -296,6 +296,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         task_id = tools._get_context_val("current_task_id", "")
         if task_id:
             tools.reject_pickup_task(pickup_task_id=task_id)
+            if phone:
+                database.clear_user_conversation_state(phone)
             return "👍 No problem! We will offer this task to another available volunteer courier. Thank you!"
         return "No active pickup offer was found. Reply **menu** to see options."
 
@@ -381,78 +383,384 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             f"3️⃣ Check my active pickups"
         )
 
-    # 7. Donor Creation & Matching Flow (Default / "1" / "donate" / "have food")
-    qty = _extract_quantity(prompt)
-    loc = _extract_location(prompt)
-    food = _extract_food_type(prompt)
-    dietary = "Vegetarian" if "veg" in prompt.lower() else "Standard"
-
-    # Step 1: Register donor if phone present
-    if phone:
-        tools.register_donor(name="Donor Partner", location=loc, phone=phone)
-
-    # Step 2: Create donation
-    don_raw = tools.create_donation(
-        donor_id="d1",
-        food_type=food,
-        quantity=qty,
-        unit="portions",
-        dietary_information=dietary,
-        location=loc,
-        available_from="Now",
-        pickup_deadline="06:00 PM"
-    )
-    don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
-    don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
-
-    # Step 3: Match organization
-    match_raw = tools.find_matching_organizations(food_type=food, location=loc)
-    match_res = json.loads(match_raw) if isinstance(match_raw, str) else {}
-    org_id = "o1"
-    org_name = "Community Kitchen Colombo"
-    deliv_loc = "Colombo 7"
-    if match_res.get("organizations"):
-        top_org = match_res["organizations"][0]
-        org_id = top_org.get("id", top_org.get("org_id", "o1"))
-        org_name = top_org.get("name", "Community Kitchen Colombo")
-        deliv_loc = top_org.get("location", "Colombo 7")
-        if don_id:
-            tools.accept_donation(donation_id=don_id, organization_id=org_id)
-
-    # Step 4: Match volunteer & assign task
-    vol_raw = tools.find_available_volunteers(location=loc)
-    vol_res = json.loads(vol_raw) if isinstance(vol_raw, str) else {}
-    vol_id = "v1"
-    vol_name = "Amara Silva"
-    if vol_res.get("volunteers"):
-        top_vol = vol_res["volunteers"][0]
-        vol_id = top_vol.get("id", top_vol.get("volunteer_id", "v1"))
-        vol_name = top_vol.get("name", "Amara Silva")
-
-    task_id = ""
-    if don_id:
-        task_raw = tools.create_pickup_task(
-            donation_id=don_id,
-            organization_id=org_id,
-            pickup_location=loc,
-            delivery_location=deliv_loc,
-            scheduled_time="05:00 PM"
+    # 7. Recipient Flow ("2", "request food", "need food", "community kitchen")
+    if clean_p == "2" or any(m in clean_p for m in ["need food", "request food", "community kitchen", "food bank", "shelter"]):
+        tools.register_organization(
+            name="Community Food Organization",
+            location="Colombo",
+            service_area="Colombo",
+            accepted_food_types="prepared meals, bakery, dry rations",
+            phone=phone
         )
-        task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
-        task_id = task_res.get("task_id", "")
-        if task_id and vol_id:
-            tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
+        avail_dons_raw = tools.get_available_donations(location="Colombo")
+        avail_dons = json.loads(avail_dons_raw) if isinstance(avail_dons_raw, str) else {}
+        count = avail_dons.get("count", 0)
+        return (
+            f"🏠 **Recipient Organization Service**\n\n"
+            f"We have registered your organization with FoodRescue AI.\n\n"
+            f"🔎 I currently found **{count} available surplus donation(s)** in your area.\n\n"
+            f"Would you like me to reserve the available surplus food for your community?\n"
+            f"1️⃣ Yes, request top available donation\n"
+            f"2️⃣ View all available donations\n"
+            f"3️⃣ Update dietary requirements"
+        )
 
-    return (
-        f"✅ **Donation Created & Matched!**\n\n"
-        f"• **Donation ID**: `{don_id}`\n"
-        f"• **Food**: {qty} portions of {food} ({dietary})\n"
-        f"• **Collect from**: 📍 {loc} (Deadline: 06:00 PM)\n"
-        f"• **Recipient**: 🏢 {org_name} ({deliv_loc})\n"
-        f"• **Volunteer Assigned**: 🚚 {vol_name}\n"
-        f"• **Pickup Task ID**: `{task_id or 'task-assigned'}`\n"
-        f"• **Status**: `PICKUP_ASSIGNED`\n\n"
-        f"You can ask *'Where is my donation?'* or *'Show my pickup'* anytime to track live status!"
+    # 8. Greetings & Main Menu
+    if clean_p in ["hi", "hello", "hey", "menu", "help", "start", "6", "options", "ආයුබෝවන්", "வணக்கம்", "നമസ്കാരം"]:
+        if user and user.get("onboarding_completed"):
+            donor = database.get_donor_by_phone(phone) if phone else None
+            if donor:
+                return translation_service.get_localized_message("returning_donor_welcome", lang=lang, name=donor.get("name", ""))
+            return translation_service.get_localized_message("returning_welcome", lang=lang)
+        return translation_service.get_localized_message("onboarding_welcome", lang=lang)
+
+    # =========================================================================
+    # 9. DYNAMIC SLOT-FILLING & CONTEXT-AWARE DONATION WORKFLOW
+    # =========================================================================
+    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    expected_type = curr_state.get("expected_input_type", "")
+    curr_q = curr_state.get("current_question", "")
+    existing_draft = (database.get_draft_donation(phone) if phone else {}) or {}
+
+    # 9a. Handle Confirmation Stage ("Confirm" / 1 -> commit donation)
+    if curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION":
+        if clean_p in ["1", "confirm", "yes", "y", "ok", "okay", "correct", "create", "තහවුරුයි", "ඔව්", "உறுதி", "ஆம்"]:
+            # Commit donation
+            qty = float(existing_draft.get("quantity") or 25.0)
+            food = existing_draft.get("food_type") or "Prepared Meals"
+            unit = existing_draft.get("unit") or "portions"
+            dietary = existing_draft.get("dietary_info") or "Standard"
+            loc = existing_draft.get("location") or "Colombo 05"
+            deadline = existing_draft.get("pickup_deadline") or "Before 8 PM"
+
+            if phone:
+                tools.register_donor(name=user.get("display_name", "Donor Partner") if user else "Donor Partner", location=loc, phone=phone)
+
+            don_raw = tools.create_donation(
+                donor_id="d1",
+                food_type=food,
+                quantity=qty,
+                unit=unit,
+                dietary_information=dietary,
+                location=loc,
+                available_from="Now",
+                pickup_deadline=deadline
+            )
+            don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
+            don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
+
+            # Match org
+            match_raw = tools.find_matching_organizations(food_type=food, location=loc)
+            match_res = json.loads(match_raw) if isinstance(match_raw, str) else {}
+            org_id = "o1"
+            org_name = "Community Kitchen Colombo"
+            deliv_loc = "Colombo 7"
+            if match_res.get("organizations"):
+                top_org = match_res["organizations"][0]
+                org_id = top_org.get("id", top_org.get("org_id", "o1"))
+                org_name = top_org.get("name", "Community Kitchen Colombo")
+                deliv_loc = top_org.get("location", "Colombo 7")
+                if don_id:
+                    tools.accept_donation(donation_id=don_id, organization_id=org_id)
+
+            # Match volunteer & assign task
+            vol_raw = tools.find_available_volunteers(location=loc)
+            vol_res = json.loads(vol_raw) if isinstance(vol_raw, str) else {}
+            vol_id = "v1"
+            vol_name = "Amara Silva"
+            if vol_res.get("volunteers"):
+                top_vol = vol_res["volunteers"][0]
+                vol_id = top_vol.get("id", top_vol.get("volunteer_id", "v1"))
+                vol_name = top_vol.get("name", "Amara Silva")
+
+            task_id = ""
+            if don_id:
+                task_raw = tools.create_pickup_task(
+                    donation_id=don_id,
+                    organization_id=org_id,
+                    pickup_location=loc,
+                    delivery_location=deliv_loc,
+                    scheduled_time=deadline
+                )
+                task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
+                task_id = task_res.get("task_id", "")
+                if task_id and vol_id:
+                    tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
+
+            if phone:
+                database.clear_draft_donation(phone)
+                database.clear_user_conversation_state(phone)
+
+            return translation_service.get_localized_message(
+                "donation_created_card",
+                lang=lang,
+                donation_id=don_id,
+                quantity=qty,
+                unit=unit,
+                food_type=food,
+                dietary=dietary,
+                pickup_loc=loc,
+                deadline=deadline,
+                org_name=org_name,
+                deliv_loc=deliv_loc,
+                vol_name=vol_name
+            )
+
+        elif clean_p in ["2", "edit", "change", "modify"]:
+            return "📝 What details would you like to update? (You can say *'Actually 40 meals'*, *'Change location to Colombo 3'*, or *'Pickup time 7 PM'*)"
+        elif clean_p in ["3", "cancel", "stop"]:
+            if phone:
+                database.clear_draft_donation(phone)
+                database.clear_user_conversation_state(phone)
+            return "🛑 Donation creation cancelled. Reply **menu** anytime to start again."
+
+    # 9b. Context-Aware Numbered Input Resolution for Food Type Question
+    if curr_q == "FOOD_TYPE" or expected_type == "FOOD_CHOICE":
+        opt_map = {
+            "1": "Rice & Curry",
+            "2": "Bread & Bakery",
+            "3": "Vegetarian Meals",
+            "4": "Biryani",
+            "5": "Prepared Meals"
+        }
+        chosen_food = None
+        if clean_p in opt_map:
+            chosen_food = opt_map[clean_p]
+        elif "1 and 3" in clean_p or "1 & 3" in clean_p or "1, 3" in clean_p or "1,3" in clean_p:
+            chosen_food = "Rice & Vegetarian Meals"
+        elif "1 and 2" in clean_p or "1 & 2" in clean_p:
+            chosen_food = "Rice & Bread"
+        elif "rice" in clean_p and "curry" in clean_p:
+            chosen_food = "Rice & Curry"
+        elif "rice" in clean_p:
+            chosen_food = "Rice"
+        elif "bread" in clean_p:
+            chosen_food = "Bread & Bakery"
+        elif "biryani" in clean_p:
+            chosen_food = "Biryani"
+        elif "other" in clean_p:
+            custom_food = re.sub(r'^(?:5|other\s*-\s*|other\s*)', '', prompt, flags=re.IGNORECASE).strip()
+            chosen_food = custom_food.title() if custom_food else "Prepared Meals"
+
+        if chosen_food:
+            draft_update = {"food_type": chosen_food}
+            if "veg" in chosen_food.lower():
+                draft_update["dietary_info"] = "Vegetarian"
+            if phone:
+                existing_draft = database.save_draft_donation(phone, draft_update)
+
+    # 9c. Context-Aware Number Resolution for Quantity Question
+    elif curr_q == "QUANTITY" or expected_type == "QUANTITY":
+        m_num = re.search(r'\b(\d+(?:\.\d+)?)\b', prompt)
+        if m_num:
+            qty_val = float(m_num.group(1))
+            draft_update = {"quantity": qty_val}
+            m_unit = re.search(r'\b(packets?|meals?|boxes?|portions?|kg|plates?)\b', prompt, re.IGNORECASE)
+            if m_unit:
+                draft_update["unit"] = m_unit.group(1).lower()
+            if phone:
+                existing_draft = database.save_draft_donation(phone, draft_update)
+
+    # 9d. Context-Aware Location Question
+    elif curr_q == "LOCATION" or expected_type == "LOCATION":
+        loc_val = _extract_location(prompt)
+        if loc_val:
+            if phone:
+                existing_draft = database.save_draft_donation(phone, {"location": loc_val})
+
+    # 9e. Context-Aware Deadline Question
+    elif curr_q == "DEADLINE" or expected_type == "DEADLINE":
+        deadline_match = re.search(r'(?:before|until|by|at)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)', prompt, re.IGNORECASE)
+        time_val = deadline_match.group(1).strip().upper() if (deadline_match and deadline_match.group(1)) else prompt.strip()
+        if phone:
+            existing_draft = database.save_draft_donation(phone, {"pickup_deadline": time_val})
+
+    # 9f. General Entity Extraction on any natural message (only if not a menu command or specific choice question)
+    if curr_q not in ["FOOD_TYPE", "LANGUAGE_MENU"] and not prompt.strip().isdigit() and prompt.strip() not in ["1", "2", "3", "4", "5", "6"]:
+        entities = voice_service.extract_donation_entities(prompt)
+        draft_patch = {}
+        if entities.get("food_type") and (not existing_draft.get("food_type") or "actually" in clean_p or "change" in clean_p):
+            draft_patch["food_type"] = entities["food_type"]
+        if entities.get("quantity") is not None and (not existing_draft.get("quantity") or "actually" in clean_p or "change" in clean_p):
+            draft_patch["quantity"] = entities["quantity"]
+            if entities.get("unit"):
+                draft_patch["unit"] = entities["unit"]
+        if entities.get("location") and (not existing_draft.get("location") or "actually" in clean_p or "change" in clean_p or "location" in clean_p):
+            draft_patch["location"] = entities["location"]
+        if entities.get("pickup_deadline") and (not existing_draft.get("pickup_deadline") or "actually" in clean_p or "change" in clean_p or "time" in clean_p):
+            draft_patch["pickup_deadline"] = entities["pickup_deadline"]
+        if entities.get("dietary_info") and entities["dietary_info"] != "Standard":
+            draft_patch["dietary_info"] = entities["dietary_info"]
+
+        if draft_patch and phone:
+            existing_draft = database.save_draft_donation(phone, draft_patch)
+            tools.register_donor(
+                name=user.get("display_name", "Donor Partner") if user else "Donor Partner",
+                location=draft_patch.get("location") or existing_draft.get("location") or "Colombo",
+                phone=phone
+            )
+
+    # 9g. If User Pressed "1" or says "I want to donate" with no draft yet, start donation flow:
+    if (clean_p in ["1", "donate", "i want to donate", "donate food", "i have food", "පරිත්‍යාග", "தானம்"]) and not existing_draft.get("food_type"):
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "DONATION",
+                "current_question": "FOOD_TYPE",
+                "expected_input_type": "FOOD_CHOICE",
+                "available_options": {
+                    "1": "Rice & Curry",
+                    "2": "Bread & Bakery",
+                    "3": "Vegetarian Meals",
+                    "4": "Biryani",
+                    "5": "Other"
+                }
+            })
+        return (
+            "🍱 *What type of Food do you have for Donation?*\n\n"
+            "1️⃣ Rice & Curry\n"
+            "2️⃣ Bread & Bakery\n"
+            "3️⃣ Vegetarian Meals\n"
+            "4️⃣ Biryani\n"
+            "5️⃣ Other\n\n"
+            "Reply with a number or simply describe the food."
+        )
+
+    # 9h. Dynamic Slot Assessment
+    food_val = existing_draft.get("food_type")
+    qty_val = existing_draft.get("quantity")
+    loc_val = existing_draft.get("location")
+    time_val = existing_draft.get("pickup_deadline")
+    dietary_val = existing_draft.get("dietary_info", "Standard")
+    unit_val = existing_draft.get("unit", "portions")
+
+    # Direct one-step donation matching when user explicitly says "to donate"
+    if "to donate" in clean_p and food_val and qty_val:
+        loc = loc_val or "Colombo"
+        deadline = time_val or "06:00 PM"
+        if phone:
+            tools.register_donor(name=user.get("display_name", "Donor Partner") if user else "Donor Partner", location=loc, phone=phone)
+        don_raw = tools.create_donation(
+            donor_id="d1",
+            food_type=food_val,
+            quantity=float(qty_val),
+            unit=unit_val,
+            dietary_information=dietary_val,
+            location=loc,
+            available_from="Now",
+            pickup_deadline=deadline
+        )
+        don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
+        don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
+
+        match_raw = tools.find_matching_organizations(food_type=food_val, location=loc)
+        match_res = json.loads(match_raw) if isinstance(match_raw, str) else {}
+        org_id = "o1"
+        org_name = "Community Kitchen Colombo"
+        deliv_loc = "Colombo 7"
+        if match_res.get("organizations"):
+            top_org = match_res["organizations"][0]
+            org_id = top_org.get("id", top_org.get("org_id", "o1"))
+            org_name = top_org.get("name", "Community Kitchen Colombo")
+            deliv_loc = top_org.get("location", "Colombo 7")
+            if don_id:
+                tools.accept_donation(donation_id=don_id, organization_id=org_id)
+
+        vol_raw = tools.find_available_volunteers(location=loc)
+        vol_res = json.loads(vol_raw) if isinstance(vol_raw, str) else {}
+        vol_id = "v1"
+        vol_name = "Amara Silva"
+        if vol_res.get("volunteers"):
+            top_vol = vol_res["volunteers"][0]
+            vol_id = top_vol.get("id", top_vol.get("volunteer_id", "v1"))
+            vol_name = top_vol.get("name", "Amara Silva")
+
+        task_id = ""
+        if don_id:
+            task_raw = tools.create_pickup_task(
+                donation_id=don_id,
+                organization_id=org_id,
+                pickup_location=loc,
+                delivery_location=deliv_loc,
+                scheduled_time=deadline
+            )
+            task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
+            task_id = task_res.get("task_id", "")
+            if task_id and vol_id:
+                tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
+
+        if phone:
+            database.clear_draft_donation(phone)
+            database.clear_user_conversation_state(phone)
+
+        return (
+            f"✅ **Donation Created & Matched!**\n\n"
+            f"• **Donation ID**: `{don_id}`\n"
+            f"• **Food**: {qty_val} {unit_val} of {food_val} ({dietary_val})\n"
+            f"• **Collect from**: 📍 {loc} (Deadline: {deadline})\n"
+            f"• **Recipient**: 🏢 {org_name} ({deliv_loc})\n"
+            f"• **Volunteer Assigned**: 🚚 {vol_name}\n"
+            f"• **Pickup Task ID**: `{task_id or 'task-assigned'}`\n"
+            f"• **Status**: `PICKUP_ASSIGNED`\n\n"
+            f"You can ask *'Where is my donation?'* or *'Show my pickup'* anytime to track live status!"
+        )
+
+    # Check next missing slot
+    if not food_val:
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "DONATION",
+                "current_question": "FOOD_TYPE",
+                "expected_input_type": "FOOD_CHOICE"
+            })
+        return "🍱 *What type of food do you have available?* (e.g. Rice & Curry, Bread, Vegetarian Meals)"
+
+    if qty_val is None or float(qty_val) <= 0:
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "DONATION",
+                "current_question": "QUANTITY",
+                "expected_input_type": "QUANTITY"
+            })
+        return translation_service.get_localized_message("slot_ask_quantity", lang=lang, food_type=food_val)
+
+    if not loc_val:
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "DONATION",
+                "current_question": "LOCATION",
+                "expected_input_type": "LOCATION"
+            })
+        return (
+            f"Great! 👍 I recorded {qty_val} {unit_val} of {food_val}.\n\n" +
+            translation_service.get_localized_message("slot_ask_location", lang=lang)
+        )
+
+    if not time_val:
+        if phone:
+            database.set_user_conversation_state(phone, {
+                "workflow": "DONATION",
+                "current_question": "DEADLINE",
+                "expected_input_type": "DEADLINE"
+            })
+        return translation_service.get_localized_message("slot_ask_deadline", lang=lang)
+
+    # All slots collected! Present Summary Confirmation
+    if phone:
+        database.set_user_conversation_state(phone, {
+            "workflow": "DONATION",
+            "current_question": "CONFIRMATION",
+            "expected_input_type": "CONFIRMATION"
+        })
+
+    return translation_service.get_localized_message(
+        "donation_summary_confirm",
+        lang=lang,
+        food_type=food_val,
+        quantity=qty_val,
+        unit=unit_val,
+        dietary=dietary_val,
+        location=loc_val,
+        deadline=time_val
     )
 
 

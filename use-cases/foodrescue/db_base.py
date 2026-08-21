@@ -388,11 +388,13 @@ class BaseRepository(ABC):
         phone: str,
         display_name: Optional[str] = None,
         preferred_language: str = "en",
+        preferred_response_mode: str = "text",
         user_role: str = "unknown",
         onboarding_completed: bool = False,
+        default_location: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Create or update a user profile record with language preference and onboarding status."""
+        """Create or update a user profile record with language preference, response mode, and onboarding status."""
         pass
 
     @abstractmethod
@@ -403,6 +405,105 @@ class BaseRepository(ABC):
     @abstractmethod
     def set_onboarding_completed(self, phone: str, completed: bool = True) -> bool:
         """Mark a user's onboarding as completed or pending."""
+        pass
+
+    @abstractmethod
+    def set_user_response_mode(self, phone: str, mode: str) -> bool:
+        """Update a user's persistent preferred response mode ('text' or 'voice')."""
+        pass
+
+    @abstractmethod
+    def update_user_profile(
+        self,
+        phone: str,
+        display_name: Optional[str] = None,
+        preferred_language: Optional[str] = None,
+        preferred_response_mode: Optional[str] = None,
+        user_role: Optional[str] = None,
+        default_location: Optional[str] = None,
+        active_donation_id: Optional[str] = None,
+        active_task_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Update fields on a persistent user profile."""
+        pass
+
+    @abstractmethod
+    def get_user_conversation_state(self, phone: str) -> Dict[str, Any]:
+        """Retrieve the active conversation workflow state and slot tracking for a user."""
+        pass
+
+    @abstractmethod
+    def set_user_conversation_state(self, phone: str, state: Dict[str, Any]) -> bool:
+        """Persist the active conversation workflow state and slot tracking for a user."""
+        pass
+
+    @abstractmethod
+    def clear_user_conversation_state(self, phone: str) -> bool:
+        """Clear active conversation workflow state back to IDLE."""
+        pass
+
+    @abstractmethod
+    def save_draft_donation(self, phone: str, draft_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Save or merge in-progress donation draft slot data."""
+        pass
+
+    @abstractmethod
+    def get_draft_donation(self, phone: str) -> Optional[Dict[str, Any]]:
+        """Retrieve active in-progress donation draft slot data."""
+        pass
+
+    @abstractmethod
+    def clear_draft_donation(self, phone: str) -> bool:
+        """Clear in-progress donation draft slot data."""
+        pass
+
+    @abstractmethod
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Retrieve all registered user records."""
+        pass
+
+    @abstractmethod
+    def get_all_donors(self) -> List[Dict[str, Any]]:
+        """Retrieve all registered food donor records."""
+        pass
+
+    @abstractmethod
+    def record_message(
+        self,
+        phone: str,
+        sender: str,
+        text: str,
+        is_voice: bool = False,
+        transcript: Optional[str] = None,
+        timestamp: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Record an incoming or outgoing chat message for conversation history tracking."""
+        pass
+
+    @abstractmethod
+    def get_all_conversations(self) -> List[Dict[str, Any]]:
+        """Retrieve all active conversation threads with latest message and metadata."""
+        pass
+
+    @abstractmethod
+    def get_conversation_messages(self, phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve full chronological chat message history for a phone number."""
+        pass
+
+    @abstractmethod
+    def get_all_audit_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve all operational audit events across the platform."""
+        pass
+
+    @abstractmethod
+    def get_transport_settings(self) -> Dict[str, Any]:
+        """Retrieve dynamic transport reimbursement cost configuration."""
+        pass
+
+    @abstractmethod
+    def update_transport_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Update dynamic transport reimbursement cost configuration."""
         pass
 
 

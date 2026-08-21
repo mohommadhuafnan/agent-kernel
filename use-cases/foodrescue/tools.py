@@ -1027,19 +1027,21 @@ def register_volunteer(
 
 
 def get_user_profile(phone: Optional[str] = None) -> str:
-    """Retrieve user identity and registered role (Donor, Organization, or Volunteer) by phone number."""
+    """Retrieve comprehensive persistent user profile, preferences, registered roles, active draft, and active requests."""
     target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
     if not target_phone:
         donor_id = _get_context_val("current_donor_id")
         if donor_id:
             d = database.get_donor_record(donor_id)
             if d:
-                return json.dumps({"status": "success", "role": "donor", "profile": d}, indent=2)
+                return json.dumps({"status": "success", "primary_role": "donor", "profile": d}, indent=2)
         return json.dumps({"status": "not_found", "message": "No registered profile found in context."})
 
+    user = database.get_user_by_phone(target_phone)
     donor = database.get_donor_by_phone(target_phone)
     org = database.get_organization_by_phone(target_phone)
     vol = database.get_volunteer_by_phone(target_phone)
+    draft = database.get_draft_donation(target_phone)
 
     roles = []
     if donor:
@@ -1049,19 +1051,52 @@ def get_user_profile(phone: Optional[str] = None) -> str:
     if vol:
         roles.append({"role": "volunteer", "id": vol["id"], "name": vol["name"], "data": vol})
 
-    if not roles:
+    # Active donations
+    active_donation = None
+    if donor:
+        all_dons = database.get_donations_by_donor_id(donor["id"])
+        open_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING", "PICKUP_ASSIGNED", "PICKED_UP", "COLLECTED"]]
+        if open_dons:
+            active_donation = open_dons[0]
+
+    # Active pickup task
+    active_pickup = None
+    if vol:
+        all_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
+        open_tasks = [t for t in all_tasks if t.get("status") in ["OFFERED", "ASSIGNED", "EN_ROUTE", "COLLECTED", "IN_TRANSIT"]]
+        if open_tasks:
+            active_pickup = open_tasks[0]
+
+    if not user and not roles:
         return json.dumps({
             "status": "not_found",
             "phone": target_phone,
-            "message": "No registered donor, organization, or volunteer profile found for this phone number."
+            "message": "No registered user or profile found for this phone number."
         }, indent=2)
 
-    primary = roles[0]
+    primary_role = roles[0]["role"] if roles else (user.get("user_role") if user else "unknown")
+    primary_data = roles[0]["data"] if roles else (user or {})
+    disp_name = (user.get("display_name") if user else None) or (roles[0]["name"] if roles else f"User_{target_phone[-4:]}")
+    pref_lang = user.get("preferred_language", "en") if user else "en"
+    pref_mode = user.get("preferred_response_mode", "text") if user else "text"
+    def_loc = (user.get("default_location") if user else None) or (donor.get("location") if donor else (vol.get("location") if vol else None))
+
     return json.dumps({
         "status": "success",
         "phone": target_phone,
-        "primary_role": primary["role"],
-        "profile": primary["data"],
+        "display_name": disp_name,
+        "preferred_language": pref_lang,
+        "preferred_response_mode": pref_mode,
+        "primary_role": primary_role,
+        "default_location": def_loc,
+        "profile": primary_data,
+        "user_record": user,
+        "donor_profile": donor,
+        "organization_profile": org,
+        "volunteer_profile": vol,
+        "active_donation": active_donation,
+        "active_pickup": active_pickup,
+        "active_draft": draft,
         "all_roles": roles
     }, indent=2)
 
@@ -1938,6 +1973,132 @@ def identify_missing_donation_info(
         "missing_fields": missing,
         "next_prompt_field": missing[0] if missing else None
     }, indent=2)
+
+
+def set_user_response_mode(mode: str, phone: Optional[str] = None) -> str:
+    """Set the user's preferred WhatsApp response mode ('text' or 'voice')."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    clean_mode = "voice" if "voice" in str(mode).lower() else "text"
+    if target_phone:
+        database.set_user_response_mode(target_phone, clean_mode)
+    _set_context_val("preferred_response_mode", clean_mode)
+    return json.dumps({
+        "status": "success",
+        "response_mode": clean_mode,
+        "message": f"Response mode set to {clean_mode}."
+    }, indent=2)
+
+
+def get_user_response_mode(phone: Optional[str] = None) -> str:
+    """Retrieve the user's preferred WhatsApp response mode ('text' or 'voice')."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    mode = _get_context_val("preferred_response_mode")
+    if not mode and target_phone:
+        user = database.get_user_by_phone(target_phone)
+        if user:
+            mode = user.get("preferred_response_mode", "text")
+    return json.dumps({
+        "status": "success",
+        "response_mode": mode or "text"
+    }, indent=2)
+
+
+def get_conversation_state(phone: Optional[str] = None) -> str:
+    """Retrieve persistent conversation state and slot progress for the user."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    state = {}
+    if target_phone:
+        state = database.get_user_conversation_state(target_phone)
+    if not state:
+        cache = _get_session_cache()
+        if cache and cache.has("conversation_state"):
+            state = cache.get("conversation_state") or {}
+    return json.dumps({"status": "success", "state": state}, indent=2)
+
+
+def set_conversation_state(state: str, phone: Optional[str] = None) -> str:
+    """Persist conversation state (workflow, current_question, expected_input_type, options)."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    state_dict = {}
+    if isinstance(state, str):
+        try:
+            state_dict = json.loads(state)
+        except Exception:
+            state_dict = {"workflow": state}
+    elif isinstance(state, dict):
+        state_dict = state
+
+    if target_phone:
+        database.set_user_conversation_state(target_phone, state_dict)
+    _set_context_val("conversation_state", state_dict)
+    return json.dumps({"status": "success", "state": state_dict}, indent=2)
+
+
+def clear_conversation_state(phone: Optional[str] = None) -> str:
+    """Clear persistent conversation state back to IDLE."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    if target_phone:
+        database.clear_user_conversation_state(target_phone)
+    _set_context_val("conversation_state", {})
+    return json.dumps({"status": "success", "message": "Conversation state cleared."}, indent=2)
+
+
+def update_draft_donation(
+    food_type: Optional[str] = None,
+    quantity: Optional[float] = None,
+    unit: Optional[str] = None,
+    dietary_information: Optional[str] = None,
+    location: Optional[str] = None,
+    available_from: Optional[str] = None,
+    pickup_deadline: Optional[str] = None,
+    phone: Optional[str] = None
+) -> str:
+    """Save or merge in-progress donation draft slot data."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    draft_update = {}
+    if food_type is not None:
+        draft_update["food_type"] = food_type
+    if quantity is not None:
+        try:
+            draft_update["quantity"] = float(quantity)
+        except (ValueError, TypeError):
+            pass
+    if unit is not None:
+        draft_update["unit"] = unit
+    if dietary_information is not None:
+        draft_update["dietary_information"] = dietary_information
+    if location is not None:
+        draft_update["location"] = location
+    if available_from is not None:
+        draft_update["available_from"] = available_from
+    if pickup_deadline is not None:
+        draft_update["pickup_deadline"] = pickup_deadline
+
+    merged = {}
+    if target_phone:
+        merged = database.save_draft_donation(target_phone, draft_update)
+    _set_context_val("active_draft", merged)
+    return json.dumps({"status": "success", "draft": merged}, indent=2)
+
+
+def get_draft_donation(phone: Optional[str] = None) -> str:
+    """Retrieve active in-progress donation draft slot data."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    draft = None
+    if target_phone:
+        draft = database.get_draft_donation(target_phone)
+    if not draft:
+        draft = _get_context_val("active_draft")
+    return json.dumps({"status": "success", "draft": draft or {}}, indent=2)
+
+
+def clear_draft_donation(phone: Optional[str] = None) -> str:
+    """Clear in-progress donation draft slot data."""
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    if target_phone:
+        database.clear_draft_donation(target_phone)
+    _set_context_val("active_draft", {})
+    return json.dumps({"status": "success", "message": "Draft donation cleared."}, indent=2)
 
 
 

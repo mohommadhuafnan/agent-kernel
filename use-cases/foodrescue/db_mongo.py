@@ -110,6 +110,14 @@ class MongoRepository(BaseRepository):
     def users_col(self) -> Collection:
         return self._get_db()["users"]
 
+    @property
+    def messages_col(self) -> Collection:
+        return self._get_db()["messages"]
+
+    @property
+    def system_settings_col(self) -> Collection:
+        return self._get_db()["system_settings"]
+
     def setup_database(self) -> None:
         """Create necessary indexes on all collections."""
         try:
@@ -666,6 +674,9 @@ class MongoRepository(BaseRepository):
         self.pickup_tasks_col.delete_many({})
         self.notifications_col.delete_many({})
         self.donations_col.delete_many({})
+        self.audit_events_col.delete_many({})
+        self.users_col.delete_many({})
+        self.messages_col.delete_many({})
 
     # Reimbursements (Accounting Ledger)
     def create_reimbursement_record(
@@ -907,6 +918,13 @@ class MongoRepository(BaseRepository):
         res = self._clean_doc(doc)
         if res:
             res["onboarding_completed"] = bool(res.get("onboarding_completed", False))
+            res["preferred_response_mode"] = res.get("preferred_response_mode") or "text"
+            if not isinstance(res.get("metadata"), dict):
+                res["metadata"] = {}
+            if not isinstance(res.get("conversation_state"), dict):
+                res["conversation_state"] = {}
+            if not isinstance(res.get("active_draft"), dict):
+                res["active_draft"] = {}
         return res
 
     def create_or_update_user(
@@ -914,8 +932,10 @@ class MongoRepository(BaseRepository):
         phone: str,
         display_name: Optional[str] = None,
         preferred_language: str = "en",
+        preferred_response_mode: str = "text",
         user_role: str = "unknown",
         onboarding_completed: bool = False,
+        default_location: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
@@ -928,10 +948,14 @@ class MongoRepository(BaseRepository):
                 updates["display_name"] = display_name
             if preferred_language:
                 updates["preferred_language"] = preferred_language
+            if preferred_response_mode:
+                updates["preferred_response_mode"] = preferred_response_mode
             if user_role and user_role != "unknown":
                 updates["user_role"] = user_role
             if onboarding_completed:
                 updates["onboarding_completed"] = True
+            if default_location:
+                updates["default_location"] = default_location
             if metadata:
                 updates["metadata"] = metadata
                 
@@ -941,14 +965,72 @@ class MongoRepository(BaseRepository):
                 "phone_number": norm,
                 "display_name": display_name or f"User_{norm[-4:]}",
                 "preferred_language": preferred_language or "en",
-                "user_role": user_role or "unknown",
+                "preferred_response_mode": preferred_response_mode or "text",
+                "user_role": user_role,
                 "onboarding_completed": bool(onboarding_completed),
+                "default_location": default_location,
+                "first_seen_at": now,
+                "last_seen_at": now,
+                "metadata": metadata or {},
+                "conversation_state": {},
+                "active_draft": {}
+            }
+            self.users_col.insert_one(doc)
+            
+        return self.get_user_by_phone(norm) or {}
+
+    def update_user_profile(
+        self,
+        phone: str,
+        display_name: Optional[str] = None,
+        preferred_language: Optional[str] = None,
+        preferred_response_mode: Optional[str] = None,
+        user_role: Optional[str] = None,
+        default_location: Optional[str] = None,
+        active_donation_id: Optional[str] = None,
+        active_task_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        norm = self._normalize_phone(phone)
+        now = self._now()
+        existing = self.users_col.find_one({"phone_number": norm})
+        if not existing:
+            doc = {
+                "phone_number": norm,
+                "display_name": display_name or f"User_{norm[-4:]}",
+                "preferred_language": preferred_language or "en",
+                "preferred_response_mode": preferred_response_mode or "text",
+                "user_role": user_role or "unknown",
+                "default_location": default_location,
+                "active_donation_id": active_donation_id,
+                "active_task_id": active_task_id,
+                "conversation_state": {},
+                "active_draft": {},
+                "onboarding_completed": False,
                 "first_seen_at": now,
                 "last_seen_at": now,
                 "metadata": metadata or {}
             }
             self.users_col.insert_one(doc)
-            
+        else:
+            updates: Dict[str, Any] = {"last_seen_at": now}
+            if display_name is not None:
+                updates["display_name"] = display_name
+            if preferred_language is not None:
+                updates["preferred_language"] = preferred_language
+            if preferred_response_mode is not None:
+                updates["preferred_response_mode"] = preferred_response_mode
+            if user_role is not None:
+                updates["user_role"] = user_role
+            if default_location is not None:
+                updates["default_location"] = default_location
+            if active_donation_id is not None:
+                updates["active_donation_id"] = active_donation_id
+            if active_task_id is not None:
+                updates["active_task_id"] = active_task_id
+            if metadata is not None:
+                updates["metadata"] = metadata
+            self.users_col.update_one({"phone_number": norm}, {"$set": updates})
         return self.get_user_by_phone(norm) or {}
 
     def set_user_language(self, phone: str, language: str) -> bool:
@@ -956,9 +1038,21 @@ class MongoRepository(BaseRepository):
         now = self._now()
         res = self.users_col.update_one(
             {"phone_number": norm},
-            {"$set": {"preferred_language": language.lower().strip(), "last_seen_at": now}}
+            {"$set": {"preferred_language": language.lower().strip(), "last_seen_at": now}},
+            upsert=True
         )
-        return res.matched_count > 0
+        return True
+
+    def set_user_response_mode(self, phone: str, mode: str) -> bool:
+        norm = self._normalize_phone(phone)
+        now = self._now()
+        clean_mode = "voice" if "voice" in mode.lower() else "text"
+        self.users_col.update_one(
+            {"phone_number": norm},
+            {"$set": {"preferred_response_mode": clean_mode, "last_seen_at": now}},
+            upsert=True
+        )
+        return True
 
     def set_onboarding_completed(self, phone: str, completed: bool = True) -> bool:
         norm = self._normalize_phone(phone)
@@ -968,5 +1062,196 @@ class MongoRepository(BaseRepository):
             {"$set": {"onboarding_completed": bool(completed), "last_seen_at": now}}
         )
         return res.matched_count > 0
+
+    def get_user_conversation_state(self, phone: str) -> Dict[str, Any]:
+        user = self.get_user_by_phone(phone)
+        if user and isinstance(user.get("conversation_state"), dict):
+            return user["conversation_state"]
+        return {}
+
+    def set_user_conversation_state(self, phone: str, state: Dict[str, Any]) -> bool:
+        norm = self._normalize_phone(phone)
+        now = self._now()
+        self.users_col.update_one(
+            {"phone_number": norm},
+            {"$set": {"conversation_state": state or {}, "last_seen_at": now}},
+            upsert=True
+        )
+        return True
+
+    def clear_user_conversation_state(self, phone: str) -> bool:
+        return self.set_user_conversation_state(phone, {})
+
+    def save_draft_donation(self, phone: str, draft_data: Dict[str, Any]) -> Dict[str, Any]:
+        norm = self._normalize_phone(phone)
+        user = self.get_user_by_phone(norm)
+        existing_draft = (user.get("active_draft") or {}) if user else {}
+        if not isinstance(existing_draft, dict):
+            existing_draft = {}
+        merged = dict(existing_draft)
+        for k, v in draft_data.items():
+            if v is not None:
+                merged[k] = v
+        now = self._now()
+        self.users_col.update_one(
+            {"phone_number": norm},
+            {"$set": {"active_draft": merged, "last_seen_at": now}},
+            upsert=True
+        )
+        return merged
+
+    def get_draft_donation(self, phone: str) -> Optional[Dict[str, Any]]:
+        user = self.get_user_by_phone(phone)
+        if user and user.get("active_draft"):
+            draft = user["active_draft"]
+            if isinstance(draft, dict) and any(draft.values()):
+                return draft
+        return None
+
+    def clear_draft_donation(self, phone: str) -> bool:
+        norm = self._normalize_phone(phone)
+        now = self._now()
+        res = self.users_col.update_one(
+            {"phone_number": norm},
+            {"$set": {"active_draft": {}, "last_seen_at": now}}
+        )
+        return True
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        docs = list(self.users_col.find({}).sort("last_seen_at", pymongo.DESCENDING))
+        users = []
+        for doc in docs:
+            c = self._clean_doc(doc)
+            if c:
+                c["onboarding_completed"] = bool(c.get("onboarding_completed", False))
+                c["preferred_response_mode"] = c.get("preferred_response_mode") or "text"
+                if not isinstance(c.get("metadata"), dict):
+                    c["metadata"] = {}
+                if not isinstance(c.get("conversation_state"), dict):
+                    c["conversation_state"] = {}
+                if not isinstance(c.get("active_draft"), dict):
+                    c["active_draft"] = {}
+                users.append(c)
+        return users
+
+    def get_all_donors(self) -> List[Dict[str, Any]]:
+        docs = list(self.donors_col.find({}).sort("created_at", pymongo.DESCENDING))
+        return self._clean_docs(docs)
+
+    def record_message(
+        self,
+        phone: str,
+        sender: str,
+        text: str,
+        is_voice: bool = False,
+        transcript: Optional[str] = None,
+        timestamp: Optional[str] = None
+    ) -> Dict[str, Any]:
+        import uuid
+        norm = self._normalize_phone(phone)
+        msg_id = f"msg-{uuid.uuid4().hex[:8]}"
+        ts = timestamp or self._now()
+        doc = {
+            "id": msg_id,
+            "phone_number": norm,
+            "sender": sender,
+            "message_text": text,
+            "is_voice": bool(is_voice),
+            "transcript": transcript,
+            "timestamp": ts
+        }
+        self.messages_col.insert_one(doc)
+
+        # Update or create user record
+        self.users_col.update_one(
+            {"phone_number": norm},
+            {
+                "$set": {"last_seen_at": ts},
+                "$setOnInsert": {
+                    "phone_number": norm,
+                    "display_name": f"User_{norm[-4:]}",
+                    "preferred_language": "en",
+                    "preferred_response_mode": "voice" if is_voice else "text",
+                    "first_seen_at": ts,
+                    "user_role": "unknown",
+                    "onboarding_completed": False,
+                    "metadata": {},
+                    "conversation_state": {},
+                    "active_draft": {}
+                }
+            },
+            upsert=True
+        )
+        return self._clean_doc(doc) or {}
+
+    def get_all_conversations(self) -> List[Dict[str, Any]]:
+        # Fetch all registered users
+        users = self.get_all_users()
+        conversations = []
+
+        for u in users:
+            norm = u["phone_number"]
+            # Get latest message
+            latest_msg_doc = self.messages_col.find_one({"phone_number": norm}, sort=[("timestamp", pymongo.DESCENDING)])
+            latest_msg = self._clean_doc(latest_msg_doc) if latest_msg_doc else None
+            msg_count = self.messages_col.count_documents({"phone_number": norm})
+
+            conversations.append({
+                "phone_number": norm,
+                "display_name": u.get("display_name") or f"User_{norm[-4:]}",
+                "user_role": u.get("user_role", "unknown"),
+                "preferred_language": u.get("preferred_language", "en"),
+                "preferred_response_mode": u.get("preferred_response_mode", "text"),
+                "message_count": msg_count,
+                "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
+                "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
+                "last_message_is_voice": bool(latest_msg.get("is_voice", False)) if latest_msg else False,
+                "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
+                "onboarding_completed": bool(u.get("onboarding_completed", False)),
+            })
+
+        # Sort by last_activity descending
+        conversations.sort(key=lambda c: str(c.get("last_activity", "")), reverse=True)
+        return conversations
+
+    def get_conversation_messages(self, phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+        norm = self._normalize_phone(phone)
+        docs = list(self.messages_col.find({"phone_number": norm}).sort("timestamp", pymongo.ASCENDING).limit(limit))
+        return self._clean_docs(docs)
+
+    def get_all_audit_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        docs = list(self.audit_events_col.find({}).sort("created_at", pymongo.DESCENDING).limit(limit))
+        return self._clean_docs(docs)
+
+    def get_transport_settings(self) -> Dict[str, Any]:
+        doc = self.system_settings_col.find_one({"setting_key": "transport_cost"})
+        if doc and doc.get("setting_value"):
+            try:
+                val = doc["setting_value"]
+                return json.loads(val) if isinstance(val, str) else val
+            except Exception:
+                pass
+        return {
+            "base_fare": 150.0,
+            "cost_per_km": 80.0,
+            "currency": "LKR",
+            "vehicle_multipliers": {
+                "Motorbike": 1.0,
+                "Bicycle": 0.6,
+                "Car": 1.5,
+                "Van": 2.0,
+                "Three-Wheeler": 1.2
+            }
+        }
+
+    def update_transport_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+        now = self._now()
+        val_json = json.dumps(settings)
+        self.system_settings_col.update_one(
+            {"setting_key": "transport_cost"},
+            {"$set": {"setting_value": val_json, "updated_at": now}},
+            upsert=True
+        )
+        return settings
 
 

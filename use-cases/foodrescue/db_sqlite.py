@@ -203,11 +203,39 @@ class SQLiteRepository(BaseRepository):
                 phone_number TEXT PRIMARY KEY,
                 display_name TEXT,
                 preferred_language TEXT DEFAULT 'en',
+                preferred_response_mode TEXT DEFAULT 'text',
                 user_role TEXT DEFAULT 'unknown',
+                default_location TEXT,
+                active_donation_id TEXT,
+                active_task_id TEXT,
+                conversation_state TEXT,
+                active_draft TEXT,
                 onboarding_completed INTEGER DEFAULT 0,
                 first_seen_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL,
                 metadata TEXT
+            )
+            ''')
+
+            # WhatsApp & Web Chat Message History
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                phone_number TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                is_voice INTEGER DEFAULT 0,
+                transcript TEXT,
+                timestamp TEXT NOT NULL
+            )
+            ''')
+
+            # System Settings & Dynamic Transport Configuration
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             ''')
 
@@ -250,6 +278,20 @@ class SQLiteRepository(BaseRepository):
                 except sqlite3.OperationalError:
                     pass
 
+            user_cols = [
+                ("preferred_response_mode", "TEXT DEFAULT 'text'"),
+                ("default_location", "TEXT"),
+                ("active_donation_id", "TEXT"),
+                ("active_task_id", "TEXT"),
+                ("conversation_state", "TEXT"),
+                ("active_draft", "TEXT"),
+            ]
+            for col_name, col_def in user_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
+                except sqlite3.OperationalError:
+                    pass
+
         conn.close()
 
     def seed_test_data(self) -> None:
@@ -283,6 +325,25 @@ class SQLiteRepository(BaseRepository):
                 cursor.execute(
                     "INSERT INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "weekends, evenings", "available", "Colombo 5", self._now())
+                )
+
+            # Seed default system settings if not present
+            cursor.execute("SELECT COUNT(*) FROM system_settings WHERE setting_key = 'transport_cost'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(
+                    "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)",
+                    ("transport_cost", json.dumps({
+                        "base_fare": 150.0,
+                        "cost_per_km": 80.0,
+                        "currency": "LKR",
+                        "vehicle_multipliers": {
+                            "Motorbike": 1.0,
+                            "Bicycle": 0.6,
+                            "Car": 1.5,
+                            "Van": 2.0,
+                            "Three-Wheeler": 1.2
+                        }
+                    }), self._now())
                 )
         conn.close()
 
@@ -828,14 +889,15 @@ class SQLiteRepository(BaseRepository):
         }
 
     def reset_database_data(self) -> None:
+        self.setup_database()
         conn = self._get_connection()
         with conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM pickup_location_history")
-            cursor.execute("DELETE FROM reimbursements")
-            cursor.execute("DELETE FROM pickup_tasks")
-            cursor.execute("DELETE FROM notifications")
-            cursor.execute("DELETE FROM donations")
+            for tbl in ["messages", "pickup_location_history", "reimbursements", "pickup_tasks", "notifications", "donations", "audit_events", "users"]:
+                try:
+                    cursor.execute(f"DELETE FROM {tbl}")
+                except sqlite3.OperationalError:
+                    pass
         conn.close()
 
     # Reimbursements (Accounting Ledger)
@@ -1151,11 +1213,17 @@ class SQLiteRepository(BaseRepository):
             return None
         d = dict(row)
         d["onboarding_completed"] = bool(d.get("onboarding_completed", 0))
-        if d.get("metadata"):
-            try:
-                d["metadata"] = json.loads(d["metadata"])
-            except Exception:
-                pass
+        d["preferred_response_mode"] = d.get("preferred_response_mode") or "text"
+        
+        # Parse JSON columns safely
+        for json_col in ["metadata", "conversation_state", "active_draft"]:
+            if d.get(json_col):
+                try:
+                    d[json_col] = json.loads(d[json_col])
+                except Exception:
+                    pass
+            elif json_col in ["conversation_state", "active_draft", "metadata"]:
+                d[json_col] = {}
         return d
 
     def create_or_update_user(
@@ -1163,8 +1231,10 @@ class SQLiteRepository(BaseRepository):
         phone: str,
         display_name: Optional[str] = None,
         preferred_language: str = "en",
+        preferred_response_mode: str = "text",
         user_role: str = "unknown",
         onboarding_completed: bool = False,
+        default_location: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
@@ -1180,33 +1250,104 @@ class SQLiteRepository(BaseRepository):
                 UPDATE users SET
                     display_name = COALESCE(?, display_name),
                     preferred_language = COALESCE(?, preferred_language),
+                    preferred_response_mode = COALESCE(?, preferred_response_mode),
                     user_role = CASE WHEN ? != 'unknown' THEN ? ELSE user_role END,
                     onboarding_completed = CASE WHEN ? = 1 THEN 1 ELSE onboarding_completed END,
+                    default_location = COALESCE(?, default_location),
                     last_seen_at = ?,
                     metadata = COALESCE(?, metadata)
                 WHERE phone_number = ?
                 ''', (
                     display_name,
                     preferred_language,
+                    preferred_response_mode,
                     user_role, user_role,
                     1 if onboarding_completed else 0,
+                    default_location,
                     now,
                     meta_json,
                     norm
                 ))
             else:
                 cursor.execute('''
-                INSERT INTO users (phone_number, display_name, preferred_language, user_role, onboarding_completed, first_seen_at, last_seen_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, user_role, onboarding_completed, default_location, first_seen_at, last_seen_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     norm,
                     display_name or f"User_{norm[-4:]}",
                     preferred_language or "en",
-                    user_role or "unknown",
+                    preferred_response_mode or "text",
+                    user_role,
                     1 if onboarding_completed else 0,
+                    default_location,
                     now,
                     now,
                     meta_json
+                ))
+        conn.close()
+        return self.get_user_by_phone(norm) or {}
+
+    def update_user_profile(
+        self,
+        phone: str,
+        display_name: Optional[str] = None,
+        preferred_language: Optional[str] = None,
+        preferred_response_mode: Optional[str] = None,
+        user_role: Optional[str] = None,
+        default_location: Optional[str] = None,
+        active_donation_id: Optional[str] = None,
+        active_task_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        now = self._now()
+        meta_json = json.dumps(metadata) if metadata is not None else None
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE phone_number = ?", (norm,))
+            existing = cursor.fetchone()
+            if not existing:
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, user_role, default_location, active_donation_id, active_task_id, first_seen_at, last_seen_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    norm,
+                    display_name or f"User_{norm[-4:]}",
+                    preferred_language or "en",
+                    preferred_response_mode or "text",
+                    user_role or "unknown",
+                    default_location,
+                    active_donation_id,
+                    active_task_id,
+                    now,
+                    now,
+                    meta_json
+                ))
+            else:
+                cursor.execute('''
+                UPDATE users SET
+                    display_name = COALESCE(?, display_name),
+                    preferred_language = COALESCE(?, preferred_language),
+                    preferred_response_mode = COALESCE(?, preferred_response_mode),
+                    user_role = COALESCE(?, user_role),
+                    default_location = COALESCE(?, default_location),
+                    active_donation_id = COALESCE(?, active_donation_id),
+                    active_task_id = COALESCE(?, active_task_id),
+                    metadata = COALESCE(?, metadata),
+                    last_seen_at = ?
+                WHERE phone_number = ?
+                ''', (
+                    display_name,
+                    preferred_language,
+                    preferred_response_mode,
+                    user_role,
+                    default_location,
+                    active_donation_id,
+                    active_task_id,
+                    meta_json,
+                    now,
+                    norm
                 ))
         conn.close()
         return self.get_user_by_phone(norm) or {}
@@ -1217,10 +1358,40 @@ class SQLiteRepository(BaseRepository):
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
-            UPDATE users SET preferred_language = ?, last_seen_at = ? WHERE phone_number = ?
-            ''', (language.lower().strip(), now, norm))
-            updated = cursor.rowcount > 0
+            cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
+            if not cursor.fetchone():
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, preferred_language, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ''', (norm, f"User_{norm[-4:]}", language.lower().strip(), now, now))
+                updated = True
+            else:
+                cursor.execute('''
+                UPDATE users SET preferred_language = ?, last_seen_at = ? WHERE phone_number = ?
+                ''', (language.lower().strip(), now, norm))
+                updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
+    def set_user_response_mode(self, phone: str, mode: str) -> bool:
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        now = self._now()
+        clean_mode = "voice" if "voice" in mode.lower() else "text"
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
+            if not cursor.fetchone():
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, preferred_response_mode, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ''', (norm, f"User_{norm[-4:]}", clean_mode, now, now))
+                updated = True
+            else:
+                cursor.execute('''
+                UPDATE users SET preferred_response_mode = ?, last_seen_at = ? WHERE phone_number = ?
+                ''', (clean_mode, now, norm))
+                updated = cursor.rowcount > 0
         conn.close()
         return updated
 
@@ -1236,5 +1407,284 @@ class SQLiteRepository(BaseRepository):
             updated = cursor.rowcount > 0
         conn.close()
         return updated
+
+    def get_user_conversation_state(self, phone: str) -> Dict[str, Any]:
+        user = self.get_user_by_phone(phone)
+        if user and isinstance(user.get("conversation_state"), dict):
+            return user["conversation_state"]
+        return {}
+
+    def set_user_conversation_state(self, phone: str, state: Dict[str, Any]) -> bool:
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        now = self._now()
+        state_json = json.dumps(state) if state else None
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
+            if not cursor.fetchone():
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, conversation_state, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ''', (norm, f"User_{norm[-4:]}", state_json, now, now))
+                updated = True
+            else:
+                cursor.execute('''
+                UPDATE users SET conversation_state = ?, last_seen_at = ? WHERE phone_number = ?
+                ''', (state_json, now, norm))
+                updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
+    def clear_user_conversation_state(self, phone: str) -> bool:
+        return self.set_user_conversation_state(phone, {})
+
+    def save_draft_donation(self, phone: str, draft_data: Dict[str, Any]) -> Dict[str, Any]:
+        norm = self._normalize_phone(phone)
+        user = self.get_user_by_phone(norm)
+        existing_draft = (user.get("active_draft") or {}) if user else {}
+        if not isinstance(existing_draft, dict):
+            existing_draft = {}
+        # Merge new draft data
+        merged = dict(existing_draft)
+        for k, v in draft_data.items():
+            if v is not None:
+                merged[k] = v
+
+        conn = self._get_connection()
+        now = self._now()
+        draft_json = json.dumps(merged)
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
+            if not cursor.fetchone():
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, active_draft, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ''', (norm, f"User_{norm[-4:]}", draft_json, now, now))
+            else:
+                cursor.execute('''
+                UPDATE users SET active_draft = ?, last_seen_at = ? WHERE phone_number = ?
+                ''', (draft_json, now, norm))
+        conn.close()
+        return merged
+
+    def get_draft_donation(self, phone: str) -> Optional[Dict[str, Any]]:
+        user = self.get_user_by_phone(phone)
+        if user and user.get("active_draft"):
+            draft = user["active_draft"]
+            if isinstance(draft, dict) and any(draft.values()):
+                return draft
+        return None
+
+    def clear_draft_donation(self, phone: str) -> bool:
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        now = self._now()
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            UPDATE users SET active_draft = NULL, last_seen_at = ? WHERE phone_number = ?
+            ''', (now, norm))
+            updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users ORDER BY last_seen_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        users = []
+        for r in rows:
+            d = dict(r)
+            d["onboarding_completed"] = bool(d.get("onboarding_completed", 0))
+            d["preferred_response_mode"] = d.get("preferred_response_mode") or "text"
+            for json_col in ["metadata", "conversation_state", "active_draft"]:
+                if d.get(json_col):
+                    try:
+                        d[json_col] = json.loads(d[json_col])
+                    except Exception:
+                        d[json_col] = {}
+                else:
+                    d[json_col] = {}
+            users.append(d)
+        return users
+
+    def get_all_donors(self) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM donors ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def record_message(
+        self,
+        phone: str,
+        sender: str,
+        text: str,
+        is_voice: bool = False,
+        transcript: Optional[str] = None,
+        timestamp: Optional[str] = None
+    ) -> Dict[str, Any]:
+        import uuid
+        norm = self._normalize_phone(phone)
+        msg_id = f"msg-{uuid.uuid4().hex[:8]}"
+        ts = timestamp or self._now()
+        conn = self._get_connection()
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (msg_id, norm, sender, text, 1 if is_voice else 0, transcript, ts))
+            # Also ensure user record exists and update last_seen_at
+            cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
+            resp_mode = "voice" if is_voice else "text"
+            if not cursor.fetchone():
+                cursor.execute('''
+                INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, first_seen_at, last_seen_at)
+                VALUES (?, ?, 'en', ?, ?, ?)
+                ''', (norm, f"User_{norm[-4:]}", resp_mode, ts, ts))
+            else:
+                cursor.execute("UPDATE users SET last_seen_at = ? WHERE phone_number = ?", (ts, norm))
+        conn.close()
+        return {
+            "id": msg_id,
+            "phone_number": norm,
+            "sender": sender,
+            "message_text": text,
+            "is_voice": bool(is_voice),
+            "transcript": transcript,
+            "timestamp": ts
+        }
+
+    def get_all_conversations(self) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT 
+            m.phone_number,
+            COUNT(m.id) as message_count,
+            MAX(m.timestamp) as last_activity
+        FROM messages m
+        GROUP BY m.phone_number
+        ORDER BY last_activity DESC
+        ''')
+        rows = cursor.fetchall()
+        conv_phones = {r["phone_number"]: dict(r) for r in rows}
+
+        # Also pull all users even if they haven't sent a message yet
+        cursor.execute("SELECT * FROM users ORDER BY last_seen_at DESC")
+        user_rows = cursor.fetchall()
+        conn.close()
+
+        conversations = []
+        seen_phones = set()
+
+        for u_row in user_rows:
+            u = dict(u_row)
+            norm = u["phone_number"]
+            seen_phones.add(norm)
+            
+            # Fetch latest message
+            latest_msg = None
+            msg_count = 0
+            if norm in conv_phones:
+                msg_count = conv_phones[norm]["message_count"]
+                conn_sub = self._get_connection()
+                cur_sub = conn_sub.cursor()
+                cur_sub.execute("SELECT * FROM messages WHERE phone_number = ? ORDER BY timestamp DESC LIMIT 1", (norm,))
+                last_m = cur_sub.fetchone()
+                conn_sub.close()
+                if last_m:
+                    latest_msg = dict(last_m)
+
+            conversations.append({
+                "phone_number": norm,
+                "display_name": u.get("display_name") or f"User_{norm[-4:]}",
+                "user_role": u.get("user_role", "unknown"),
+                "preferred_language": u.get("preferred_language", "en"),
+                "preferred_response_mode": u.get("preferred_response_mode", "text"),
+                "message_count": msg_count,
+                "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
+                "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
+                "last_message_is_voice": bool(latest_msg.get("is_voice", 0)) if latest_msg else False,
+                "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
+                "onboarding_completed": bool(u.get("onboarding_completed", 0)),
+            })
+
+        return conversations
+
+    def get_conversation_messages(self, phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM messages WHERE phone_number = ? ORDER BY timestamp ASC LIMIT ?", (norm, limit))
+        rows = cursor.fetchall()
+        conn.close()
+        msgs = []
+        for r in rows:
+            d = dict(r)
+            d["is_voice"] = bool(d.get("is_voice", 0))
+            msgs.append(d)
+        return msgs
+
+    def get_all_audit_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        events = []
+        for r in rows:
+            d = dict(r)
+            if d.get("metadata"):
+                try:
+                    d["metadata"] = json.loads(d["metadata"])
+                except Exception:
+                    pass
+            events.append(d)
+        return events
+
+    def get_transport_settings(self) -> Dict[str, Any]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT setting_value FROM system_settings WHERE setting_key = 'transport_cost'")
+        row = cursor.fetchone()
+        conn.close()
+        if row and row["setting_value"]:
+            try:
+                return json.loads(row["setting_value"])
+            except Exception:
+                pass
+        return {
+            "base_fare": 150.0,
+            "cost_per_km": 80.0,
+            "currency": "LKR",
+            "vehicle_multipliers": {
+                "Motorbike": 1.0,
+                "Bicycle": 0.6,
+                "Car": 1.5,
+                "Van": 2.0,
+                "Three-Wheeler": 1.2
+            }
+        }
+
+    def update_transport_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+        conn = self._get_connection()
+        now = self._now()
+        val_json = json.dumps(settings)
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            INSERT INTO system_settings (setting_key, setting_value, updated_at)
+            VALUES ('transport_cost', ?, ?)
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value = ?, updated_at = ?
+            ''', (val_json, now, val_json, now))
+        conn.close()
+        return settings
 
 

@@ -58,30 +58,71 @@ def detect_language(text: str) -> Optional[str]:
 
 
 def is_language_selection_intent(text: str, in_language_menu: bool = False) -> Optional[str]:
-    """Check if the user is explicitly selecting a language (e.g. 'sinhala', 'tamil', 'english', 'malayalam', 'si', 'ta', 'en', 'ml', 'L1'..'L4').
-    Plain digits 1-4 are only treated as language selection if in_language_menu is True."""
+    """Check if the user is explicitly selecting or requesting a language change.
+    Handles:
+    - Keywords & codes: 'sinhala', 'tamil', 'english', 'malayalam', 'si', 'ta', 'en', 'ml', 'L1'..'L4'
+    - Natural language phrases:
+        'change language to tamil', 'tamil please', 'தமிழ்', 'தமிழில் பேசுங்கள்', 'speak in tamil'
+        'change language to sinhala', 'sinhala please', 'සිංහල', 'සිංහලෙන් කතා කරන්න', 'speak in sinhala'
+        'change language to english', 'english please', 'speak in english'
+        'change language to malayalam', 'malayalam please', 'മലയാളം'
+    - Plain digits 1-4 if in_language_menu is True.
+    """
     if not text:
         return None
     clean = text.strip().lower()
     
-    if in_language_menu and clean in ["1", "l1"]:
-        return "si"
-    elif in_language_menu and clean in ["2", "l2"]:
+    if in_language_menu:
+        if clean in ["1", "l1", "si"]:
+            return "si"
+        elif clean in ["2", "l2", "ta"]:
+            return "ta"
+        elif clean in ["3", "l3", "en"]:
+            return "en"
+        elif clean in ["4", "l4", "ml"]:
+            return "ml"
+
+    # Exact codes or explicit change phrases
+    if clean in ["tamil", "ta", "l2"] or any(p in clean for p in ["தமிழ்", "தமிழில்", "தமிழுக்கு", "change language to tamil", "speak in tamil", "tamil please", "change to tamil"]):
         return "ta"
-    elif in_language_menu and clean in ["3", "l3"]:
-        return "en"
-    elif in_language_menu and clean in ["4", "l4"]:
+
+    if clean in ["sinhala", "si", "l1"] or any(p in clean for p in ["සිංහල", "සිංහලෙන්", "change language to sinhala", "speak in sinhala", "sinhala please", "change to sinhala"]):
+        return "si"
+
+    if clean in ["malayalam", "ml", "l4"] or any(p in clean for p in ["മലയാളം", "change language to malayalam", "speak in malayalam", "malayalam please", "change to malayalam"]):
         return "ml"
 
-    if clean in ["sinhala", "si", "සිංහල", "l1"]:
-        return "si"
-    elif clean in ["tamil", "ta", "தமிழ்", "l2"]:
-        return "ta"
-    elif clean in ["english", "en", "l3"]:
+    if clean in ["english", "en", "l3"] or any(p in clean for p in ["speak in english", "english please", "change language to english", "change to english"]):
         return "en"
-    elif clean in ["malayalam", "ml", "മലയാളം", "l4"]:
+
+    # Safe regex for standalone language names or commands
+    if re.search(r'\b(tamil)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
+        return "ta"
+    if re.search(r'\b(sinhala)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
+        return "si"
+    if re.search(r'\b(malayalam)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
         return "ml"
-        
+    if re.search(r'\b(english)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
+        return "en"
+
+    return None
+
+
+def is_response_mode_intent(text: str) -> Optional[str]:
+    """Detect if user is setting response mode preference ('voice' or 'text')."""
+    if not text:
+        return None
+    clean = text.strip().lower()
+    if any(p in clean for p in [
+        "voice replies please", "voice only", "voice response", "voice message", "voice please",
+        "send voice", "talk to me", "හඬ පණිවිඩ", "குரல் செய்தி"
+    ]):
+        return "voice"
+    if any(p in clean for p in [
+        "text only", "text replies please", "text response", "text please", "send text",
+        "no voice", "type only", "පෙළ පමණි", "உரை மட்டும்"
+    ]):
+        return "text"
     return None
 
 
@@ -344,35 +385,159 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         )
     },
 
-    # 9. Error Recovery
+    # 9. Slot Prompts
+    "slot_ask_quantity": {
+        "en": "Great! 👍 I noted {food_type}.\n\n📦 *How many meals / portions do you have available?*",
+        "si": "ඉතා හොඳයි! 👍 මා {food_type} සටහන් කරගත්තා.\n\n📦 *ඔබ සතුව ආහාර පාර්සල් / ප්‍රමාණය කොපමණ තිබේද?*",
+        "ta": "சிறப்பு! 👍 {food_type} விபரம் பதிவு செய்யப்பட்டது.\n\n📦 *உங்களிடம் எத்தனை உணவுப் பொதிகள் / அளவுகள் உள்ளன?*",
+        "ml": "നല്ലത്! 👍 {food_type} രേഖപ്പെടുത്തി.\n\n📦 *എത്ര ഭക്ഷണ പൊതികൾ ലഭ്യമാണ്?*"
+    },
+
+    "slot_ask_location": {
+        "en": "📍 *Where can the food be collected?* (Please enter your address/city or share your WhatsApp Location)",
+        "si": "📍 *ආහාර ලබාගත හැකි ස්ථානය කොහේද?* (ලිපිනය/නගරය ලියන්න හෝ WhatsApp Location එවන්න)",
+        "ta": "📍 *உணவை பெற்றுக்கொள்ள வேண்டிய இடம் எது?* (முகவரி/நகரத்தை எழுதவும் அல்லது WhatsApp Location பகிரவும்)",
+        "ml": "📍 *ഭക്ഷണം ശേഖരിക്കേണ്ട സ്ഥലം എവിടെയാണ്?*"
+    },
+
+    "slot_ask_deadline": {
+        "en": "⏰ *What time will the food be available until for pickup?* (e.g. 'Before 8 PM', 'By 6:30 PM')",
+        "si": "⏰ *ආහාර ලබාගත යුතු අවසන් වේලාව කවදාද?* (උදා. 'රාත්‍රී 8 ට පෙර')",
+        "ta": "⏰ *உணவை எத்தனை மணிக்குள் பெற்றுக்கொள்ள வேண்டும்?* (எ.கா. 'இரவு 8 மணிக்கு முன்')",
+        "ml": "⏰ *ഏത് സമയം വരെ ഭക്ഷണം ശേഖരിക്കാം?*"
+    },
+
+    "donation_summary_confirm": {
+        "en": (
+            "📦 *Please confirm your donation details*:\n\n"
+            "• 🍱 *Food*: {quantity} {unit} of {food_type} ({dietary})\n"
+            "• 📍 *Pickup Location*: {location}\n"
+            "• ⏰ *Available*: {deadline}\n\n"
+            "Reply **Confirm** to create the donation, or tell me what you want to change."
+        ),
+        "si": (
+            "📦 *කරුණාකර ඔබගේ පරිත්‍යාග විස්තර තහවුරු කරන්න*:\n\n"
+            "• 🍱 *ආහාර*: {food_type} {quantity} {unit} ({dietary})\n"
+            "• 📍 *ස්ථානය*: {location}\n"
+            "• ⏰ *වේලාව*: {deadline}\n\n"
+            "පරිත්‍යාගය නිර්මාණය කිරීමට **Confirm** (තහවුරුයි) ලෙස පිළිතුරු දෙන්න හෝ වෙනස් කිරීමට අවශ්‍ය දේ ලියන්න."
+        ),
+        "ta": (
+            "📦 *தயவுசெய்து உங்கள் நன்கொடை விபரங்களை உறுதிப்படுத்தவும்*:\n\n"
+            "• 🍱 *உணவு*: {quantity} {unit} {food_type} ({dietary})\n"
+            "• 📍 *இடம்*: {location}\n"
+            "• ⏰ *நேரம்*: {deadline}\n\n"
+            "நன்கொடையை உருவாக்க **Confirm** (உறுதி) என்று பதிலளிக்கவும், அல்லது மாற்ற வேண்டியதை கூறவும்."
+        ),
+        "ml": (
+            "📦 *വിവരങ്ങൾ സ്ഥിരീകരിക്കുക*:\n\n"
+            "• 🍱 {quantity} {unit} {food_type} ({dietary})\n"
+            "• 📍 {location}\n"
+            "• ⏰ {deadline}\n\n"
+            "സ്ഥിരീകരിക്കാൻ **Confirm** എന്ന് ടൈപ്പ് ചെയ്യുക."
+        )
+    },
+
+    "donation_created_card": {
+        "en": (
+            "✅ *Donation Created & Matched!*\n\n"
+            "• **Donation ID**: `{donation_id}`\n"
+            "• 🍱 **Food**: {quantity} {unit} of {food_type} ({dietary})\n"
+            "• 📍 **Collect from**: {pickup_loc} (Deadline: {deadline})\n"
+            "• 🏢 **Recipient**: {org_name} ({deliv_loc})\n"
+            "• 🚚 **Assigned Volunteer**: {vol_name}\n"
+            "• 📦 **Status**: `PICKUP_ASSIGNED`\n\n"
+            "Thank you for rescuing surplus food! ❤️"
+        ),
+        "si": (
+            "✅ *පරිත්‍යාගය සාර්ථකව නිර්මාණය විය!*\n\n"
+            "• **Donation ID**: `{donation_id}`\n"
+            "• 🍱 **ආහාර**: {food_type} {quantity} {unit} ({dietary})\n"
+            "• 📍 **ස්ථානය**: {pickup_loc}\n"
+            "• 🏢 **භාරගන්නා ආයතනය**: {org_name}\n"
+            "• 🚚 **ස්වේච්ඡා කුරියර්**: {vol_name}\n"
+            "• 📦 **තත්ත්වය**: `PICKUP_ASSIGNED`\n\n"
+            "ආහාර අපතේ යාම වැළැක්වීමට කළ සහායට ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "✅ *நன்கொடை வெற்றிகரமாக உருவாக்கப்பட்டு இணைக்கப்பட்டது!*\n\n"
+            "• **Donation ID**: `{donation_id}`\n"
+            "• 🍱 **உணவு**: {quantity} {unit} {food_type} ({dietary})\n"
+            "• 📍 **இடம்**: {pickup_loc}\n"
+            "• 🏢 **பெறுநர்**: {org_name}\n"
+            "• 🚚 **தன்னார்வலர்**: {vol_name}\n"
+            "• 📦 **நிலை**: `PICKUP_ASSIGNED`\n\n"
+            "உணவை வீணாக்காமல் பகிர்ந்தளித்தமைக்கு மிக்க நன்றி! ❤️"
+        ),
+        "ml": (
+            "✅ *സംഭാവന വിജയകരമായി പൂർത്തിയായി!*\n\n"
+            "• **Donation ID**: `{donation_id}`\n"
+            "• 🍱 {quantity} {unit} {food_type} ({dietary})\n"
+            "• 📍 {pickup_loc}\n"
+            "• 🏢 {org_name}\n"
+            "• 🚚 {vol_name}\n"
+            "• 📦 `PICKUP_ASSIGNED`"
+        )
+    },
+
+    "response_mode_updated": {
+        "en": "🎙️ Response mode preference updated to *{mode}*.",
+        "si": "🎙️ ප්‍රතිචාර මාදිලිය *{mode}* ලෙස යාවත්කාලීන විය.",
+        "ta": "🎙️ பதில் பயன்முறை *{mode}* ஆக மாற்றப்பட்டது.",
+        "ml": "🎙️ *{mode}* ആയി തിരഞ്ഞെടുത്തു."
+    },
+
+    "returning_donor_welcome": {
+        "en": (
+            "👋 *Welcome back to FoodRescue AI, {name}!* (Registered Donor)\n\n"
+            "You currently have active donations on file.\n\n"
+            "What would you like to do today?\n"
+            "1️⃣ Donate more food\n"
+            "2️⃣ Check my donation status\n"
+            "3️⃣ Update my details\n"
+            "4️⃣ Help & Language"
+        ),
+        "si": (
+            "👋 *නැවතත් සාදරයෙන් පිළිගනිමු {name}!*\n\n"
+            "අද ඔබට කළ යුතු දේ කුමක්ද?\n"
+            "1️⃣ තවත් ආහාර පරිත්‍යාග කරන්න\n"
+            "2️⃣ මගේ පරිත්‍යාග තත්ත්වය පරීක්ෂා කරන්න\n"
+            "3️⃣ තොරතුරු යාවත්කාලීන කරන්න\n"
+            "4️⃣ උපකාර සහ භාෂාව"
+        ),
+        "ta": (
+            "👋 *மீண்டும் நல்வரவு {name}!*\n\n"
+            "இன்று நீங்கள் என்ன செய்ய விரும்புகிறீர்கள்?\n"
+            "1️⃣ மேலும் உணவு தானம் செய்ய\n"
+            "2️⃣ நன்கொடை நிலையை அறிய\n"
+            "3️⃣ விபரங்களை மாற்ற\n"
+            "4️⃣ உதவி மற்றும் மொழி"
+        ),
+        "ml": (
+            "👋 *സ്വാഗതം {name}!*\n\n"
+            "1️⃣ ഭക്ഷണം ദാനം ചെയ്യുക\n"
+            "2️⃣ സ്റ്റാറ്റസ് പരിശോധിക്കുക\n"
+            "3️⃣ സഹായം"
+        )
+    },
+
+    # 10. Error Recovery
     "error_recovery": {
         "en": (
             "I'm sorry, I'm having trouble processing that right now.\n\n"
-            "Please try again in a moment or reply with:\n"
-            "1 - Donate food\n"
-            "2 - Find food\n"
-            "3 - Volunteer\n"
-            "4 - Help"
+            "Please try again in a moment. 🙏"
         ),
         "si": (
             "සමාවන්න, එම ඉල්ලීම සැකසීමේදී සුළු ගැටලුවක් ඇති විය.\n\n"
-            "කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න හෝ පහත විකල්පයක් තෝරන්න:\n"
-            "1 - ආහාර පරිත්‍යාග\n"
-            "2 - ආහාර ඉල්ලුම්\n"
-            "3 - ස්වේච්ඡා සේවය\n"
-            "4 - උපකාර"
+            "කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න. 🙏"
         ),
         "ta": (
             "மன்னிக்கவும், அந்த கோரிக்கையை செயலாக்குவதில் சிக்கல் ஏற்பட்டது.\n\n"
-            "தயவுசெய்து மீண்டும் முயற்சிக்கவும் அல்லது தேர்வு செய்யவும்:\n"
-            "1 - உணவு தானம்\n"
-            "2 - உணவு பெற\n"
-            "3 - தன்னார்வலர்\n"
-            "4 - உதவி"
+            "தயவுசெய்து சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும். 🙏"
         ),
         "ml": (
             "ക്ഷമിക്കണം, ഇപ്പോൾ പ്രോസസ്സ് ചെയ്യാൻ സാധിച്ചില്ല.\n\n"
-            "ദയവായി വീണ്ടും ശ്രമിക്കുക."
+            "ദയവായി വീണ്ടും ശ്രമിക്കുക. 🙏"
         )
     }
 }

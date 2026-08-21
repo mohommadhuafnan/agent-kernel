@@ -1,1594 +1,1116 @@
 /**
- * FoodRescue AI — Frontend Web Application
- * Connects directly to Agent Kernel REST API (FastAPI backend).
- * Demonstrates:
- * 1. 7-Tab Navigation: Dashboard, AI Assistant, Donations, Organizations, Volunteers, Pickups, Session/Activity
- * 2. Multi-turn AI Coordination with Gemini via /api/v1/chat
- * 3. 7-Stage Visual Lifecycle Tracker: AVAILABLE -> MATCHED -> PICKUP PENDING -> PICKUP ASSIGNED -> EN ROUTE -> COLLECTED -> DELIVERED
- * 4. Real-time Dashboard KPIs & Live Backend Data
- * 5. Dedicated Organizations, Volunteers, and Pickups Logistics Board
- * 6. Multi-turn KeyValueCache Session Memory Inspector
+ * FoodRescue AI — SaaS Operational Control Center Client Application
+ * Handles live synchronization with Agent Kernel, WhatsApp messages, Leaflet map,
+ * multi-tab navigation, modals, and reactive polling.
  */
 
-(function () {
-  'use strict';
-
-  // Application State
+const App = (function () {
+  // Global State
   const state = {
-    sessionId: generateSessionId(),
     activeTab: 'dashboard',
+    activeSubTab: 'inventory',
+    activeConversationPhone: null,
+    pollingInterval: 4000,
+    pollTimerSeconds: 4,
+    timerIntervalId: null,
+    pollIntervalId: null,
+    map: null,
+    mapMarkers: [],
+    
+    // Cached Data
+    stats: {},
+    liveOperations: [],
     donations: [],
-    activeDonationId: null,
+    donors: [],
     organizations: [],
     volunteers: [],
+    users: [],
+    conversations: [],
+    activeMessages: [],
     pickups: [],
-    reimbursements: [],
+    agentEvents: [],
     notifications: [],
-    stats: null,
-    sessionContext: {},
-    isChatThinking: false,
-    autoRefreshInterval: null,
-    activeGpsWatchId: null,
-    activeGpsPickupId: null,
-    lastGpsCoords: null,
+    reports: {},
+    settings: {},
   };
 
-  // Helper to generate unique session ID
-  function generateSessionId() {
-    return 'session-' + Math.random().toString(36).substring(2, 9);
-  }
-
-  // Format Date Helper
-  function formatTime(isoString) {
-    if (!isoString) return 'Just now';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return isoString;
+  // Header Titles & Descriptions Map
+  const tabMetadata = {
+    'dashboard': {
+      title: 'Operational Dashboard',
+      desc: 'Real-time surplus food coordination and WhatsApp integration overview.'
+    },
+    'live-operations': {
+      title: 'Live Rescue Operations',
+      desc: '7-step end-to-end operational pipeline from donor contact to delivery.'
+    },
+    'donations': {
+      title: 'Donations & Donors Registry',
+      desc: 'Real-time surplus inventory and registered food donor partners.'
+    },
+    'organizations': {
+      title: 'Recipient Organizations',
+      desc: 'Community kitchens, shelters, and food banks receiving donations.'
+    },
+    'volunteers': {
+      title: 'Volunteer Courier Network',
+      desc: 'On-demand delivery couriers, vehicle capacity, and availability.'
+    },
+    'users': {
+      title: 'Persistent User Profiles',
+      desc: 'WhatsApp normalized phone identities, language, and response modes.'
+    },
+    'conversations': {
+      title: 'WhatsApp Conversations & Simulator',
+      desc: 'Live two-way WhatsApp message threads and conversational memory.'
+    },
+    'pickups': {
+      title: 'Pickup & Delivery Logistics',
+      desc: 'Dispatch assignments, route mileage, and volunteer reimbursements.'
+    },
+    'map': {
+      title: 'Operations Geographic Map',
+      desc: 'Real-time operational map of donor pickups, hubs, and active couriers.'
+    },
+    'agent-activity': {
+      title: 'Agent Kernel Audit Trail',
+      desc: 'Audited log of autonomous AI decisions, tool calls, and match events.'
+    },
+    'notifications': {
+      title: 'System Notifications Log',
+      desc: 'Automated WhatsApp alerts and system communication dispatches.'
+    },
+    'reports': {
+      title: 'Environmental & Social Impact Reports',
+      desc: 'Key analytics on food saved, CO₂ prevented, and regional distribution.'
+    },
+    'settings': {
+      title: 'Platform & Transport Settings',
+      desc: 'Dynamic transport reimbursement rates and WhatsApp system health.'
     }
-  }
+  };
 
-  function formatDate(isoString) {
-    if (!isoString) return 'Today';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + formatTime(isoString);
-    } catch {
-      return isoString;
-    }
-  }
-
-  // Mask Phone Numbers for Public Privacy
-  function maskPhone(phone) {
-    if (!phone) return 'Verified (Private)';
-    const clean = String(phone).trim();
-    if (clean.length <= 6) return clean;
-    return clean.substring(0, 6) + ' ****';
-  }
-
-  // UI Toast Notification System
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+  // Initialize Application
+  async function init() {
+    setupNavigation();
+    setupModals();
+    setupMobileSidebar();
     
-    let icon = '✓';
-    if (type === 'error') icon = '✕';
-    if (type === 'info') icon = 'ℹ';
+    // Initial Data Fetch
+    await fetchAllData();
 
-    toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateX(20px)';
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    // Start Real-Time Synchronizer Loop
+    startSyncPolling();
   }
 
-  // Escape HTML to prevent XSS
+  // Navigation Setup
+  function setupNavigation() {
+    document.querySelectorAll('.nav-item').forEach(button => {
+      button.addEventListener('click', () => {
+        const targetTab = button.getAttribute('data-tab');
+        switchTab(targetTab);
+      });
+    });
+  }
+
+  function switchTab(tabId) {
+    if (!tabMetadata[tabId]) return;
+
+    state.activeTab = tabId;
+
+    // Update Nav Buttons
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
+    });
+
+    // Update Tab Views
+    document.querySelectorAll('.tab-view').forEach(view => {
+      view.classList.toggle('active', view.id === `view-${tabId}`);
+    });
+
+    // Update Header Text
+    const meta = tabMetadata[tabId];
+    document.getElementById('page-header-title').textContent = meta.title;
+    document.getElementById('page-header-desc').textContent = meta.desc;
+
+    // Close mobile sidebar if open
+    document.getElementById('app-sidebar').classList.remove('open');
+
+    // Trigger tab-specific refresh/render
+    renderCurrentTab();
+
+    // Leaflet map resize trigger when switching to Map tab
+    if (tabId === 'map') {
+      setTimeout(() => {
+        initOrUpdateMap();
+      }, 100);
+    }
+  }
+
+  function renderCurrentTab() {
+    switch (state.activeTab) {
+      case 'dashboard':
+        renderDashboard();
+        break;
+      case 'live-operations':
+        renderLiveOperations();
+        break;
+      case 'donations':
+        renderDonations();
+        renderDonors();
+        break;
+      case 'organizations':
+        renderOrganizations();
+        break;
+      case 'volunteers':
+        renderVolunteers();
+        break;
+      case 'users':
+        renderUsers();
+        break;
+      case 'conversations':
+        renderConversations();
+        break;
+      case 'pickups':
+        renderPickups();
+        break;
+      case 'map':
+        initOrUpdateMap();
+        break;
+      case 'agent-activity':
+        renderAgentEvents();
+        break;
+      case 'notifications':
+        renderNotifications();
+        break;
+      case 'reports':
+        renderReports();
+        break;
+      case 'settings':
+        renderSettings();
+        break;
+    }
+  }
+
+  // Data Fetchers
+  async function fetchAllData() {
+    try {
+      const [
+        statsRes,
+        opsRes,
+        donsRes,
+        donorsRes,
+        orgsRes,
+        volsRes,
+        usersRes,
+        convsRes,
+        pickupsRes,
+        eventsRes,
+        notifsRes,
+        reportsRes,
+        settingsRes
+      ] = await Promise.all([
+        fetch('/api/dashboard').then(r => r.json()),
+        fetch('/api/live-operations').then(r => r.json()),
+        fetch('/api/donations').then(r => r.json()),
+        fetch('/api/donors').then(r => r.json()),
+        fetch('/api/organizations').then(r => r.json()),
+        fetch('/api/volunteers').then(r => r.json()),
+        fetch('/api/users').then(r => r.json()),
+        fetch('/api/conversations').then(r => r.json()),
+        fetch('/api/pickups').then(r => r.json()),
+        fetch('/api/agent-events').then(r => r.json()),
+        fetch('/api/notifications').then(r => r.json()),
+        fetch('/api/reports').then(r => r.json()),
+        fetch('/api/settings').then(r => r.json())
+      ]);
+
+      if (statsRes.stats) state.stats = statsRes.stats;
+      if (opsRes.operations) state.liveOperations = opsRes.operations;
+      if (donsRes.donations) state.donations = donsRes.donations;
+      if (donorsRes.donors) state.donors = donorsRes.donors;
+      if (orgsRes.organizations) state.organizations = orgsRes.organizations;
+      if (volsRes.volunteers) state.volunteers = volsRes.volunteers;
+      if (usersRes.users) state.users = usersRes.users;
+      if (convsRes.conversations) state.conversations = convsRes.conversations;
+      if (pickupsRes.pickups) state.pickups = pickupsRes.pickups;
+      if (eventsRes.events) state.agentEvents = eventsRes.events;
+      if (notifsRes.notifications) state.notifications = notifsRes.notifications;
+      if (reportsRes) state.reports = reportsRes;
+      if (settingsRes) state.settings = settingsRes;
+
+      updateBadges();
+      renderCurrentTab();
+    } catch (err) {
+      console.warn('Sync polling network notice:', err);
+    }
+  }
+
+  // Polling Synchronizer
+  function startSyncPolling() {
+    if (state.pollIntervalId) clearInterval(state.pollIntervalId);
+    if (state.timerIntervalId) clearInterval(state.timerIntervalId);
+
+    state.pollTimerSeconds = 4;
+    const timerElem = document.getElementById('sync-timer');
+
+    state.timerIntervalId = setInterval(() => {
+      state.pollTimerSeconds -= 1;
+      if (state.pollTimerSeconds <= 0) {
+        state.pollTimerSeconds = 4;
+      }
+      if (timerElem) timerElem.textContent = `${state.pollTimerSeconds}s`;
+    }, 1000);
+
+    state.pollIntervalId = setInterval(async () => {
+      await fetchAllData();
+      // If currently viewing active conversation, refresh messages too
+      if (state.activeTab === 'conversations' && state.activeConversationPhone) {
+        await loadConversationMessages(state.activeConversationPhone, false);
+      }
+    }, state.pollingInterval);
+  }
+
+  function updateBadges() {
+    const s = state.stats;
+    setText('badge-live-ops-count', (state.liveOperations || []).filter(o => o.status !== 'COMPLETED').length);
+    setText('badge-donations-count', (state.donations || []).length);
+    setText('badge-orgs-count', (state.organizations || []).length);
+    setText('badge-vols-count', (state.volunteers || []).length);
+    setText('badge-users-count', (state.users || []).length);
+  }
+
+  // 1. Render Dashboard View
+  function renderDashboard() {
+    const s = state.stats || {};
+    setText('kpi-total-donations', s.total_donations || state.donations.length || 0);
+    setText('kpi-available-donations', s.available_donations || 0);
+    setText('kpi-active-pickups', s.active_pickups || 0);
+    setText('kpi-completed-rescues', s.completed_deliveries || 0);
+    setText('kpi-avail-vols', s.available_volunteers || 0);
+    setText('kpi-total-orgs', s.registered_organizations || state.organizations.length || 0);
+    setText('kpi-active-users', s.active_users || state.users.length || 1);
+    setText('kpi-co2-saved', `${s.co2_saved_kg || 0} kg`);
+
+    // Render Active Rescue Pulse List
+    const opsListElem = document.getElementById('dashboard-active-ops-list');
+    const activeOps = (state.liveOperations || []).filter(o => o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
+
+    if (!activeOps || activeOps.length === 0) {
+      opsListElem.innerHTML = '<div class="empty-state">No food rescues currently in transit. All surplus distributed!</div>';
+    } else {
+      opsListElem.innerHTML = activeOps.slice(0, 5).map(op => `
+        <div class="op-item">
+          <div class="op-info">
+            <div class="op-title">
+              <span>${escapeHtml(op.food_type)} (${op.quantity} ${op.unit})</span>
+              <span class="badge badge-${op.stage_badge}">${op.stage_label}</span>
+            </div>
+            <div class="op-sub">
+              📍 ${escapeHtml(op.pickup_location)} &rarr; ${escapeHtml(op.delivery_location)} • Courier: <strong>${escapeHtml(op.volunteer_name)}</strong>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="App.switchTab('live-operations')">Track</button>
+        </div>
+      `).join('');
+    }
+
+    // Render Activity Feed
+    const feedElem = document.getElementById('dashboard-activity-feed');
+    const events = (state.agentEvents || []).slice(0, 8);
+
+    if (!events || events.length === 0) {
+      feedElem.innerHTML = '<div class="empty-state">No recent Agent Kernel activity recorded.</div>';
+    } else {
+      feedElem.innerHTML = events.map(ev => `
+        <div class="activity-item">
+          <div class="activity-icon">⚡</div>
+          <div class="activity-content">
+            <div class="activity-title">${escapeHtml(ev.event_type.replace(/_/g, ' '))}</div>
+            <div class="activity-time">Actor: <strong>${escapeHtml(ev.actor || 'Agent Kernel')}</strong> • ${formatDate(ev.created_at)}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // 2. Render Live Operations Pipeline View
+  function renderLiveOperations() {
+    const filter = (document.getElementById('select-ops-filter') || {}).value || 'all';
+    const grid = document.getElementById('live-operations-grid');
+    let ops = state.liveOperations || [];
+
+    if (filter === 'in_transit') ops = ops.filter(o => ['EN_ROUTE', 'COLLECTED', 'DELIVERING'].includes(o.status));
+    else if (filter === 'available') ops = ops.filter(o => o.status === 'AVAILABLE');
+    else if (filter === 'completed') ops = ops.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED');
+
+    if (!ops || ops.length === 0) {
+      grid.innerHTML = '<div class="empty-state">No operations match the selected filter.</div>';
+      return;
+    }
+
+    grid.innerHTML = ops.map(op => {
+      const step = op.stage_step || 1;
+      return `
+        <div class="live-op-card">
+          <div class="op-card-header">
+            <div>
+              <div class="op-card-title">${escapeHtml(op.food_type)}</div>
+              <div class="op-sub">Donation ID: <span class="font-mono">${op.donation_id}</span></div>
+            </div>
+            <span class="badge badge-${op.stage_badge}">${op.stage_label}</span>
+          </div>
+
+          <!-- 7-Step Visual Stepper -->
+          <div class="pipeline-stepper">
+            ${[1, 2, 3, 4, 5, 6, 7].map(sNum => `
+              <div class="stepper-step ${sNum < step ? 'completed' : (sNum === step ? 'active' : '')}">
+                ${sNum < step ? '✓' : sNum}
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="op-card-details">
+            <div class="detail-k">Quantity:</div><div class="detail-v">${op.quantity} ${op.unit} (${op.dietary_info})</div>
+            <div class="detail-k">Pickup Location:</div><div class="detail-v">${escapeHtml(op.pickup_location)}</div>
+            <div class="detail-k">Recipient Org:</div><div class="detail-v">${escapeHtml(op.organization_name)}</div>
+            <div class="detail-k">Assigned Courier:</div><div class="detail-v">${escapeHtml(op.volunteer_name)}</div>
+            <div class="detail-k">Distance & Cost:</div><div class="detail-v">${op.estimated_distance_km} km • LKR ${op.estimated_transport_cost}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // 3. Render Donations View
+  function renderDonations() {
+    const tbody = document.getElementById('donations-table-body');
+    const dons = state.donations || [];
+
+    if (!dons || dons.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No food donations recorded in database.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = dons.map(d => `
+      <tr>
+        <td class="font-mono"><strong>${d.id}</strong></td>
+        <td><strong>${escapeHtml(d.food_type)}</strong><br><small class="text-muted">${escapeHtml(d.dietary_information || 'Standard')}</small></td>
+        <td>${d.quantity} ${d.unit || 'portions'}</td>
+        <td>${escapeHtml(d.pickup_location)}</td>
+        <td>${escapeHtml(d.pickup_deadline || 'Before 8 PM')}</td>
+        <td><span class="badge badge-${getDonationBadgeColor(d.status)}">${d.status}</span></td>
+        <td>${escapeHtml(d.matched_organization_id ? 'Matched Partner' : 'Awaiting Match')}</td>
+        <td>${escapeHtml(d.assigned_volunteer_id ? 'Assigned' : 'Awaiting Dispatch')}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="App.viewDonationDetail('${d.id}')">View</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderDonors() {
+    const tbody = document.getElementById('donors-table-body');
+    const donors = state.donors || [];
+
+    if (!donors || donors.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No donors registered.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = donors.map(d => `
+      <tr>
+        <td class="font-mono">${d.id}</td>
+        <td><strong>${escapeHtml(d.name)}</strong></td>
+        <td class="font-mono">${escapeHtml(d.phone)}</td>
+        <td>${escapeHtml(d.location)}</td>
+        <td>${escapeHtml(d.organization_name || 'Individual')}</td>
+        <td>${formatDate(d.created_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function toggleDonationSubTab(subTab) {
+    state.activeSubTab = subTab;
+    document.getElementById('subtab-donations').classList.toggle('active', subTab === 'inventory');
+    document.getElementById('subtab-donors').classList.toggle('active', subTab === 'donors');
+    document.getElementById('subview-donations-inventory').classList.toggle('active', subTab === 'inventory');
+    document.getElementById('subview-donations-donors').classList.toggle('active', subTab === 'donors');
+  }
+
+  function filterDonations() {
+    const q = (document.getElementById('search-donations') || {}).value?.toLowerCase() || '';
+    const st = (document.getElementById('filter-donation-status') || {}).value || 'all';
+
+    const rows = document.querySelectorAll('#donations-table-body tr');
+    rows.forEach(r => {
+      const text = r.textContent.toLowerCase();
+      const matchesQ = text.includes(q);
+      const matchesSt = st === 'all' || text.includes(st.toLowerCase());
+      r.style.display = matchesQ && matchesSt ? '' : 'none';
+    });
+  }
+
+  // 4. Render Organizations View
+  function renderOrganizations() {
+    const grid = document.getElementById('organizations-grid');
+    const orgs = state.organizations || [];
+
+    if (!orgs || orgs.length === 0) {
+      grid.innerHTML = '<div class="empty-state">No recipient organizations registered.</div>';
+      return;
+    }
+
+    grid.innerHTML = orgs.map(o => `
+      <div class="partner-card">
+        <div class="card-top">
+          <div class="card-title">${escapeHtml(o.name)}</div>
+          <span class="badge badge-emerald">Active Hub</span>
+        </div>
+        <div class="card-body-text">
+          📍 <strong>Location:</strong> ${escapeHtml(o.location)}<br>
+          🍲 <strong>Accepted Food:</strong> ${escapeHtml(o.accepted_food_types)}<br>
+          📦 <strong>Daily Capacity:</strong> ${escapeHtml(o.capacity)}<br>
+          📞 <strong>Phone:</strong> <span class="font-mono">${escapeHtml(o.phone)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function filterOrganizations() {
+    const q = (document.getElementById('search-orgs') || {}).value?.toLowerCase() || '';
+    document.querySelectorAll('#organizations-grid .partner-card').forEach(c => {
+      c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  // 5. Render Volunteers View
+  function renderVolunteers() {
+    const grid = document.getElementById('volunteers-grid');
+    const vols = state.volunteers || [];
+
+    if (!vols || vols.length === 0) {
+      grid.innerHTML = '<div class="empty-state">No volunteer couriers registered.</div>';
+      return;
+    }
+
+    grid.innerHTML = vols.map(v => `
+      <div class="volunteer-card">
+        <div class="card-top">
+          <div class="card-title">🛵 ${escapeHtml(v.name)}</div>
+          <span class="badge badge-${v.current_status === 'available' ? 'emerald' : 'amber'}">${v.current_status || 'Available'}</span>
+        </div>
+        <div class="card-body-text">
+          📞 <strong>WhatsApp:</strong> <span class="font-mono">${escapeHtml(v.phone)}</span><br>
+          📍 <strong>Service Area:</strong> ${escapeHtml(v.service_area)}<br>
+          🚲 <strong>Transport:</strong> ${escapeHtml(v.transport_mode || 'Motorbike')}<br>
+          📦 <strong>Completed Pickups:</strong> ${v.completed_pickups || 0}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function filterVolunteers() {
+    const q = (document.getElementById('search-volunteers') || {}).value?.toLowerCase() || '';
+    document.querySelectorAll('#volunteers-grid .volunteer-card').forEach(c => {
+      c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  // 6. Render Users View
+  function renderUsers() {
+    const tbody = document.getElementById('users-table-body');
+    const users = state.users || [];
+
+    if (!users || users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No persistent WhatsApp users found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map(u => {
+      const langMap = { en: 'English', si: 'සිංහල (Sinhala)', ta: 'தமிழ் (Tamil)', ml: 'മലയാളം (Malayalam)' };
+      const langLabel = langMap[u.preferred_language] || u.preferred_language || 'English';
+      return `
+        <tr>
+          <td class="font-mono"><strong>${escapeHtml(u.phone_number)}</strong></td>
+          <td>${escapeHtml(u.display_name || 'User')}</td>
+          <td><span class="badge badge-slate">${u.user_role || 'Unassigned'}</span></td>
+          <td><span class="badge badge-emerald">${langLabel}</span></td>
+          <td><span class="badge badge-blue">${(u.preferred_response_mode || 'text').toUpperCase()}</span></td>
+          <td>${u.onboarding_completed ? '✅ Completed' : '⏳ In Progress'}</td>
+          <td>${u.active_draft && Object.keys(u.active_draft).length ? '📝 Active Draft' : 'None'}</td>
+          <td>${formatDate(u.last_seen_at)}</td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="App.openUserConversation('${u.phone_number}')">Open Chat</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function filterUsers() {
+    const q = (document.getElementById('search-users') || {}).value?.toLowerCase() || '';
+    const role = (document.getElementById('filter-user-role') || {}).value || 'all';
+
+    document.querySelectorAll('#users-table-body tr').forEach(r => {
+      const text = r.textContent.toLowerCase();
+      const matchesQ = text.includes(q);
+      const matchesRole = role === 'all' || text.includes(role.toLowerCase());
+      r.style.display = matchesQ && matchesRole ? '' : 'none';
+    });
+  }
+
+  // 7. Render Conversations View (WhatsApp Two-Pane Layout)
+  function renderConversations() {
+    const listElem = document.getElementById('conversations-threads-list');
+    const convs = state.conversations || [];
+
+    if (!convs || convs.length === 0) {
+      listElem.innerHTML = '<div class="empty-state">No WhatsApp conversation history recorded yet.</div>';
+      return;
+    }
+
+    listElem.innerHTML = convs.map(c => {
+      const isSelected = state.activeConversationPhone === c.phone_number;
+      return `
+        <div class="thread-item ${isSelected ? 'active' : ''}" onclick="App.selectConversation('${c.phone_number}')">
+          <div class="thread-avatar">💬</div>
+          <div class="thread-info">
+            <div class="thread-header-row">
+              <span class="thread-name">${escapeHtml(c.display_name || c.phone_number)}</span>
+              <span class="thread-time">${formatTimeShort(c.last_activity)}</span>
+            </div>
+            <div class="thread-snippet">
+              ${c.last_message_is_voice ? '🎤 [Voice Note] ' : ''}${escapeHtml(c.last_message || 'Conversation initiated')}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // If no active conversation selected, pick the first one
+    if (!state.activeConversationPhone && convs.length > 0) {
+      selectConversation(convs[0].phone_number);
+    }
+  }
+
+  function openUserConversation(phone) {
+    state.activeConversationPhone = phone;
+    switchTab('conversations');
+    selectConversation(phone);
+  }
+
+  async function selectConversation(phone) {
+    state.activeConversationPhone = phone;
+
+    // Highlight sidebar thread
+    document.querySelectorAll('.thread-item').forEach(item => {
+      item.classList.toggle('active', item.getAttribute('onclick')?.includes(phone));
+    });
+
+    await loadConversationMessages(phone, true);
+  }
+
+  async function loadConversationMessages(phone, scrollBottom = true) {
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(phone)}/messages`).then(r => r.json());
+      const msgs = res.messages || [];
+      state.activeMessages = msgs;
+
+      // Update Header Bar
+      const user = res.user || (state.users || []).find(u => u.phone_number === phone) || {};
+      setText('chat-active-name', user.display_name || `WhatsApp User ${phone.slice(-4)}`);
+      setText('chat-active-sub', `WhatsApp Thread • ${phone}`);
+
+      const langMap = { en: 'English', si: 'සිංහල', ta: 'தமிழ்', ml: 'മലയാളം' };
+      setText('chat-badge-lang', langMap[user.preferred_language] || user.preferred_language || 'English');
+      setText('chat-badge-mode', `${(user.preferred_response_mode || 'text').toUpperCase()} MODE`);
+
+      const container = document.getElementById('chat-messages-container');
+
+      if (!msgs || msgs.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            No messages exchanged yet with <strong>${phone}</strong>.<br>
+            Use the input below to simulate an incoming WhatsApp message.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = msgs.map(m => {
+        const isUser = m.sender === 'user';
+        return `
+          <div class="message-bubble ${isUser ? 'bubble-user' : 'bubble-agent'}">
+            ${m.is_voice ? `<div class="voice-badge-tag">🎤 Voice Note (${m.transcript ? 'Transcribed' : 'Audio'})</div>` : ''}
+            <div>${escapeHtml(m.message_text)}</div>
+            <div class="bubble-time">${formatTimeShort(m.timestamp)}</div>
+          </div>
+        `;
+      }).join('');
+
+      if (scrollBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    } catch (err) {
+      console.error('Failed to load conversation messages:', err);
+    }
+  }
+
+  async function handleSendSimulatorMessage(e) {
+    e.preventDefault();
+    if (!state.activeConversationPhone) {
+      alert('Please select a conversation thread first.');
+      return;
+    }
+
+    const input = document.getElementById('composer-text-input');
+    const isVoice = document.getElementById('composer-is-voice')?.checked || false;
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+
+    // Append optimistic user bubble
+    const container = document.getElementById('chat-messages-container');
+    container.innerHTML += `
+      <div class="message-bubble bubble-user">
+        ${isVoice ? '<div class="voice-badge-tag">🎤 Voice Note</div>' : ''}
+        <div>${escapeHtml(text)}</div>
+        <div class="bubble-time">Just now</div>
+      </div>
+    `;
+    container.scrollTop = container.scrollHeight;
+
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(state.activeConversationPhone)}/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, is_voice: isVoice })
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        await loadConversationMessages(state.activeConversationPhone, true);
+        await fetchAllData();
+      }
+    } catch (err) {
+      console.error('Simulator message error:', err);
+    }
+  }
+
+  function filterConversations() {
+    const q = (document.getElementById('search-threads') || {}).value?.toLowerCase() || '';
+    document.querySelectorAll('.thread-item').forEach(item => {
+      item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  // 8. Render Pickups & Reimbursements View
+  function renderPickups() {
+    const tbody = document.getElementById('pickups-table-body');
+    const tasks = state.pickups || [];
+
+    if (!tasks || tasks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No pickup tasks recorded.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = tasks.map(t => `
+      <tr>
+        <td class="font-mono"><strong>${t.id}</strong></td>
+        <td class="font-mono">${t.donation_id}</td>
+        <td>${escapeHtml(t.pickup_location)}</td>
+        <td>${escapeHtml(t.delivery_location)}</td>
+        <td><strong>${escapeHtml(t.volunteer_name || 'Awaiting')}</strong></td>
+        <td><span class="badge badge-${getTaskBadgeColor(t.status)}">${t.status}</span></td>
+        <td>${t.total_distance_km || 4.8} km</td>
+        <td>LKR ${t.estimated_transport_cost || 350}</td>
+        <td><span class="badge badge-slate">${t.approved_transport_reimbursement ? 'APPROVED' : 'PENDING'}</span></td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="App.approveReimbursement('${t.id}')">Approve</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterPickups() {
+    const st = (document.getElementById('filter-pickups-status') || {}).value || 'all';
+    document.querySelectorAll('#pickups-table-body tr').forEach(r => {
+      const text = r.textContent;
+      r.style.display = st === 'all' || text.includes(st) ? '' : 'none';
+    });
+  }
+
+  async function approveReimbursement(taskId) {
+    alert(`Reimbursement approved for Task ${taskId}.`);
+  }
+
+  // 9. Operations Map View (Leaflet Integration)
+  function initOrUpdateMap() {
+    const mapElem = document.getElementById('operations-leaflet-map');
+    if (!mapElem || typeof L === 'undefined') return;
+
+    if (!state.map) {
+      state.map = L.map('operations-leaflet-map').setView([6.9271, 79.8612], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(state.map);
+    }
+
+    state.map.invalidateSize();
+
+    // Fetch and render location markers
+    fetch('/api/locations')
+      .then(r => r.json())
+      .then(data => {
+        // Clear previous markers
+        state.mapMarkers.forEach(m => state.map.removeLayer(m));
+        state.mapMarkers = [];
+
+        (data.markers || []).forEach(pin => {
+          const marker = L.circleMarker([pin.latitude, pin.longitude], {
+            radius: 8,
+            fillColor: pin.type === 'organization' ? '#3b82f6' : (pin.type === 'volunteer' ? '#8b5cf6' : '#10b981'),
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+          }).addTo(state.map);
+
+          marker.bindPopup(`
+            <div style="font-family: Inter, sans-serif;">
+              <strong>${escapeHtml(pin.title)}</strong><br>
+              <small style="color: #64748b;">${escapeHtml(pin.subtitle)}</small><br>
+              <small>📍 ${escapeHtml(pin.location_name)}</small>
+            </div>
+          `);
+
+          state.mapMarkers.push(marker);
+        });
+      })
+      .catch(err => console.warn('Map locations error:', err));
+  }
+
+  // 10. Render Agent Activity (Audit Events) View
+  function renderAgentEvents() {
+    const tbody = document.getElementById('audit-events-table-body');
+    const events = state.agentEvents || [];
+
+    if (!events || events.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No audit log records available.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = events.map(e => `
+      <tr>
+        <td class="font-mono">${formatDate(e.created_at)}</td>
+        <td><strong>${escapeHtml(e.event_type.replace(/_/g, ' '))}</strong></td>
+        <td><span class="badge badge-emerald">${escapeHtml(e.actor || 'Agent Kernel')}</span></td>
+        <td class="font-mono">${escapeHtml(e.related_id || '—')}</td>
+        <td class="font-mono text-muted" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          ${escapeHtml(JSON.stringify(e.metadata || {}))}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterAuditEvents() {
+    const actor = (document.getElementById('filter-audit-actor') || {}).value || 'all';
+    document.querySelectorAll('#audit-events-table-body tr').forEach(r => {
+      r.style.display = actor === 'all' || r.textContent.includes(actor) ? '' : 'none';
+    });
+  }
+
+  // 11. Render Notifications View
+  function renderNotifications() {
+    const tbody = document.getElementById('notifications-table-body');
+    const notifs = state.notifications || [];
+
+    if (!notifs || notifs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No notifications dispatched yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = notifs.map(n => `
+      <tr>
+        <td class="font-mono">${n.id}</td>
+        <td><span class="badge badge-slate">${escapeHtml(n.recipient_type || 'user')}</span></td>
+        <td class="font-mono">${escapeHtml(n.recipient_id || '')}</td>
+        <td><span class="badge badge-emerald">WhatsApp</span></td>
+        <td style="max-width: 350px;">${escapeHtml(n.message)}</td>
+        <td><span class="badge badge-emerald">SENT</span></td>
+        <td class="font-mono">${formatDate(n.created_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // 12. Render Reports View
+  function renderReports() {
+    const rep = state.reports || {};
+    const sum = rep.summary || {};
+
+    const statsElem = document.getElementById('reports-impact-stats');
+    if (statsElem) {
+      statsElem.innerHTML = `
+        <div class="impact-stat-box"><div class="impact-num">${sum.total_meals_rescued || 0}</div><div class="impact-label">Meals Rescued & Served</div></div>
+        <div class="impact-stat-box"><div class="impact-num">${sum.total_food_kg || 0} kg</div><div class="impact-label">Surplus Food Saved</div></div>
+        <div class="impact-stat-box"><div class="impact-num">${sum.co2_emissions_prevented_kg || 0} kg</div><div class="impact-label">CO₂ Offset Equivalent</div></div>
+        <div class="impact-stat-box"><div class="impact-num">LKR ${(sum.financial_value_lkr || 0).toLocaleString()}</div><div class="impact-label">Economic Value Rescued</div></div>
+      `;
+    }
+
+    const barsElem = document.getElementById('reports-regional-bars');
+    if (barsElem) {
+      const reg = rep.regional_distribution || { 'Colombo': 4, 'Dehiwala': 2, 'Kandy': 1 };
+      const maxVal = Math.max(...Object.values(reg), 1);
+      barsElem.innerHTML = Object.entries(reg).map(([region, count]) => `
+        <div class="bar-row">
+          <div class="bar-label-group"><span>${escapeHtml(region)}</span><span>${count} Rescues</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width: ${(count / maxVal) * 100}%;"></div></div>
+        </div>
+      `).join('');
+    }
+
+    const leaderboardElem = document.getElementById('reports-volunteer-leaderboard');
+    if (leaderboardElem) {
+      const vols = rep.volunteer_leaderboard || [];
+      leaderboardElem.innerHTML = vols.map((v, i) => `
+        <tr>
+          <td><strong>#${i + 1}</strong></td>
+          <td><strong>${escapeHtml(v.name)}</strong></td>
+          <td>${escapeHtml(v.transport_mode)}</td>
+          <td>${v.completed_pickups} deliveries</td>
+          <td><span class="badge badge-emerald">${v.status}</span></td>
+        </tr>
+      `).join('');
+    }
+  }
+
+  // 13. Render Settings View
+  function renderSettings() {
+    const cfg = (state.settings || {}).transport_cost || {};
+    if (cfg.base_fare !== undefined) document.getElementById('setting-base-fare').value = cfg.base_fare;
+    if (cfg.cost_per_km !== undefined) document.getElementById('setting-cost-per-km').value = cfg.cost_per_km;
+    if (cfg.currency) document.getElementById('setting-currency').value = cfg.currency;
+  }
+
+  async function handleSaveTransportSettings(e) {
+    e.preventDefault();
+    const baseFare = parseFloat(document.getElementById('setting-base-fare').value);
+    const costPerKm = parseFloat(document.getElementById('setting-cost-per-km').value);
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base_fare: baseFare, cost_per_km: costPerKm })
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        alert('Transport reimbursement configuration saved.');
+        await fetchAllData();
+      }
+    } catch (err) {
+      alert('Failed to update transport configuration.');
+    }
+  }
+
+  // Modals Setup
+  function setupModals() {
+    document.getElementById('btn-open-donation-modal')?.addEventListener('click', () => openModal('modal-new-donation'));
+    document.getElementById('btn-open-volunteer-modal')?.addEventListener('click', () => openModal('modal-new-volunteer'));
+    document.getElementById('btn-open-simulate-modal')?.addEventListener('click', () => openModal('modal-simulate-whatsapp'));
+  }
+
+  function openModal(id) {
+    document.getElementById(id)?.classList.add('active');
+  }
+
+  function closeModal(id) {
+    document.getElementById(id)?.classList.remove('active');
+  }
+
+  async function handleCreateDonation(e) {
+    e.preventDefault();
+    const food = document.getElementById('modal-don-food').value;
+    const qty = parseFloat(document.getElementById('modal-don-qty').value);
+    const unit = document.getElementById('modal-don-unit').value;
+    const dietary = document.getElementById('modal-don-dietary').value;
+    const loc = document.getElementById('modal-don-location').value;
+    const donorName = document.getElementById('modal-don-donor-name').value;
+    const donorPhone = document.getElementById('modal-don-donor-phone').value;
+    const deadline = document.getElementById('modal-don-deadline').value;
+
+    try {
+      const res = await fetch('/api/donations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          food_type: food,
+          quantity: qty,
+          unit: unit,
+          dietary_info: dietary,
+          location: loc,
+          donor_name: donorName,
+          donor_phone: donorPhone,
+          pickup_deadline: deadline
+        })
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        closeModal('modal-new-donation');
+        await fetchAllData();
+        switchTab('donations');
+      }
+    } catch (err) {
+      alert('Failed to create donation.');
+    }
+  }
+
+  async function handleCreateVolunteer(e) {
+    e.preventDefault();
+    const name = document.getElementById('modal-vol-name').value;
+    const phone = document.getElementById('modal-vol-phone').value;
+    const transport = document.getElementById('modal-vol-transport').value;
+    const area = document.getElementById('modal-vol-area').value;
+
+    try {
+      const res = await fetch('/api/volunteers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          phone: phone,
+          transport_mode: transport,
+          service_area: area
+        })
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        closeModal('modal-new-volunteer');
+        await fetchAllData();
+        switchTab('volunteers');
+      }
+    } catch (err) {
+      alert('Failed to register courier.');
+    }
+  }
+
+  async function handleTriggerSimulateModal(e) {
+    e.preventDefault();
+    const phone = document.getElementById('modal-sim-phone').value;
+    const text = document.getElementById('modal-sim-text').value;
+    const isVoice = document.getElementById('modal-sim-is-voice')?.checked || false;
+
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(phone)}/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, is_voice: isVoice })
+      }).then(r => r.json());
+
+      if (res.status === 'success') {
+        closeModal('modal-simulate-whatsapp');
+        state.activeConversationPhone = phone;
+        await fetchAllData();
+        switchTab('conversations');
+      }
+    } catch (err) {
+      alert('Failed to simulate message.');
+    }
+  }
+
+  function setupMobileSidebar() {
+    document.getElementById('btn-mobile-sidebar')?.addEventListener('click', () => {
+      document.getElementById('app-sidebar').classList.toggle('open');
+    });
+  }
+
+  // Utility Helpers
+  function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+      .replace(/"/g, '&quot;');
   }
 
-  // Markdown simple parser for agent response
-  function formatMarkdown(text) {
-    if (!text) return '';
-    let html = escapeHtml(text);
-    
-    // Bold **text**
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Italic *text*
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    
-    // Inline code `code`
-    html = html.replace(/`(.*?)`/g, '<code>$1</code>');
-    
-    // Bullet points * item
-    html = html.replace(/^\s*\*\s+(.*)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    
-    // Line breaks
-    html = html.replace(/\n\n/g, '<br><br>');
-    html = html.replace(/\n/g, '<br>');
-
-    return html;
-  }
-
-  // ==========================================
-  // API CLIENT
-  // ==========================================
-  const API = {
-    // 1. Health check
-    async checkHealth() {
-      try {
-        const res = await fetch('/health');
-        return res.ok;
-      } catch {
-        return false;
-      }
-    },
-
-    // 2. Chat with FoodRescue Coordinator
-    async sendChatPrompt(prompt, sessionId) {
-      const res = await fetch('/api/v1/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agent: 'foodrescue_coordinator',
-          prompt: prompt,
-          session_id: sessionId || state.sessionId,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Network error' }));
-        throw new Error(err.detail?.error || err.detail || 'Chat request failed');
-      }
-
-      return await res.json();
-    },
-
-    // 3. Fetch Dashboard Stats
-    async getStats() {
-      const res = await fetch('/api/stats');
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return await res.json();
-    },
-
-    // 4. Fetch All Donations
-    async getDonations(status = null) {
-      let url = '/api/donations';
-      if (status && status !== 'ALL') {
-        url += `?status=${encodeURIComponent(status)}`;
-      }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Failed to fetch donations');
-      return await res.json();
-    },
-
-    // 5. Fetch Single Donation Detail
-    async getDonationDetail(donationId) {
-      const res = await fetch(`/api/donations/${encodeURIComponent(donationId)}`);
-      if (!res.ok) throw new Error('Failed to fetch donation detail');
-      return await res.json();
-    },
-
-    // 6. Fetch Organizations
-    async getOrganizations() {
-      const res = await fetch('/api/organizations');
-      if (!res.ok) throw new Error('Failed to fetch organizations');
-      return await res.json();
-    },
-
-    // 7. Fetch Volunteers
-    async getVolunteers() {
-      const res = await fetch('/api/volunteers');
-      if (!res.ok) throw new Error('Failed to fetch volunteers');
-      return await res.json();
-    },
-
-    // 8. Fetch Pickups
-    async getPickups() {
-      const res = await fetch('/api/pickups');
-      if (!res.ok) throw new Error('Failed to fetch pickups');
-      return await res.json();
-    },
-
-    // 9. Fetch Notifications
-    async getNotifications() {
-      const res = await fetch('/api/notifications');
-      if (!res.ok) throw new Error('Failed to fetch notifications');
-      return await res.json();
-    },
-
-    // 10. Fetch Session Context
-    async getSessionState(sessionId) {
-      const res = await fetch(`/api/session-context/${encodeURIComponent(sessionId)}`);
-      if (!res.ok) throw new Error('Failed to fetch session state');
-      return await res.json();
-    },
-
-    // 11. Fetch Reimbursements
-    async getReimbursements(status = null) {
-      let url = '/api/reimbursements';
-      if (status && status !== 'ALL') {
-        url += `?status=${encodeURIComponent(status)}`;
-      }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Failed to fetch reimbursements');
-      return await res.json();
-    },
-
-    // 12. Update Reimbursement Status
-    async updateReimbursementStatus(reimbId, status, notes = null) {
-      const res = await fetch(`/api/reimbursements/${encodeURIComponent(reimbId)}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, notes }),
-      });
-      if (!res.ok) throw new Error('Failed to update reimbursement status');
-      return await res.json();
-    },
-
-    // 13. Update Pickup Live GPS Location
-    async updatePickupLocation(pickupId, latitude, longitude, accuracy_m = null, volunteer_id = null) {
-      const res = await fetch(`/api/pickups/${encodeURIComponent(pickupId)}/location`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ latitude, longitude, accuracy_m, volunteer_id }),
-      });
-      if (!res.ok) throw new Error('Failed to send GPS location');
-      return await res.json();
-    },
-
-    // 14. Calculate Route & Cost
-    async calculateRoute(origin, destination, transport_mode = 'motorbike') {
-      const res = await fetch('/api/routing/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination, transport_mode }),
-      });
-      if (!res.ok) throw new Error('Failed to calculate route');
-      return await res.json();
-    },
-
-    // 15. Create Volunteer Courier
-    async createVolunteer(data) {
-      const res = await fetch('/api/volunteers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error('Failed to register volunteer courier');
-      return await res.json();
-    },
-
-    // 16. Reset Demo Data
-    async resetDemoData() {
-      const res = await fetch('/api/reset-demo', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to reset demo data');
-      return await res.json();
-    },
-  };
-
-  // ==========================================
-  // VIEW RENDERERS
-  // ==========================================
-
-  // 1. Render Dashboard
-  function renderDashboard() {
-    if (!state.stats) return;
-    const stats = state.stats;
-
-    // KPI Values
-    const foodEl = document.getElementById('kpi-food-rescued');
-    if (foodEl) foodEl.innerHTML = `${stats.total_food_quantity || 0} <span class="kpi-unit">meals/units</span>`;
-    
-    const donEl = document.getElementById('kpi-total-donations');
-    if (donEl) donEl.textContent = stats.total_donations || 0;
-    
-    const activeEl = document.getElementById('kpi-active-rescues');
-    if (activeEl) activeEl.textContent = stats.active_rescues || 0;
-    
-    const orgsEl = document.getElementById('kpi-total-orgs');
-    if (orgsEl) orgsEl.textContent = stats.total_organizations || 0;
-    
-    const volsEl = document.getElementById('kpi-volunteers-ready');
-    if (volsEl) volsEl.textContent = stats.available_volunteers || 0;
-    
-    const totalVolsEl = document.getElementById('kpi-total-volunteers');
-    if (totalVolsEl) totalVolsEl.textContent = `${stats.total_volunteers || 0} registered`;
-    
-    const delivEl = document.getElementById('kpi-completed-deliveries');
-    if (delivEl) delivEl.textContent = stats.delivered_rescues || 0;
-
-    // Badges in navigation
-    const badgeDon = document.getElementById('badge-donations-count');
-    if (badgeDon) badgeDon.textContent = state.donations.length;
-    
-    const badgeOrg = document.getElementById('badge-organizations-count');
-    if (badgeOrg) badgeOrg.textContent = state.organizations.length;
-    
-    const badgeVol = document.getElementById('badge-volunteers-count');
-    if (badgeVol) badgeVol.textContent = state.volunteers.length;
-    
-    const badgePick = document.getElementById('badge-pickups-count');
-    if (badgePick) badgePick.textContent = state.pickups.length;
-
-    // Pipeline status distribution bars (All 7 Stages)
-    const distContainer = document.getElementById('pipeline-status-bars');
-    if (distContainer && stats.status_distribution) {
-      const statuses = [
-        { key: 'AVAILABLE', label: '1. AVAILABLE (New Donation)', color: 'var(--primary)' },
-        { key: 'MATCHED', label: '2. MATCHED (Org Accepted)', color: 'var(--blue)' },
-        { key: 'PICKUP_ASSIGNED', label: '3. PICKUP ASSIGNED (Volunteer Ready)', color: 'var(--purple)' },
-        { key: 'EN_ROUTE', label: '4. EN ROUTE (Courier in Transit)', color: 'var(--cyan)' },
-        { key: 'COLLECTED', label: '5. COLLECTED (Food Picked Up)', color: '#14B8A6' },
-        { key: 'DELIVERED', label: '6. DELIVERED (Delivered to Org)', color: '#34D399' },
-      ];
-
-      const total = stats.total_donations || 1;
-      let html = '';
-
-      statuses.forEach((s) => {
-        const count = stats.status_distribution[s.key] || 0;
-        const pct = Math.round((count / total) * 100);
-        html += `
-          <div class="pipeline-row">
-            <div class="pipeline-meta">
-              <span class="pipeline-lbl">${s.label}</span>
-              <span class="pipeline-num">${count} (${pct}%)</span>
-            </div>
-            <div class="pipeline-track">
-              <div class="pipeline-fill" style="width: ${pct}%; background: ${s.color};"></div>
-            </div>
-          </div>
-        `;
-      });
-
-      distContainer.innerHTML = html;
-    }
-
-    // Recent Donations Mini List
-    const recentContainer = document.getElementById('recent-donations-container');
-    if (recentContainer) {
-      if (state.donations.length === 0) {
-        recentContainer.innerHTML = `<div class="text-muted text-center py-4">No donations yet. Click "Report Donation" or chat with the AI Assistant.</div>`;
-      } else {
-        const recent = state.donations.slice(0, 4);
-        recentContainer.innerHTML = recent
-          .map(
-            (d) => `
-          <div class="mini-don-row" data-id="${d.id}">
-            <div class="mini-don-left">
-              <span class="mini-don-id">${escapeHtml(d.id)}</span>
-              <div>
-                <div class="mini-don-food">${d.quantity} ${escapeHtml(d.unit)} of ${escapeHtml(d.food_type)}</div>
-                <div class="mini-don-loc">📍 ${escapeHtml(d.pickup_location)} • Available: ${escapeHtml(d.available_from)} - ${escapeHtml(d.pickup_deadline)}</div>
-              </div>
-            </div>
-            <span class="status-badge status-${d.status}">${escapeHtml(d.status)}</span>
-          </div>
-        `
-          )
-          .join('');
-
-        // Attach click to inspect donation
-        recentContainer.querySelectorAll('.mini-don-row').forEach((row) => {
-          row.addEventListener('click', () => {
-            const donId = row.getAttribute('data-id');
-            selectDonation(donId);
-            switchTab('donations');
-          });
-        });
-      }
-    }
-
-    // Notification Feed
-    const notifsContainer = document.getElementById('notifications-stream');
-    if (notifsContainer) {
-      if (state.notifications.length === 0) {
-        notifsContainer.innerHTML = `<div class="text-muted text-center py-4">No recent coordination events.</div>`;
-      } else {
-        notifsContainer.innerHTML = state.notifications
-          .slice(0, 10)
-          .map(
-            (n) => `
-          <div class="notif-item">
-            <div class="notif-header">
-              <span class="notif-badge badge-primary">${escapeHtml(n.recipient_type)}: ${escapeHtml(n.recipient_id)}</span>
-              <span class="notif-time">${formatDate(n.created_at)}</span>
-            </div>
-            <div class="notif-msg">${escapeHtml(n.message)}</div>
-          </div>
-        `
-          )
-          .join('');
-      }
-    }
-  }
-
-  // 2. Render Donations Table & 7-Stage Stepper
-  function renderDonations() {
-    const tableBody = document.getElementById('donations-table-body');
-    const badgeCounter = document.getElementById('badge-donations-count');
-    if (badgeCounter) badgeCounter.textContent = state.donations.length;
-
-    if (!tableBody) return;
-
-    if (state.donations.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-muted">No donation records found.</td></tr>`;
-      return;
-    }
-
-    tableBody.innerHTML = state.donations
-      .map((d) => {
-        const isSelected = state.activeDonationId === d.id;
-        return `
-        <tr class="${isSelected ? 'active-row' : ''}">
-          <td><code class="mini-don-id">${escapeHtml(d.id)}</code></td>
-          <td><strong>${d.quantity} ${escapeHtml(d.unit)}</strong> ${escapeHtml(d.food_type)}</td>
-          <td><span class="badge badge-subtle">${escapeHtml(d.dietary_information || 'Standard')}</span></td>
-          <td>📍 ${escapeHtml(d.pickup_location)}</td>
-          <td>${escapeHtml(d.available_from)} - ${escapeHtml(d.pickup_deadline)}</td>
-          <td><span class="status-badge status-${d.status}">${escapeHtml(d.status)}</span></td>
-          <td>${formatDate(d.created_at)}</td>
-          <td>
-            <button class="btn btn-secondary btn-sm btn-inspect-don" data-id="${d.id}">
-              Track Lifecycle
-            </button>
-          </td>
-        </tr>
-      `;
-      })
-      .join('');
-
-    // Attach inspect buttons
-    tableBody.querySelectorAll('.btn-inspect-don').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const donId = btn.getAttribute('data-id');
-        selectDonation(donId);
-      });
-    });
-
-    // Update 7-Stage Stepper
-    updateLifecycleStepper();
-  }
-
-  // Update 7-Stage Visual Lifecycle Stepper UI
-  function updateLifecycleStepper() {
-    const stepperTitle = document.getElementById('stepper-don-title');
-    const actionContainer = document.getElementById('stepper-action-buttons');
-    const nodes = document.querySelectorAll('#lifecycle-steps-bar .step-node');
-    const lines = document.querySelectorAll('#lifecycle-steps-bar .step-line');
-
-    if (!state.activeDonationId) {
-      if (state.donations.length > 0) {
-        state.activeDonationId = state.donations[0].id;
-      } else {
-        if (stepperTitle) stepperTitle.textContent = 'No active donations available to track.';
-        if (actionContainer) actionContainer.innerHTML = '';
-        return;
-      }
-    }
-
-    const don = state.donations.find((d) => d.id === state.activeDonationId);
-    if (!don) return;
-
-    if (stepperTitle) {
-      stepperTitle.innerHTML = `<strong>${escapeHtml(don.id)}</strong>: ${don.quantity} ${escapeHtml(don.unit)} of ${escapeHtml(don.food_type)} (Pickup: ${escapeHtml(don.pickup_location)}) — Status: <span class="status-badge status-${don.status}">${escapeHtml(don.status)}</span>`;
-    }
-
-    // 7 Exact Stages: AVAILABLE -> MATCHED -> PICKUP_PENDING -> PICKUP_ASSIGNED -> EN_ROUTE -> COLLECTED -> DELIVERED
-    const stageOrder = [
-      'AVAILABLE',
-      'MATCHED',
-      'PICKUP_PENDING',
-      'PICKUP_ASSIGNED',
-      'EN_ROUTE',
-      'COLLECTED',
-      'DELIVERED',
-    ];
-
-    const currentStatus = don.status;
-    const currentIdx = stageOrder.indexOf(currentStatus);
-
-    nodes.forEach((node, idx) => {
-      const stageName = node.getAttribute('data-stage');
-      const stageIdx = stageOrder.indexOf(stageName);
-
-      node.classList.remove('completed', 'active');
-      if (currentStatus === 'CANCELLED') {
-        // cancelled state
-      } else if (stageIdx < currentIdx) {
-        node.classList.add('completed');
-      } else if (stageIdx === currentIdx) {
-        node.classList.add('active');
-      }
-    });
-
-    lines.forEach((line, idx) => {
-      line.classList.remove('completed');
-      if (idx < currentIdx) {
-        line.classList.add('completed');
-      }
-    });
-
-    // Progression action triggers based on active stage
-    if (actionContainer) {
-      let buttonsHtml = '';
-      if (currentStatus === 'AVAILABLE') {
-        buttonsHtml = `
-          <button class="btn btn-primary btn-sm" id="btn-action-match">
-            <span>🤝 1. Match Org & Volunteer</span>
-          </button>
-        `;
-      } else if (currentStatus === 'MATCHED') {
-        buttonsHtml = `
-          <button class="btn btn-primary btn-sm" id="btn-action-assign">
-            <span>🚚 2. Assign Volunteer</span>
-          </button>
-        `;
-      } else if (currentStatus === 'PICKUP_ASSIGNED' || currentStatus === 'PICKUP_PENDING') {
-        buttonsHtml = `
-          <button class="btn btn-secondary btn-sm" id="btn-action-enroute">
-            <span>🚗 3. Mark En Route</span>
-          </button>
-          <button class="btn btn-primary btn-sm" id="btn-action-collected">
-            <span>📦 4. Mark Collected</span>
-          </button>
-        `;
-      } else if (currentStatus === 'EN_ROUTE') {
-        buttonsHtml = `
-          <button class="btn btn-primary btn-sm" id="btn-action-collected">
-            <span>📦 4. Mark Collected</span>
-          </button>
-        `;
-      } else if (currentStatus === 'COLLECTED') {
-        buttonsHtml = `
-          <button class="btn btn-primary btn-sm" id="btn-action-delivered">
-            <span>✅ 5. Confirm Delivered</span>
-          </button>
-        `;
-      } else if (currentStatus === 'DELIVERED') {
-        buttonsHtml = `
-          <span class="badge badge-primary">✨ Lifecycle Completed & Delivered</span>
-        `;
-      }
-
-      actionContainer.innerHTML = buttonsHtml;
-
-      // Attach button actions
-      document.getElementById('btn-action-match')?.addEventListener('click', () => {
-        sendChatAction(`Find a matching organization, create pickup task, and assign an available volunteer for donation ${don.id}.`);
-      });
-
-      document.getElementById('btn-action-assign')?.addEventListener('click', () => {
-        sendChatAction(`Find an available volunteer for donation ${don.id} and assign them to the pickup task.`);
-      });
-
-      document.getElementById('btn-action-enroute')?.addEventListener('click', () => {
-        sendChatAction(`Update the pickup task status for donation ${don.id} to EN_ROUTE.`);
-      });
-
-      document.getElementById('btn-action-collected')?.addEventListener('click', () => {
-        sendChatAction(`Update the pickup task status for donation ${don.id} to COLLECTED.`);
-      });
-
-      document.getElementById('btn-action-delivered')?.addEventListener('click', () => {
-        sendChatAction(`Update the pickup task status for donation ${don.id} to DELIVERED.`);
-      });
-    }
-  }
-
-  function selectDonation(donationId) {
-    state.activeDonationId = donationId;
-    renderDonations();
-    showToast(`Viewing donation ${donationId}`, 'info');
-  }
-
-  // 3. Render Recipient Organizations View
-  function renderOrganizations() {
-    const container = document.getElementById('organizations-grid-container');
-    const badge = document.getElementById('header-org-count');
-    if (badge) badge.textContent = `${state.organizations.length} Verified Partners`;
-
-    if (!container) return;
-
-    if (state.organizations.length === 0) {
-      container.innerHTML = `<div class="text-muted text-center py-8">No recipient organizations registered.</div>`;
-      return;
-    }
-
-    container.innerHTML = state.organizations
-      .map(
-        (o) => `
-      <div class="entity-card glass">
-        <div class="entity-top">
-          <div class="entity-title">🏢 ${escapeHtml(o.name)}</div>
-          <span class="entity-id">${escapeHtml(o.id)}</span>
-        </div>
-        <div class="entity-details">
-          <div class="entity-row">
-            <span class="e-lbl">Service Area:</span>
-            <span class="e-val">${escapeHtml(o.service_area)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Capacity:</span>
-            <span class="e-val">${escapeHtml(o.capacity || 'High')}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Accepted Foods:</span>
-            <span class="e-val">${escapeHtml(o.accepted_food_types)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Location:</span>
-            <span class="e-val">📍 ${escapeHtml(o.location)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Contact Phone:</span>
-            <span class="e-val">📞 ${escapeHtml(maskPhone(o.phone))}</span>
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm btn-match-org" data-id="${o.id}">
-          <span>View Matched Pickups</span>
-        </button>
-      </div>
-    `
-      )
-      .join('');
-
-    container.querySelectorAll('.btn-match-org').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        switchTab('pickups');
-      });
-    });
-  }
-
-  // 4. Render Volunteers View
-  function renderVolunteers() {
-    const container = document.getElementById('volunteers-grid-container');
-    const badge = document.getElementById('header-vol-count');
-    if (badge) badge.textContent = `${state.volunteers.length} Active Couriers`;
-
-    if (!container) return;
-
-    if (state.volunteers.length === 0) {
-      container.innerHTML = `
-        <div class="text-muted text-center py-8" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
-          <div style="font-size: 2rem;">🚴</div>
-          <div>No volunteers registered yet. Add couriers to the dispatch pool.</div>
-          <button class="btn btn-primary btn-sm" id="btn-empty-register-vol">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            <span>Register Volunteer Courier</span>
-          </button>
-        </div>
-      `;
-      document.getElementById('btn-empty-register-vol')?.addEventListener('click', () => {
-        const volModal = document.getElementById('modal-create-volunteer');
-        if (volModal) volModal.classList.add('active');
-      });
-      return;
-    }
-
-    container.innerHTML = state.volunteers
-      .map(
-        (v) => `
-      <div class="entity-card glass">
-        <div class="entity-top">
-          <div class="entity-title">🚴 ${escapeHtml(v.name)}</div>
-          <span class="status-badge status-${v.current_status === 'available' ? 'AVAILABLE' : 'MATCHED'}">${escapeHtml(v.current_status)}</span>
-        </div>
-        <div class="entity-details">
-          <div class="entity-row">
-            <span class="e-lbl">Courier ID:</span>
-            <span class="e-val entity-id">${escapeHtml(v.id)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Service Area:</span>
-            <span class="e-val">${escapeHtml(v.service_area)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Transport Mode:</span>
-            <span class="e-val">${escapeHtml(v.transport_mode || 'Bicycle / Motorbike')}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Location:</span>
-            <span class="e-val">📍 ${escapeHtml(v.location)}</span>
-          </div>
-          <div class="entity-row">
-            <span class="e-lbl">Contact Phone:</span>
-            <span class="e-val">📞 ${escapeHtml(maskPhone(v.phone))}</span>
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm btn-view-vol-tasks" data-id="${v.id}">
-          <span>View Assigned Pickups</span>
-        </button>
-      </div>
-    `
-      )
-      .join('');
-
-    container.querySelectorAll('.btn-view-vol-tasks').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        switchTab('pickups');
-      });
-    });
-  }
-
-  // Route Canvas Visualizer
-  function drawRouteCanvas(originName, destName, courierCoords = null, isGpsActive = false) {
-    const canvas = document.getElementById('route-map-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-
-    // Background
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, w, h);
-
-    // Subtle Grid
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-    for (let y = 0; y < h; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-
-    const pX = 120, pY = 110;  // Pickup (Donor)
-    const dX = w - 140, dY = 110; // Delivery (Charity)
-
-    // Route Connecting Line
-    ctx.beginPath();
-    ctx.moveTo(pX, pY);
-    ctx.bezierCurveTo(pX + 200, pY - 50, dX - 200, dY + 50, dX, dY);
-    ctx.strokeStyle = isGpsActive ? '#10b981' : '#38bdf8';
-    ctx.lineWidth = 4;
-    ctx.setLineDash(isGpsActive ? [] : [6, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Glow Effect
-    ctx.strokeStyle = isGpsActive ? 'rgba(16, 185, 129, 0.25)' : 'rgba(56, 189, 248, 0.2)';
-    ctx.lineWidth = 12;
-    ctx.stroke();
-
-    // Courier Position (midpoint or dynamic)
-    const cX = courierCoords ? (pX + (dX - pX) * 0.55) : (pX + (dX - pX) * 0.5);
-    const cY = courierCoords ? (pY + (dY - pY) * 0.55 - 15) : (pY - 12);
-
-    // Draw Courier Marker
-    ctx.fillStyle = isGpsActive ? '#10b981' : '#f59e0b';
-    ctx.beginPath();
-    ctx.arc(cX, cY, isGpsActive ? 14 : 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('🚴', cX, cY + 4);
-
-    if (isGpsActive) {
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(cX, cY, 20, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = '#e2e8f0';
-    ctx.font = '11px sans-serif';
-    ctx.fillText(isGpsActive ? 'Courier (Live GPS)' : 'Volunteer Courier', cX, cY + 28);
-
-    // Origin Marker (Donor)
-    ctx.fillStyle = '#3b82f6';
-    ctx.beginPath();
-    ctx.arc(pX, pY, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('📍', pX, pY + 4);
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('Donor: ' + (originName || 'Pickup Location'), pX, pY + 26);
-
-    // Destination Marker (Charity)
-    ctx.fillStyle = '#10b981';
-    ctx.beginPath();
-    ctx.arc(dX, dY, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('🏢', dX, dY + 4);
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('Charity: ' + (destName || 'Delivery Location'), dX, dY + 26);
-  }
-
-  // 5. Render Pickups Logistics Board
-  function renderPickups() {
-    const tableBody = document.getElementById('pickups-table-body');
-    const badge = document.getElementById('header-pickups-count');
-    if (badge) badge.textContent = `${state.pickups.length} Logistics Tasks`;
-
-    if (!tableBody) return;
-
-    if (state.pickups.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-muted">No pickup tasks scheduled yet.</td></tr>`;
-      drawRouteCanvas('Colombo 3', 'Colombo 7', null, false);
-      return;
-    }
-
-    // Pick the most active task for route visualization
-    const activeTask = state.pickups.find(p => p.status === 'EN_ROUTE' || p.status === 'ASSIGNED') || state.pickups[0];
-    
-    // Update Route Overlay Header stats
-    const distEl = document.getElementById('stat-route-distance');
-    const etaEl = document.getElementById('stat-route-eta');
-    const modeEl = document.getElementById('stat-transport-mode');
-    const reimbEl = document.getElementById('stat-route-reimb');
-    const provEl = document.getElementById('stat-routing-provider');
-
-    if (activeTask) {
-      const mode = 'Motorbike';
-      const approxDist = '3.2 km';
-      const approxCost = '160 LKR';
-      const approxEta = '8 min';
-
-      if (distEl) distEl.textContent = approxDist;
-      if (etaEl) etaEl.textContent = approxEta;
-      if (modeEl) modeEl.textContent = mode;
-      if (reimbEl) reimbEl.textContent = approxCost;
-      if (provEl) provEl.textContent = 'Google Routes / Haversine';
-
-      const isGpsOn = state.activeGpsWatchId !== null && state.activeGpsPickupId === activeTask.id;
-      drawRouteCanvas(activeTask.pickup_location, activeTask.delivery_location, state.lastGpsCoords, isGpsOn);
-    }
-
-    tableBody.innerHTML = state.pickups
-      .map((p) => {
-        const isGpsActive = state.activeGpsWatchId !== null && state.activeGpsPickupId === p.id;
-        const mode = 'Motorbike';
-        const estCost = '160 LKR';
-        const estDist = '3.2 km (8m)';
-
-        return `
-        <tr>
-          <td><code class="mini-don-id">${escapeHtml(p.id)}</code></td>
-          <td><a href="#" class="link-don" data-id="${p.donation_id}">${escapeHtml(p.donation_id)}</a></td>
-          <td><strong>${escapeHtml(p.organization_name || p.organization_id || 'Matched Org')}</strong></td>
-          <td>${p.volunteer_name ? `🚴 ${escapeHtml(p.volunteer_name)} (${mode})` : '<span class="text-muted">Unassigned</span>'}</td>
-          <td>📍 ${escapeHtml(p.pickup_location)} ➔ 🏢 ${escapeHtml(p.delivery_location)}</td>
-          <td><span class="badge badge-emerald">${estDist} • ${estCost}</span></td>
-          <td>
-            <span class="gps-status-badge ${isGpsActive ? 'active' : 'inactive'}">
-              <span class="gps-pulse"></span> ${isGpsActive ? 'Live GPS Active' : 'Off'}
-            </span>
-          </td>
-          <td><span class="status-badge status-${p.status}">${escapeHtml(p.status)}</span></td>
-          <td>
-            <div class="table-actions-cluster">
-              ${p.status === 'ASSIGNED' || p.status === 'EN_ROUTE' ? `
-                <button class="btn btn-primary btn-xs btn-toggle-gps-row" data-id="${p.id}">
-                  ${isGpsActive ? '⏹ Stop GPS' : '🛰️ Start GPS'}
-                </button>
-              ` : ''}
-              <button class="btn btn-secondary btn-xs btn-advance-task" data-id="${p.id}" data-don="${p.donation_id}" data-status="${p.status}">
-                ${p.status === 'ASSIGNED' ? 'Start Pickup' : p.status === 'EN_ROUTE' ? 'Mark Collected' : p.status === 'COLLECTED' ? 'Mark Delivered' : 'View Details'}
-              </button>
-            </div>
-          </td>
-        </tr>
-      `;
-      })
-      .join('');
-
-    tableBody.querySelectorAll('.link-don').forEach((link) => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const donId = link.getAttribute('data-id');
-        selectDonation(donId);
-        switchTab('donations');
-      });
-    });
-
-    tableBody.querySelectorAll('.btn-advance-task').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const donId = btn.getAttribute('data-don');
-        const status = btn.getAttribute('data-status');
-        let nextPrompt = `Check and progress status for donation ${donId}.`;
-        if (status === 'ASSIGNED') {
-          nextPrompt = `Update the pickup task status for donation ${donId} to EN_ROUTE.`;
-        } else if (status === 'EN_ROUTE') {
-          nextPrompt = `Update the pickup task status for donation ${donId} to COLLECTED.`;
-        } else if (status === 'COLLECTED') {
-          nextPrompt = `Update the pickup task status for donation ${donId} to DELIVERED.`;
-        }
-        sendChatAction(nextPrompt);
-      });
-    });
-
-    tableBody.querySelectorAll('.btn-toggle-gps-row').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const pickupId = btn.getAttribute('data-id');
-        toggleLiveGpsTracking(pickupId);
-      });
-    });
-  }
-
-  // Live GPS Geolocation Handlers
-  function toggleLiveGpsTracking(pickupId) {
-    if (state.activeGpsWatchId !== null) {
-      stopLiveGpsTracking();
-      showToast('Live GPS tracking stopped.', 'info');
-    } else {
-      startLiveGpsTracking(pickupId);
-    }
-  }
-
-  function startLiveGpsTracking(pickupId) {
-    if (!navigator.geolocation) {
-      showToast('Browser geolocation is not supported on this device.', 'error');
-      return;
-    }
-
-    showToast('Requesting GPS location permission...', 'info');
-
-    state.activeGpsPickupId = pickupId;
-    state.activeGpsWatchId = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const acc = pos.coords.accuracy;
-        state.lastGpsCoords = { latitude: lat, longitude: lng };
-
-        try {
-          await API.updatePickupLocation(pickupId, lat, lng, acc);
-          const badge = document.getElementById('global-gps-badge');
-          if (badge) {
-            badge.className = 'gps-status-badge active';
-            badge.innerHTML = `<span class="gps-pulse"></span> GPS Live: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-          }
-          renderPickups();
-        } catch (e) {
-          console.error('Failed to post GPS coordinate:', e);
-        }
-      },
-      (err) => {
-        console.warn('Geolocation watch error:', err.message);
-        showToast('GPS access denied or unavailable. Fallback to estimated route coordinates.', 'info');
-        stopLiveGpsTracking();
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-    );
-
-    const btn = document.getElementById('btn-toggle-live-gps');
-    if (btn) btn.innerHTML = '<span>⏹ Stop Live GPS</span>';
-    showToast(`Live GPS tracking activated for pickup ${pickupId}`, 'success');
-  }
-
-  function stopLiveGpsTracking() {
-    if (state.activeGpsWatchId !== null) {
-      navigator.geolocation.clearWatch(state.activeGpsWatchId);
-      state.activeGpsWatchId = null;
-      state.activeGpsPickupId = null;
-    }
-
-    const badge = document.getElementById('global-gps-badge');
-    if (badge) {
-      badge.className = 'gps-status-badge inactive';
-      badge.innerHTML = `<span class="gps-pulse"></span> GPS Tracking Inactive`;
-    }
-
-    const btn = document.getElementById('btn-toggle-live-gps');
-    if (btn) btn.innerHTML = '<span>🛰️ Start Live GPS</span>';
-    renderPickups();
-  }
-
-  // 6. Render Reimbursements Ledger View (Phase 7)
-  function renderReimbursements() {
-    const tableBody = document.getElementById('reimbursements-table-body');
-    const totalBadge = document.getElementById('header-reimb-total');
-    const pendingBadge = document.getElementById('header-reimb-pending');
-    const navBadge = document.getElementById('badge-reimbursements-count');
-
-    const reimbs = state.reimbursements || [];
-    if (navBadge) navBadge.textContent = reimbs.length;
-
-    const totalPool = reimbs.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-    const pendingCount = reimbs.filter(r => r.status === 'PENDING').length;
-
-    if (totalBadge) totalBadge.textContent = `Pool: ${totalPool.toLocaleString()} LKR`;
-    if (pendingBadge) pendingBadge.textContent = `${pendingCount} Pending Approval`;
-
-    if (!tableBody) return;
-
-    if (reimbs.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="10" class="text-center py-8 text-muted">No volunteer reimbursement records found. Reimbursements are automatically registered upon pickup delivery.</td></tr>`;
-      return;
-    }
-
-    tableBody.innerHTML = reimbs
-      .map(
-        (r) => `
-      <tr>
-        <td><code class="mini-don-id">${escapeHtml(r.id)}</code></td>
-        <td><strong>🚴 ${escapeHtml(r.volunteer_name || r.volunteer_id)}</strong></td>
-        <td><code class="mini-don-id">${escapeHtml(r.pickup_task_id)}</code></td>
-        <td>${parseFloat(r.distance_km).toFixed(1)} km</td>
-        <td>${parseFloat(r.rate_per_km).toFixed(0)} LKR/km</td>
-        <td>${escapeHtml(r.transport_mode)}</td>
-        <td><strong class="text-emerald">${parseFloat(r.amount).toFixed(2)} ${escapeHtml(r.currency || 'LKR')}</strong></td>
-        <td>
-          <span class="status-badge status-${r.status}">${escapeHtml(r.status)}</span>
-        </td>
-        <td>${formatDate(r.created_at)}</td>
-        <td>
-          <div class="table-actions-cluster">
-            ${r.status === 'PENDING' ? `
-              <button class="btn btn-primary btn-xs btn-approve-reimb" data-id="${r.id}">
-                ✓ Approve
-              </button>
-              <button class="btn btn-secondary btn-xs btn-pay-reimb" data-id="${r.id}">
-                Mark Paid
-              </button>
-            ` : r.status === 'APPROVED' ? `
-              <button class="btn btn-secondary btn-xs btn-pay-reimb" data-id="${r.id}">
-                Mark Paid
-              </button>
-            ` : `
-              <span class="text-muted text-xs">Record Finalized</span>
-            `}
-          </div>
-        </td>
-      </tr>
-    `
-      )
-      .join('');
-
-    tableBody.querySelectorAll('.btn-approve-reimb').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        try {
-          await API.updateReimbursementStatus(id, 'APPROVED');
-          showToast(`Reimbursement ${id} approved`, 'success');
-          await loadAllData();
-        } catch (e) {
-          showToast(`Failed to approve: ${e.message}`, 'error');
-        }
-      });
-    });
-
-    tableBody.querySelectorAll('.btn-pay-reimb').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        try {
-          await API.updateReimbursementStatus(id, 'PAID');
-          showToast(`Reimbursement ${id} marked as PAID`, 'success');
-          await loadAllData();
-        } catch (e) {
-          showToast(`Failed to mark paid: ${e.message}`, 'error');
-        }
-      });
-    });
-  }
-
-  // 7. Render Session Memory Inspector
-  function renderSessionInspector() {
-    const kvContainer = document.getElementById('session-kv-container');
-    const rawPre = document.getElementById('session-raw-json');
-    const workflowBadge = document.getElementById('chat-workflow-badge');
-
-    // Update active memory in chat sidebar
-    const memDonId = document.getElementById('mem-active-don-id');
-    const memDonorId = document.getElementById('mem-active-donor-id');
-    const memFood = document.getElementById('mem-active-food');
-    const memLoc = document.getElementById('mem-active-loc');
-    const memDeadline = document.getElementById('mem-active-deadline');
-    const memOrg = document.getElementById('mem-active-org');
-    const memVol = document.getElementById('mem-active-vol');
-    const memTask = document.getElementById('mem-active-task');
-
-    const ctx = state.sessionContext || {};
-
-    if (memDonId) memDonId.textContent = ctx.current_donation_id || 'None';
-    if (memDonorId) memDonorId.textContent = ctx.current_donor_id || 'None';
-    if (memFood) memFood.textContent = ctx.current_food_type ? `${ctx.current_quantity || ''} ${ctx.current_unit || ''} ${ctx.current_food_type}` : 'None';
-    if (memLoc) memLoc.textContent = ctx.current_location || 'None';
-    if (memDeadline) memDeadline.textContent = ctx.current_pickup_deadline || 'None';
-    if (memOrg) memOrg.textContent = ctx.current_organization_id || 'None';
-    if (memVol) memVol.textContent = ctx.current_volunteer_id || 'None';
-    if (memTask) memTask.textContent = ctx.current_task_id || 'None';
-
-    const step = ctx.workflow_step || 'IDLE';
-    if (workflowBadge) workflowBadge.textContent = step;
-
-    // Render KV List
-    if (kvContainer) {
-      const keys = Object.keys(ctx);
-      if (keys.length === 0) {
-        kvContainer.innerHTML = `<div class="text-muted text-center py-4">Active session created. No conversation context has been stored yet. Start a conversation to populate session memory.</div>`;
-      } else {
-        kvContainer.innerHTML = keys
-          .map(
-            (k) => `
-          <div class="kv-item">
-            <span class="kv-key">${escapeHtml(k)}</span>
-            <span class="kv-val">${escapeHtml(String(ctx[k]))}</span>
-          </div>
-        `
-          )
-          .join('');
-      }
-    }
-
-    if (rawPre) {
-      rawPre.textContent = JSON.stringify(ctx, null, 2);
-    }
-  }
-
-  // ==========================================
-  // CHAT CONTROLLER
-  // ==========================================
-  async function submitChatPrompt(promptText) {
-    if (!promptText || !promptText.trim() || state.isChatThinking) return;
-
-    const cleanPrompt = promptText.trim();
-    const chatLog = document.getElementById('chat-messages-log');
-    const inputArea = document.getElementById('chat-user-prompt');
-
-    if (inputArea) inputArea.value = '';
-
-    // Append User Message Bubble
-    appendMessageBubble('user', cleanPrompt);
-
-    // Append Thinking Indicator
-    state.isChatThinking = true;
-    const thinkingRow = document.createElement('div');
-    thinkingRow.className = 'chat-bubble-row assistant thinking-row';
-    thinkingRow.innerHTML = `
-      <div class="bubble-avatar">🤖</div>
-      <div class="bubble-content">
-        <div class="bubble-header"><span class="bubble-sender">FoodRescue AI Assistant</span></div>
-        <div class="bubble-text"><div class="loading-spinner" style="margin: 0; width: 18px; height: 18px;"></div> Coordinating via Agent Kernel & Gemini...</div>
-      </div>
-    `;
-    chatLog.appendChild(thinkingRow);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
+  function formatDate(isoStr) {
+    if (!isoStr) return '—';
     try {
-      const data = await API.sendChatPrompt(cleanPrompt, state.sessionId);
-      thinkingRow.remove();
-
-      const assistantReply = data.result || data.response || 'Action completed.';
-      appendMessageBubble('assistant', assistantReply);
-
-      // Refresh all live backend data
-      await loadAllData();
-    } catch (err) {
-      thinkingRow.remove();
-      appendMessageBubble('assistant', `⚠️ **Error coordinating request**: ${err.message}`);
-      showToast(err.message, 'error');
-    } finally {
-      state.isChatThinking = false;
+      const d = new Date(isoStr);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoStr;
     }
   }
 
-  function appendMessageBubble(sender, text) {
-    const chatLog = document.getElementById('chat-messages-log');
-    if (!chatLog) return;
-
-    const row = document.createElement('div');
-    row.className = `chat-bubble-row ${sender}`;
-
-    const avatar = sender === 'assistant' ? '🤖' : '👤';
-    const senderName = sender === 'assistant' ? 'FoodRescue AI Assistant' : 'You (Donor / Dispatcher)';
-    const formattedContent = formatMarkdown(text);
-
-    row.innerHTML = `
-      <div class="bubble-avatar">${avatar}</div>
-      <div class="bubble-content">
-        <div class="bubble-header">
-          <span class="bubble-sender">${senderName}</span>
-          <span class="bubble-time">${formatTime(new Date().toISOString())}</span>
-        </div>
-        <div class="bubble-text">${formattedContent}</div>
-      </div>
-    `;
-
-    chatLog.appendChild(row);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }
-
-  function sendChatAction(prompt) {
-    switchTab('chat');
-    submitChatPrompt(prompt);
-  }
-
-  // ==========================================
-  // MULTI-TURN DEMO WALKTHROUGH AUTOMATION
-  // ==========================================
-  async function runMultiTurnDemoFlow() {
-    showToast('Starting 3-Turn Multi-Turn Demo Walkthrough...', 'info');
-    switchTab('chat');
-
-    // Reset session for a clean demonstration with a dedicated demo prefix
-    state.sessionId = 'demo-session-' + Math.random().toString(36).substring(2, 9);
-    updateSessionDisplay();
-
-    appendMessageBubble('assistant', '🚀 **Starting 3-Turn Multi-Turn Session Demonstration**\nDemonstrating seamless context preservation across three conversational turns.');
-    await delay(1000);
-
-    // Turn 1: Partial Details
-    const turn1 = 'I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3.';
-    await submitChatPrompt(turn1);
-
-    await delay(2500);
-
-    // Turn 2: Incremental Detail Update (No reprompting)
-    const turn2 = 'They need to be collected before 7 PM.';
-    await submitChatPrompt(turn2);
-
-    await delay(2500);
-
-    // Turn 3: Complete Matching & Assignment
-    const turn3 = 'Find a matching organization, schedule pickup, and assign an available volunteer.';
-    await submitChatPrompt(turn3);
-
-    showToast('Multi-Turn Coordination Flow Successfully Completed!', 'success');
-  }
-
-  function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  // ==========================================
-  // DATA LOADING & REFRESH
-  // ==========================================
-  async function loadAllData() {
+  function formatTimeShort(isoStr) {
+    if (!isoStr) return 'now';
     try {
-      const [statsRes, donRes, orgRes, volRes, pickRes, reimbRes, notifRes, sessRes] = await Promise.all([
-        API.getStats().catch(() => null),
-        API.getDonations().catch(() => ({ donations: [] })),
-        API.getOrganizations().catch(() => ({ organizations: [] })),
-        API.getVolunteers().catch(() => ({ volunteers: [] })),
-        API.getPickups().catch(() => ({ pickup_tasks: [] })),
-        API.getReimbursements().catch(() => ({ reimbursements: [] })),
-        API.getNotifications().catch(() => ({ notifications: [] })),
-        API.getSessionState(state.sessionId).catch(() => ({ context: {} })),
-      ]);
-
-      if (statsRes?.stats) state.stats = statsRes.stats;
-      if (donRes?.donations) state.donations = donRes.donations;
-      if (orgRes?.organizations) state.organizations = orgRes.organizations;
-      if (volRes?.volunteers) state.volunteers = volRes.volunteers;
-      if (pickRes?.pickup_tasks) state.pickups = pickRes.pickup_tasks;
-      if (reimbRes?.reimbursements) state.reimbursements = reimbRes.reimbursements;
-      if (notifRes?.notifications) state.notifications = notifRes.notifications;
-      if (sessRes?.context) state.sessionContext = sessRes.context;
-
-      renderDashboard();
-      renderDonations();
-      renderOrganizations();
-      renderVolunteers();
-      renderPickups();
-      renderReimbursements();
-      renderSessionInspector();
-    } catch (err) {
-      console.error('Error refreshing live data:', err);
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return 'now';
     }
   }
 
-  // Tab Navigation Controller (8 Tabs)
-  function switchTab(tabId) {
-    state.activeTab = tabId;
-
-    // Update Nav buttons
-    document.querySelectorAll('.nav-item').forEach((item) => {
-      item.classList.toggle('active', item.getAttribute('data-tab') === tabId);
-    });
-
-    // Update Tab Contents
-    document.querySelectorAll('.tab-content').forEach((tab) => {
-      tab.classList.toggle('active', tab.id === `tab-${tabId}`);
-    });
-
-    // Update Page Header Title
-    const titleMap = {
-      dashboard: 'Dashboard Overview',
-      chat: 'AI Assistant Coordinator',
-      donations: 'Donations & 7-Stage Lifecycle',
-      organizations: 'Recipient Organizations & Food Banks',
-      volunteers: 'Volunteer Couriers',
-      pickups: 'Pickup & Delivery Logistics',
-      reimbursements: 'Volunteer Reimbursement Ledger',
-      session: 'Session Memory & Activity Audit',
+  function getDonationBadgeColor(status) {
+    const map = {
+      'AVAILABLE': 'emerald',
+      'MATCHED': 'blue',
+      'PICKUP_ASSIGNED': 'purple',
+      'COLLECTED': 'amber',
+      'DELIVERED': 'emerald',
+      'CANCELLED': 'rose'
     };
-    const pageTitle = document.getElementById('page-title');
-    if (pageTitle) pageTitle.textContent = titleMap[tabId] || 'FoodRescue AI';
+    return map[status] || 'slate';
   }
 
-  function updateSessionDisplay() {
-    const el = document.getElementById('header-session-id');
-    if (el) el.textContent = state.sessionId;
+  function getTaskBadgeColor(status) {
+    const map = {
+      'ASSIGNED': 'purple',
+      'EN_ROUTE': 'blue',
+      'COLLECTED': 'amber',
+      'COMPLETED': 'emerald',
+      'CANCELLED': 'rose'
+    };
+    return map[status] || 'slate';
   }
 
-  // ==========================================
-  // INITIALIZATION & EVENT LISTENERS
-  // ==========================================
-  function initEventListeners() {
-    // Navigation Tabs
-    document.querySelectorAll('.nav-item').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const tab = btn.getAttribute('data-tab');
-        if (tab) switchTab(tab);
-      });
-    });
-
-    // Global Live GPS Toggle Button
-    document.getElementById('btn-toggle-live-gps')?.addEventListener('click', () => {
-      const activeTask = state.pickups.find(p => p.status === 'EN_ROUTE' || p.status === 'ASSIGNED') || state.pickups[0];
-      const targetId = activeTask ? activeTask.id : 'task-demo';
-      toggleLiveGpsTracking(targetId);
-    });
-
-    // Header Actions
-    document.getElementById('btn-refresh-all')?.addEventListener('click', async () => {
-      await loadAllData();
-      showToast('Live database records refreshed', 'info');
-    });
-
-    document.getElementById('btn-run-demo-flow')?.addEventListener('click', runMultiTurnDemoFlow);
-    document.getElementById('btn-run-demo-chat')?.addEventListener('click', runMultiTurnDemoFlow);
-
-    document.getElementById('btn-new-session')?.addEventListener('click', () => {
-      state.sessionId = generateSessionId();
-      updateSessionDisplay();
-      loadAllData();
-      showToast(`Started new session ${state.sessionId}`, 'info');
-    });
-
-    document.getElementById('btn-copy-session')?.addEventListener('click', () => {
-      navigator.clipboard.writeText(state.sessionId);
-      showToast('Session ID copied to clipboard', 'info');
-    });
-
-    // Chat Form Submit
-    const chatForm = document.getElementById('chat-input-form');
-    const chatInput = document.getElementById('chat-user-prompt');
-
-    if (chatForm && chatInput) {
-      chatForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        submitChatPrompt(chatInput.value);
-      });
-
-      chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          submitChatPrompt(chatInput.value);
-        }
-      });
-    }
-
-    // Chat Suggestion Chips
-    document.querySelectorAll('.chat-suggestions .chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const prompt = chip.getAttribute('data-prompt');
-        if (prompt) submitChatPrompt(prompt);
-      });
-    });
-
-    // Chat Quick Action Sidebar Buttons
-    document.getElementById('btn-quick-create-d1')?.addEventListener('click', () => {
-      submitChatPrompt('I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3 ready from now until 7 PM.');
-    });
-
-    document.getElementById('btn-quick-update-time')?.addEventListener('click', () => {
-      submitChatPrompt('They need to be collected before 7 PM.');
-    });
-
-    document.getElementById('btn-quick-match-assign')?.addEventListener('click', () => {
-      submitChatPrompt('Find a matching organization, create pickup task, and assign an available volunteer.');
-    });
-
-    document.getElementById('btn-quick-en-route')?.addEventListener('click', () => {
-      submitChatPrompt('Update the active pickup task status to EN_ROUTE.');
-    });
-
-    document.getElementById('btn-quick-delivered')?.addEventListener('click', () => {
-      submitChatPrompt('Update the active pickup task status to DELIVERED.');
-    });
-
-    document.getElementById('btn-clear-chat')?.addEventListener('click', () => {
-      const chatLog = document.getElementById('chat-messages-log');
-      if (chatLog) {
-        chatLog.innerHTML = `
-          <div class="chat-bubble-row assistant">
-            <div class="bubble-avatar">🤖</div>
-            <div class="bubble-content">
-              <div class="bubble-header"><span class="bubble-sender">FoodRescue AI Assistant</span></div>
-              <div class="bubble-text">Chat cleared. Ready for your next food rescue command!</div>
-            </div>
-          </div>
-        `;
-      }
-    });
-
-    // Status Filter Pills
-    document.querySelectorAll('#status-filter-group .pill').forEach((pill) => {
-      pill.addEventListener('click', async () => {
-        document.querySelectorAll('#status-filter-group .pill').forEach((p) => p.classList.remove('active'));
-        pill.classList.add('active');
-
-        const filter = pill.getAttribute('data-filter');
-        const res = await API.getDonations(filter);
-        if (res?.donations) {
-          state.donations = res.donations;
-          renderDonations();
-        }
-      });
-    });
-
-    // Search Input
-    document.getElementById('donation-search-input')?.addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase().trim();
-      const rows = document.querySelectorAll('#donations-table-body tr');
-      rows.forEach((row) => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? '' : 'none';
-      });
-    });
-
-    // View All Donations from Dashboard
-    document.getElementById('btn-view-all-donations')?.addEventListener('click', () => {
-      switchTab('donations');
-    });
-
-    // Modal Create Donation
-    const modal = document.getElementById('modal-create-donation');
-    const openModalBtn = document.getElementById('btn-open-donation-modal');
-    const openModalTabBtn = document.getElementById('btn-new-donation-tab');
-    const closeModalBtn = document.getElementById('btn-close-modal');
-    const cancelModalBtn = document.getElementById('btn-cancel-modal');
-    const formDonation = document.getElementById('form-create-donation');
-
-    function openModal() {
-      if (modal) modal.classList.add('active');
-    }
-
-    function closeModal() {
-      if (modal) modal.classList.remove('active');
-    }
-
-    if (openModalBtn) openModalBtn.addEventListener('click', openModal);
-    if (openModalTabBtn) openModalTabBtn.addEventListener('click', openModal);
-    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
-    if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
-
-    if (formDonation) {
-      formDonation.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const donorId = document.getElementById('input-donor-id').value;
-        const foodType = document.getElementById('input-food-type').value;
-        const quantity = document.getElementById('input-quantity').value;
-        const unit = document.getElementById('input-unit').value;
-        const dietary = document.getElementById('input-dietary').value;
-        const location = document.getElementById('input-location').value;
-        const availFrom = document.getElementById('input-available-from').value;
-        const deadline = document.getElementById('input-deadline').value;
-
-        closeModal();
-
-        // Construct natural language prompt to Agent Kernel
-        const prompt = `I am donor ${donorId}. I have ${quantity} ${unit} of ${foodType} (${dietary}) in ${location}, available from ${availFrom} until ${deadline}. Please register this donation and find a match.`;
-
-        switchTab('chat');
-        await submitChatPrompt(prompt);
-      });
-    }
-
-    // Modal Create Volunteer
-    const volModal = document.getElementById('modal-create-volunteer');
-    const openVolModalBtn = document.getElementById('btn-open-volunteer-modal');
-    const closeVolModalBtn = document.getElementById('btn-close-volunteer-modal');
-    const cancelVolModalBtn = document.getElementById('btn-cancel-volunteer-modal');
-    const formVolunteer = document.getElementById('form-create-volunteer');
-
-    function openVolModal() {
-      if (volModal) volModal.classList.add('active');
-    }
-
-    function closeVolModal() {
-      if (volModal) volModal.classList.remove('active');
-    }
-
-    if (openVolModalBtn) openVolModalBtn.addEventListener('click', openVolModal);
-    if (closeVolModalBtn) closeVolModalBtn.addEventListener('click', closeVolModal);
-    if (cancelVolModalBtn) cancelVolModalBtn.addEventListener('click', closeVolModal);
-
-    if (formVolunteer) {
-      formVolunteer.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('input-vol-name').value;
-        const phone = document.getElementById('input-vol-phone').value;
-        const serviceArea = document.getElementById('input-vol-area').value;
-        const transportMode = document.getElementById('input-vol-transport').value;
-        const availability = document.getElementById('input-vol-availability').value;
-        const location = document.getElementById('input-vol-location').value;
-
-        try {
-          const res = await API.createVolunteer({
-            name,
-            phone,
-            service_area: serviceArea,
-            transport_mode: transportMode,
-            availability,
-            location,
-          });
-
-          closeVolModal();
-          showToast(`Volunteer courier "${name}" registered successfully!`, 'success');
-          await loadAllData();
-          switchTab('volunteers');
-        } catch (err) {
-          showToast(`Failed to register volunteer: ${err.message}`, 'error');
-        }
-      });
-    }
-
-    // Session Clear State Button
-    document.getElementById('btn-clear-session-state')?.addEventListener('click', async () => {
-      await submitChatPrompt('Clear active session context and reset working memory.');
-      showToast('Session context cleared', 'info');
-    });
-
-    document.getElementById('btn-refresh-session')?.addEventListener('click', async () => {
-      const sessRes = await API.getSessionState(state.sessionId);
-      if (sessRes?.context) state.sessionContext = sessRes.context;
-      renderSessionInspector();
-      showToast('Session memory inspected', 'info');
-    });
-  }
-
-  // Initialize App on DOM Ready
-  document.addEventListener('DOMContentLoaded', async () => {
-    updateSessionDisplay();
-    initEventListeners();
-
-    // Check server connection
-    const isOnline = await API.checkHealth();
-    const dot = document.getElementById('server-status-dot');
-    const title = document.getElementById('server-status-title');
-
-    if (dot && title) {
-      dot.className = isOnline ? 'status-indicator online' : 'status-indicator offline';
-      title.textContent = isOnline ? 'Agent Kernel Live' : 'Backend Offline';
-    }
-
-    // Load initial data
-    await loadAllData();
-
-    // Auto-refresh polling every 6 seconds
-    state.autoRefreshInterval = setInterval(loadAllData, 6000);
-  });
+  // Public Interface
+  return {
+    init,
+    switchTab,
+    toggleDonationSubTab,
+    filterDonations,
+    filterOrganizations,
+    filterVolunteers,
+    filterUsers,
+    filterConversations,
+    filterPickups,
+    filterAuditEvents,
+    selectConversation,
+    openUserConversation,
+    handleSendSimulatorMessage,
+    handleSaveTransportSettings,
+    handleCreateDonation,
+    handleCreateVolunteer,
+    handleTriggerSimulateModal,
+    openModal,
+    closeModal,
+    approveReimbursement,
+    renderLiveOperations
+  };
 })();
+
+// Bootstrap Application on DOM Ready
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+});

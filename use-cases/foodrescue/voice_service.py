@@ -135,79 +135,110 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
             "unit": "portions",
             "pickup_deadline": None,
             "location": None,
-            "dietary_info": None,
+            "dietary_info": "Standard",
             "is_complete": False,
             "missing_fields": ["food_type", "quantity", "location", "pickup_deadline"]
         }
 
     text = transcript.strip()
+    text_lower = text.lower()
     
     # 1. Quantity & Unit
     qty = None
     unit = "portions"
-    # Matches: 15 packets, 20 meals, 50 boxes, 10 kg, 30 portions
-    qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(packets?|meals?|boxes?|portions?|kg|plates?|servings?|bunches?)', text, re.IGNORECASE)
+    
+    # Check English and transliterated / localized unit patterns
+    qty_match = re.search(
+        r'(\d+(?:\.\d+)?)\s*(packets?|meals?|boxes?|portions?|kg|plates?|servings?|bunches?|parcels?|பொதிகள்|பாக்கெட்டுகள்|පාර්සල්|පැකට්)?',
+        text,
+        re.IGNORECASE
+    )
     if qty_match:
         try:
             qty = float(qty_match.group(1))
-            unit = qty_match.group(2).lower()
-        except ValueError:
+            raw_unit = (qty_match.group(2) or "").lower().strip()
+            if raw_unit in ["packets", "packet", "පාර්සල්", "පැකට්", "பாக்கெட்டுகள்"]:
+                unit = "packets"
+            elif raw_unit in ["boxes", "box"]:
+                unit = "boxes"
+            elif raw_unit in ["kg", "kilograms"]:
+                unit = "kg"
+            elif raw_unit in ["meals", "meal", "பொதிகள்"]:
+                unit = "meals"
+            elif raw_unit in ["portions", "portion"]:
+                unit = "portions"
+            else:
+                unit = "portions"
+        except (ValueError, TypeError):
             pass
-    else:
-        # Standalone number near food keywords
-        num_match = re.search(r'\b(\d+)\b', text)
-        if num_match:
-            try:
-                qty = float(num_match.group(1))
-            except ValueError:
-                pass
 
-    # 2. Food Type
+    # 2. Dietary Information
+    dietary_info = "Standard"
+    if "vegetarian" in text_lower or "veg" in text_lower and "non-veg" not in text_lower or "சைவ" in text or "එළවළු" in text:
+        dietary_info = "Vegetarian"
+    elif "vegan" in text_lower:
+        dietary_info = "Vegan"
+    elif "halal" in text_lower or "ஹலால்" in text:
+        dietary_info = "Halal"
+
+    # 3. Food Type
     food_type = None
-    food_patterns = [
-        r'(?:have|donate|giving|prepared|made|surplus)\s+(?:about\s+)?(?:\d+\s+\w+\s+of\s+)?([a-zA-Z\s,]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)',
-        r'(?:packets?|boxes?|portions?|meals?)\s+of\s+([a-zA-Z\s]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)',
-        r'([a-zA-Z\s]+(?:rice|curry|bread|vegetable|meal|sandwiches|food|pastries|buns|biryani|rotis?|hoppers?|fruits?|dessert))',
-    ]
-    for pat in food_patterns:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            candidate = m.group(1).strip()
-            # Exclude common noisy prepositions
-            if candidate.lower() not in ["our restaurant", "today", "now", "here", "available", "we"]:
-                food_type = candidate.title()
-                break
-
-    if not food_type and ("meal" in text.lower() or "food" in text.lower() or "box" in text.lower()):
+    if "rice and curry" in text_lower or "rice & curry" in text_lower or "බත් සහ ව්‍යංජන" in text or "சோறும் கறியும்" in text:
+        food_type = "Rice & Curry"
+    elif "biryani" in text_lower or "බිරියානි" in text or "பிரியாணி" in text:
+        food_type = "Biryani"
+    elif "bread" in text_lower or "bakery" in text_lower or "පාන්" in text or "ரொட்டி" in text:
+        food_type = "Bakery & Bread"
+    elif "sandwich" in text_lower or "sandwiches" in text_lower:
+        food_type = "Sandwiches"
+    elif "vegetarian meal" in text_lower or "vegetarian meals" in text_lower or "veg meal" in text_lower:
+        food_type = "Vegetarian Meals"
+    elif "meals" in text_lower or "meal" in text_lower or "food" in text_lower or "உணவு" in text or "ආහාර" in text:
         food_type = "Prepared Meals"
-
-    # 3. Pickup Deadline / Availability Time
-    deadline = None
-    # Matches: before 7 PM, until 9:30 PM, by 6pm, 8:00 pm today
-    deadline_match = re.search(r'(?:before|until|by|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)', text, re.IGNORECASE)
-    if deadline_match:
-        deadline = deadline_match.group(1).strip().upper()
-    elif "today" in text.lower() or "now" in text.lower():
-        deadline = "Today (Immediate)"
+    else:
+        # Regex search for custom food names
+        food_patterns = [
+            r'(?:have|donate|giving|prepared|made|surplus)\s+(?:about\s+)?(?:\d+\s+\w+\s+of\s+)?([a-zA-Z\s,]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)',
+            r'(?:packets?|boxes?|portions?|meals?)\s+of\s+([a-zA-Z\s]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)',
+            r'([a-zA-Z\s]+(?:rice|curry|bread|vegetable|meal|sandwiches|food|pastries|buns|biryani|rotis?|hoppers?|fruits?|dessert))',
+        ]
+        for pat in food_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                candidate = m.group(1).strip()
+                if candidate.lower() not in ["our restaurant", "today", "now", "here", "available", "we", "i have", "there are"]:
+                    food_type = candidate.title()
+                    break
 
     # 4. Location
     location = None
-    loc_match = re.search(r'(?:in|at|from|location\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens))', text, re.IGNORECASE)
-    if loc_match:
-        location = loc_match.group(1).strip()
-    elif "colombo" in text.lower():
-        m_col = re.search(r'(Colombo(?:\s*\d+)?)', text, re.IGNORECASE)
-        if m_col:
-            location = m_col.group(1).strip()
+    loc_patterns = [
+        r'(?:in|at|from|location\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|கொழும்பு|කොළඹ))',
+        r'\b((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla))\b',
+        r'(கொழும்பு(?:\s*\d+)?)',
+        r'(කොළඹ(?:\s*\d+)?)'
+    ]
+    for pat in loc_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            location = m.group(1).strip()
+            if "கொழும்பு" in location:
+                location = location.replace("கொழும்பு", "Colombo")
+            if "කොළඹ" in location:
+                location = location.replace("කොළඹ", "Colombo")
+            break
 
-    # 5. Dietary Information
-    dietary_info = "None"
-    if "veg" in text.lower() and "non-veg" not in text.lower():
-        dietary_info = "Vegetarian"
-    elif "halal" in text.lower():
-        dietary_info = "Halal"
-    elif "vegan" in text.lower():
-        dietary_info = "Vegan"
+    # 5. Pickup Deadline / Availability Time
+    deadline = None
+    deadline_match = re.search(r'\b(?:before|until|by|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)\b', text, re.IGNORECASE)
+    if deadline_match and (re.search(r'(?:am|pm|AM|PM|:\d{2})', deadline_match.group(1)) or "before" in text_lower or "until" in text_lower or "by" in text_lower):
+        deadline = deadline_match.group(1).strip().upper()
+    elif re.search(r'\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b', text):
+        m_time = re.search(r'\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b', text)
+        if m_time:
+            deadline = m_time.group(1).upper()
+    elif any(w in text_lower for w in ["ready now", "available now", "immediately", "දැන්", "இப்போது"]):
+        deadline = "Today (Immediate)"
 
     # Determine Missing Fields
     missing = []

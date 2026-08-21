@@ -3,1120 +3,884 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FoodRescue AI — AI-Powered Surplus Food Coordination Platform</title>
-  <meta name="description" content="AI-powered surplus food coordination platform matching donors, recipient organizations, and volunteer couriers across multi-turn sessions using Agent Kernel and Gemini.">
+  <title>FoodRescue AI — Central Operational Control Center & WhatsApp Coordination</title>
+  <meta name="description" content="Production-grade AI food rescue coordination platform unifying WhatsApp, Agent Kernel, and MongoDB.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Leaflet Map Assets -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div class="app-layout">
     <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="brand-container">
+    <aside class="sidebar" id="app-sidebar">
+      <div class="brand-header">
         <div class="brand-logo">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <div class="brand-info">
-          <h1 class="brand-title">FoodRescue <span class="brand-badge">AI</span></h1>
-          <p class="brand-subtitle">AI-Powered Surplus-Food Coordination</p>
+        <div class="brand-text">
+          <div class="brand-title">FoodRescue <span class="brand-tag">AI</span></div>
+          <div class="brand-subtitle">Operational Control Center</div>
         </div>
       </div>
 
-      <!-- 7 Main Navigation Tabs -->
+      <!-- Navigation Menu -->
       <nav class="nav-menu">
-        <!-- 1. Dashboard -->
+        <div class="nav-section-title">CORE OPERATIONS</div>
         <button class="nav-item active" data-tab="dashboard" id="nav-dashboard">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="9"></rect>
-            <rect x="14" y="3" width="7" height="5"></rect>
-            <rect x="14" y="12" width="7" height="9"></rect>
-            <rect x="3" y="16" width="7" height="5"></rect>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
           <span>Dashboard</span>
         </button>
-
-        <!-- 2. AI Assistant -->
-        <button class="nav-item" data-tab="chat" id="nav-chat">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-          <span>AI Assistant</span>
-          <span class="nav-badge pulse">Live</span>
+        <button class="nav-item" data-tab="live-operations" id="nav-live-operations">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span>Live Operations</span>
+          <span class="nav-badge pulse" id="badge-live-ops-count">0</span>
         </button>
-
-        <!-- 3. Donations -->
         <button class="nav-item" data-tab="donations" id="nav-donations">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
           <span>Donations</span>
           <span class="nav-counter" id="badge-donations-count">0</span>
         </button>
-
-        <!-- 4. Organizations -->
         <button class="nav-item" data-tab="organizations" id="nav-organizations">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 21h18"></path>
-            <path d="M5 21V7l8-4v18"></path>
-            <path d="M19 21V11l-6-3"></path>
-            <path d="M9 9h1"></path>
-            <path d="M9 13h1"></path>
-            <path d="M9 17h1"></path>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-3"></path><path d="M9 9h1"></path><path d="M9 13h1"></path><path d="M9 17h1"></path></svg>
           <span>Organizations</span>
-          <span class="nav-counter" id="badge-organizations-count">0</span>
+          <span class="nav-counter" id="badge-orgs-count">0</span>
         </button>
-
-        <!-- 5. Volunteers -->
         <button class="nav-item" data-tab="volunteers" id="nav-volunteers">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
           <span>Volunteers</span>
-          <span class="nav-counter" id="badge-volunteers-count">0</span>
+          <span class="nav-counter" id="badge-vols-count">0</span>
         </button>
 
-        <!-- 6. Pickups -->
+        <div class="nav-section-title">COMMUNICATION & USERS</div>
+        <button class="nav-item" data-tab="users" id="nav-users">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span>Users</span>
+          <span class="nav-counter" id="badge-users-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="conversations" id="nav-conversations">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>Conversations</span>
+          <span class="nav-badge pulse">WhatsApp</span>
+        </button>
         <button class="nav-item" data-tab="pickups" id="nav-pickups">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="1" y="3" width="15" height="13"></rect>
-            <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
-            <circle cx="5.5" cy="18.5" r="2.5"></circle>
-            <circle cx="18.5" cy="18.5" r="2.5"></circle>
-          </svg>
-          <span>Pickups</span>
-          <span class="nav-counter" id="badge-pickups-count">0</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+          <span>Pickup & Delivery</span>
+        </button>
+        <button class="nav-item" data-tab="map" id="nav-map">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+          <span>Operations Map</span>
         </button>
 
-        <!-- 7. Reimbursements -->
-        <button class="nav-item" data-tab="reimbursements" id="nav-reimbursements">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-            <line x1="2" y1="10" x2="22" y2="10"></line>
-          </svg>
-          <span>Reimbursements</span>
-          <span class="nav-counter" id="badge-reimbursements-count">0</span>
+        <div class="nav-section-title">INTELLIGENCE & SYSTEM</div>
+        <button class="nav-item" data-tab="agent-activity" id="nav-agent-activity">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          <span>Agent Activity</span>
         </button>
-
-        <!-- 8. Session / Activity -->
-        <button class="nav-item" data-tab="session" id="nav-session">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path>
-          </svg>
-          <span>Session / Activity</span>
-          <span class="nav-badge active-pill">Active</span>
+        <button class="nav-item" data-tab="notifications" id="nav-notifications">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span>Notifications</span>
+        </button>
+        <button class="nav-item" data-tab="reports" id="nav-reports">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <span>Reports & Impact</span>
+        </button>
+        <button class="nav-item" data-tab="settings" id="nav-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Settings</span>
         </button>
       </nav>
 
-      <!-- Sidebar Architecture Snapshot -->
-      <div class="sidebar-arch-card">
-        <div class="arch-header">
-          <span class="arch-icon">⚡</span>
-          <span>Agent Kernel Engine</span>
-        </div>
-        <div class="arch-steps">
-          <div class="arch-node active">Web / REST API</div>
-          <div class="arch-arrow">↓</div>
-          <div class="arch-node">ADK Coordinator</div>
-          <div class="arch-arrow">↓</div>
-          <div class="arch-node highlight">Gemini Multi-Model Pool</div>
-          <div class="arch-arrow">↓</div>
-          <div class="arch-node">14 Tools • MongoDB / SQLite</div>
-        </div>
-      </div>
-
+      <!-- Sidebar Footer -->
       <div class="sidebar-footer">
-        <div class="backend-status">
-          <div class="status-indicator online" id="server-status-dot"></div>
+        <div class="connection-status">
+          <span class="status-dot online"></span>
           <div class="status-text">
-            <span class="status-title" id="server-status-title">Agent Kernel Connected</span>
-            <span class="status-sub" id="server-status-sub">Gemini Coordinator Live</span>
+            <span class="status-label">System Active</span>
+            <span class="status-sub" id="sidebar-db-type">SQLite / MongoDB Parity</span>
           </div>
         </div>
       </div>
     </aside>
 
     <!-- Main Content Area -->
-    <main class="main-container">
-      <!-- Top Header Bar -->
+    <main class="main-content">
+      <!-- Top Operational Header -->
       <header class="top-header">
         <div class="header-left">
-          <div class="active-tab-title" id="page-title">Dashboard Overview</div>
-          <div class="header-session-tag">
-            <span class="session-label">Session ID:</span>
-            <span class="session-val" id="header-session-id">session-donor-101</span>
-            <button class="btn-icon-small" id="btn-copy-session" title="Copy Session ID">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </button>
-            <button class="btn-icon-small" id="btn-new-session" title="New Session">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-              </svg>
-            </button>
+          <button class="mobile-toggle" id="btn-mobile-sidebar" aria-label="Toggle Menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div class="page-title-group">
+            <h1 class="page-title" id="page-header-title">Operational Dashboard</h1>
+            <p class="page-description" id="page-header-desc">Real-time surplus food coordination and WhatsApp integration overview.</p>
           </div>
         </div>
 
         <div class="header-actions">
-          <button class="btn btn-secondary btn-sm" id="btn-run-demo-flow">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            <span>Run 3-Turn Demo</span>
-          </button>
-          
-          <button class="btn btn-primary btn-sm" id="btn-open-donation-modal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>Report Donation</span>
+          <div class="live-pill">
+            <span class="live-dot pulse"></span>
+            <span class="live-text">Live Sync</span>
+            <span class="live-timer" id="sync-timer">4s</span>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" id="btn-open-simulate-modal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <span>Simulate WhatsApp</span>
           </button>
 
-          <button class="btn btn-icon" id="btn-refresh-all" title="Refresh Live Data">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
+          <button class="btn btn-primary btn-sm" id="btn-open-donation-modal">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>New Donation</span>
           </button>
         </div>
       </header>
 
-      <!-- TAB 1: DASHBOARD -->
-      <section class="tab-content active" id="tab-dashboard">
-        <!-- FIRST SCREEN HERO EXPLAINER (Mandatory Competition Overview) -->
-        <div class="hero-explainer-card glass glow-emerald">
-          <div class="hero-header-row">
-            <div class="hero-title-group">
-              <div class="hero-badge">Autonomous Coordination Platform</div>
-              <h2 class="hero-main-title">FOODRESCUE AI</h2>
-              <p class="hero-tagline">"AI-powered surplus-food coordination"</p>
-            </div>
-            <div class="hero-status-pill">
-              <span class="live-dot pulse"></span>
-              <span id="data-source-badge">Live Production Database (MongoDB Atlas)</span>
-            </div>
-          </div>
+      <!-- Content Views Container -->
+      <div class="content-body">
 
-          <!-- 4 Core Pillars Overview (Small, Clear Area) -->
-          <div class="hero-four-pillars">
-            <div class="pillar-box">
-              <div class="pillar-icon bg-emerald-light">📦</div>
-              <div class="pillar-content">
-                <h4 class="pillar-title">1. Donors Report Surplus</h4>
-                <p class="pillar-desc">Restaurants & hotels report surplus meals via natural language chat or structured inputs.</p>
+        <!-- 1. DASHBOARD TAB -->
+        <section class="tab-view active" id="view-dashboard">
+          <!-- 8 Primary Metrics Cards -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Total Donations</span>
+                <span class="metric-icon bg-emerald-light">🍱</span>
               </div>
+              <div class="metric-value" id="kpi-total-donations">0</div>
+              <div class="metric-trend"><span class="trend-text">Rescued through Platform</span></div>
             </div>
 
-            <div class="pillar-arrow">→</div>
-
-            <div class="pillar-box">
-              <div class="pillar-icon bg-blue-light">🤝</div>
-              <div class="pillar-content">
-                <h4 class="pillar-title">2. AI Matches Recipient</h4>
-                <p class="pillar-desc">Agent Kernel evaluates food type, quantity, dietary rules, and proximity to match food banks.</p>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Available Donations</span>
+                <span class="metric-icon bg-amber-light">📦</span>
               </div>
+              <div class="metric-value text-amber" id="kpi-available-donations">0</div>
+              <div class="metric-trend"><span class="trend-text">Awaiting Courier Match</span></div>
             </div>
 
-            <div class="pillar-arrow">→</div>
-
-            <div class="pillar-box">
-              <div class="pillar-icon bg-purple-light">🚴</div>
-              <div class="pillar-content">
-                <h4 class="pillar-title">3. AI Assigns Volunteers</h4>
-                <p class="pillar-desc">Autonomous tool ranking selects available volunteer couriers based on location and vehicle type.</p>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Active Pickups</span>
+                <span class="metric-icon bg-blue-light">🚚</span>
               </div>
+              <div class="metric-value text-blue" id="kpi-active-pickups">0</div>
+              <div class="metric-trend"><span class="trend-text">In Transit to Shelters</span></div>
             </div>
 
-            <div class="pillar-arrow">→</div>
-
-            <div class="pillar-box">
-              <div class="pillar-icon bg-amber-light">🚚</div>
-              <div class="pillar-content">
-                <h4 class="pillar-title">4. System Tracks Logistics</h4>
-                <p class="pillar-desc">Complete 7-stage live tracking monitors pickup progress from donor collection to delivery.</p>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Completed Rescues</span>
+                <span class="metric-icon bg-emerald-light">✅</span>
               </div>
+              <div class="metric-value text-emerald" id="kpi-completed-rescues">0</div>
+              <div class="metric-trend"><span class="trend-text">Delivered & Verified</span></div>
             </div>
-          </div>
 
-          <!-- UN Sustainable Development Goals (SDG) Alignment Section -->
-          <div class="hero-sdg-bar">
-            <span class="sdg-badge-label">UN SDG Alignment:</span>
-            <div class="sdg-pill">
-              <span class="sdg-icon">🎯</span>
-              <span><strong>SDG 2: Zero Hunger</strong> (Target 2.1 — Access to Food)</span>
-            </div>
-            <div class="sdg-pill">
-              <span class="sdg-icon">♻️</span>
-              <span><strong>SDG 12: Responsible Consumption</strong> (Target 12.3 — Halving Food Waste)</span>
-            </div>
-            <div class="sdg-pill">
-              <span class="sdg-icon">🌿</span>
-              <span><strong>SDG 13: Climate Action</strong> (Methane Mitigation)</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 6 Core Dashboard KPIs Grid -->
-        <div class="kpi-grid">
-          <!-- 1. Total Donations -->
-          <div class="kpi-card glass glow-blue">
-            <div class="kpi-icon-wrap bg-blue-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Total Donations</span>
-              <div class="kpi-value" id="kpi-total-donations">0</div>
-              <span class="kpi-sub blue" id="kpi-seeded-note">Live & seeded records</span>
-            </div>
-          </div>
-
-          <!-- 2. Meals/Items Rescued -->
-          <div class="kpi-card glass glow-emerald">
-            <div class="kpi-icon-wrap bg-emerald-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Meals / Items Rescued</span>
-              <div class="kpi-value" id="kpi-food-rescued">0 <span class="kpi-unit">units</span></div>
-              <span class="kpi-sub green">Portions prevented from waste</span>
-            </div>
-          </div>
-
-          <!-- 3. Active Pickups -->
-          <div class="kpi-card glass glow-amber">
-            <div class="kpi-icon-wrap bg-amber-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Active Pickups</span>
-              <div class="kpi-value" id="kpi-active-rescues">0</div>
-              <span class="kpi-sub amber">Tasks in progress</span>
-            </div>
-          </div>
-
-          <!-- 4. Matched Organizations -->
-          <div class="kpi-card glass glow-purple">
-            <div class="kpi-icon-wrap bg-purple-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2">
-                <path d="M3 21h18"></path>
-                <path d="M5 21V7l8-4v18"></path>
-                <path d="M19 21V11l-6-3"></path>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Matched Organizations</span>
-              <div class="kpi-value" id="kpi-total-orgs">0</div>
-              <span class="kpi-sub purple">Charities, shelters & banks</span>
-            </div>
-          </div>
-
-          <!-- 5. Available Volunteers -->
-          <div class="kpi-card glass glow-cyan">
-            <div class="kpi-icon-wrap bg-cyan-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Available Volunteers</span>
-              <div class="kpi-value" id="kpi-volunteers-ready">0</div>
-              <span class="kpi-sub cyan" id="kpi-total-volunteers">0 registered</span>
-            </div>
-          </div>
-
-          <!-- 6. Completed Deliveries -->
-          <div class="kpi-card glass glow-teal">
-            <div class="kpi-icon-wrap bg-emerald-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-              </svg>
-            </div>
-            <div class="kpi-info">
-              <span class="kpi-title">Completed Deliveries</span>
-              <div class="kpi-value" id="kpi-completed-deliveries">0</div>
-              <span class="kpi-sub green">Verified delivered food</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Dashboard Main Sections -->
-        <div class="dashboard-grid">
-          <!-- Active Rescues & Status Distribution -->
-          <div class="dash-card glass">
-            <div class="card-header">
-              <div class="card-title-group">
-                <h3 class="card-title">Live Donation Lifecycle Pipeline</h3>
-                <span class="card-subtitle">Real-time status breakdown across the 7-stage lifecycle</span>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Available Volunteers</span>
+                <span class="metric-icon bg-purple-light">🛵</span>
               </div>
-              <button class="btn-link" id="btn-view-all-donations">View All Donations →</button>
-            </div>
-            
-            <div class="lifecycle-pipeline-bars" id="pipeline-status-bars">
-              <div class="loading-spinner"></div>
+              <div class="metric-value" id="kpi-avail-vols">0</div>
+              <div class="metric-trend"><span class="trend-text">Ready for Dispatch</span></div>
             </div>
 
-            <div class="recent-donations-mini" id="recent-donations-container">
-              <div class="loading-spinner"></div>
-            </div>
-          </div>
-
-          <!-- Activity & Notification Stream -->
-          <div class="dash-card glass">
-            <div class="card-header">
-              <div class="card-title-group">
-                <h3 class="card-title">Live Coordination Activity Stream</h3>
-                <span class="card-subtitle">Real-time Agent Kernel event & notification audit log</span>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Recipient Organizations</span>
+                <span class="metric-icon bg-teal-light">🏢</span>
               </div>
-              <span class="badge badge-subtle">Audit Trail</span>
+              <div class="metric-value" id="kpi-total-orgs">0</div>
+              <div class="metric-trend"><span class="trend-text">Community Kitchens</span></div>
             </div>
 
-            <div class="notification-stream" id="notifications-stream">
-              <div class="loading-spinner"></div>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Active Users</span>
+                <span class="metric-icon bg-gray-light">👥</span>
+              </div>
+              <div class="metric-value" id="kpi-active-users">0</div>
+              <div class="metric-trend"><span class="trend-text">Persistent WhatsApp Profiles</span></div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-label">Environmental Offset</span>
+                <span class="metric-icon bg-emerald-light">🌱</span>
+              </div>
+              <div class="metric-value" id="kpi-co2-saved">0 kg</div>
+              <div class="metric-trend"><span class="trend-text">CO₂ Emissions Prevented</span></div>
             </div>
           </div>
-        </div>
-      </section>
 
-      <!-- TAB 2: AI ASSISTANT (Natural Language Multi-Turn Coordination) -->
-      <section class="tab-content" id="tab-chat">
-        <div class="chat-layout">
-          <!-- Chat Left: Conversation Area -->
-          <div class="chat-main glass">
-            <div class="chat-header">
-              <div class="chat-agent-info">
-                <div class="agent-avatar">
-                  <span>🤖</span>
-                  <div class="agent-pulse"></div>
+          <!-- Operational Pulse & Live Activity Grid -->
+          <div class="dashboard-columns">
+            <!-- Left Column: Active Rescue Operations Pulse -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">Active Rescue Operations</h2>
+                  <p class="panel-desc">Real-time status of ongoing food dispatches.</p>
                 </div>
-                <div>
-                  <h3 class="chat-agent-name">FoodRescue AI Assistant</h3>
-                  <p class="chat-agent-meta">Agent Kernel ADK • Gemini-powered Coordinator • 14 Bound Tools</p>
+                <button class="btn btn-ghost btn-sm" onclick="App.switchTab('live-operations')">View All &rarr;</button>
+              </div>
+              <div class="panel-body p-0">
+                <div class="operations-list" id="dashboard-active-ops-list">
+                  <!-- Rendered dynamically -->
+                  <div class="empty-state">No active food dispatches currently in transit.</div>
                 </div>
               </div>
-              
-              <div class="chat-header-actions">
-                <button class="btn btn-secondary btn-sm" id="btn-run-demo-chat">
-                  <span>▶ 3-Turn Demo</span>
-                </button>
-                <button class="btn btn-secondary btn-sm" id="btn-clear-chat">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                  <span>Clear</span>
-                </button>
+            </div>
+
+            <!-- Right Column: Recent WhatsApp & Agent Activity Stream -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">Agent Kernel & WhatsApp Stream</h2>
+                  <p class="panel-desc">Audited decisions and tool triggers.</p>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="App.switchTab('agent-activity')">Audit Log &rarr;</button>
+              </div>
+              <div class="panel-body p-0">
+                <div class="activity-feed" id="dashboard-activity-feed">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. LIVE OPERATIONS TAB -->
+        <section class="tab-view" id="view-live-operations">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">End-to-End Food Rescue Pipeline</h2>
+                <p class="panel-desc">Visual 7-step lifecycle tracking from WhatsApp donor intent to completed recipient delivery.</p>
+              </div>
+              <div class="filter-group">
+                <select class="form-select form-select-sm" id="select-ops-filter" onchange="App.renderLiveOperations()">
+                  <option value="all">All Active Operations</option>
+                  <option value="in_transit">In Transit Only</option>
+                  <option value="available">Available Only</option>
+                  <option value="completed">Completed Only</option>
+                </select>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="live-ops-grid" id="live-operations-grid">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. DONATIONS & DONORS TAB -->
+        <section class="tab-view" id="view-donations">
+          <div class="sub-nav-bar">
+            <div class="sub-nav-tabs">
+              <button class="sub-tab-btn active" id="subtab-donations" onclick="App.toggleDonationSubTab('inventory')">Food Donations Inventory</button>
+              <button class="sub-tab-btn" id="subtab-donors" onclick="App.toggleDonationSubTab('donors')">Registered Donors</button>
+            </div>
+            <div class="table-actions">
+              <input type="text" class="form-input form-input-sm" id="search-donations" placeholder="Search food, location, donor..." oninput="App.filterDonations()">
+              <select class="form-select form-select-sm" id="filter-donation-status" onchange="App.filterDonations()">
+                <option value="all">All Statuses</option>
+                <option value="AVAILABLE">Available</option>
+                <option value="MATCHED">Matched</option>
+                <option value="PICKUP_ASSIGNED">Assigned</option>
+                <option value="COLLECTED">Collected</option>
+                <option value="DELIVERED">Delivered</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Inventory Subview -->
+          <div class="subtab-content active" id="subview-donations-inventory">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Donation ID</th>
+                    <th>Food Item & Dietary</th>
+                    <th>Quantity</th>
+                    <th>Pickup Location</th>
+                    <th>Availability Window</th>
+                    <th>Status</th>
+                    <th>Matched Organization</th>
+                    <th>Assigned Courier</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="donations-table-body">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Donors Subview -->
+          <div class="subtab-content" id="subview-donations-donors">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Donor ID</th>
+                    <th>Name / Restaurant</th>
+                    <th>WhatsApp Phone</th>
+                    <th>Location Hub</th>
+                    <th>Organization Entity</th>
+                    <th>Registered Date</th>
+                  </tr>
+                </thead>
+                <tbody id="donors-table-body">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. ORGANIZATIONS TAB -->
+        <section class="tab-view" id="view-organizations">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Recipient Organizations & Community Kitchens</h2>
+                <p class="panel-desc">Shelters, soup kitchens, and charities matched dynamically by Agent Kernel.</p>
+              </div>
+              <input type="text" class="form-input form-input-sm" id="search-orgs" placeholder="Search organization..." oninput="App.filterOrganizations()">
+            </div>
+            <div class="panel-body">
+              <div class="partners-grid" id="organizations-grid">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. VOLUNTEERS TAB -->
+        <section class="tab-view" id="view-volunteers">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Volunteer Courier Network</h2>
+                <p class="panel-desc">Real-time availability, transport modes, and completed delivery records.</p>
+              </div>
+              <div class="header-actions">
+                <input type="text" class="form-input form-input-sm" id="search-volunteers" placeholder="Search volunteer or area..." oninput="App.filterVolunteers()">
+                <button class="btn btn-primary btn-sm" id="btn-open-volunteer-modal">+ Register Courier</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="volunteers-grid" id="volunteers-grid">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. USERS TAB -->
+        <section class="tab-view" id="view-users">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Persistent WhatsApp User Directory</h2>
+                <p class="panel-desc">Normalized phone identities, language preferences, and response mode settings.</p>
+              </div>
+              <div class="header-actions">
+                <input type="text" class="form-input form-input-sm" id="search-users" placeholder="Search phone or name..." oninput="App.filterUsers()">
+                <select class="form-select form-select-sm" id="filter-user-role" onchange="App.filterUsers()">
+                  <option value="all">All Roles</option>
+                  <option value="donor">Donor</option>
+                  <option value="recipient">Recipient Org</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="unknown">Unassigned</option>
+                </select>
+              </div>
+            </div>
+            <div class="panel-body p-0">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>WhatsApp Phone</th>
+                      <th>Display Name</th>
+                      <th>Assigned Role</th>
+                      <th>Language Preference</th>
+                      <th>Response Mode</th>
+                      <th>Onboarding Status</th>
+                      <th>Active Draft</th>
+                      <th>Last Active</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-table-body">
+                    <!-- Rendered dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. CONVERSATIONS TAB -->
+        <section class="tab-view" id="view-conversations">
+          <div class="conversations-layout">
+            <!-- Left Pane: Conversation Threads List -->
+            <div class="conversations-sidebar">
+              <div class="threads-header">
+                <input type="text" class="form-input form-input-sm" id="search-threads" placeholder="Search conversations..." oninput="App.filterConversations()">
+              </div>
+              <div class="threads-list" id="conversations-threads-list">
+                <!-- Rendered dynamically -->
               </div>
             </div>
 
-            <!-- Suggestion Chips Grouped by Capability -->
-            <div class="chat-suggestions-wrapper">
-              <div class="chat-suggestions-header">
-                <span>Try Judge Test Prompts:</span>
-              </div>
-              <div class="chat-suggestions">
-                <!-- 1. Donation Creation -->
-                <button class="chip" data-prompt="I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3 ready from now until 7 PM.">
-                  🍱 1. Create Donation (d1)
-                </button>
-                <!-- 2. Multi-turn detail update -->
-                <button class="chip" data-prompt="They need to be collected before 7 PM.">
-                  ⏰ 2. Multi-Turn Update (Turn 2)
-                </button>
-                <!-- 3. Matching & Volunteer Assignment -->
-                <button class="chip" data-prompt="Find a matching organization, create pickup task, and assign an available volunteer.">
-                  🤝 3. Match Org & Volunteer (Turn 3)
-                </button>
-                <!-- 4. Pickup Tracking -->
-                <button class="chip" data-prompt="What is the current status and session context of my active donation?">
-                  🔍 4. Track Active Pickup
-                </button>
-                <!-- 5. Status Transition -->
-                <button class="chip" data-prompt="Update the pickup task status for my active donation to EN_ROUTE.">
-                  🚗 5. Mark En Route
-                </button>
-              </div>
-            </div>
-
-            <!-- Messages Log -->
-            <div class="chat-messages" id="chat-messages-log">
-              <!-- Welcome Message -->
-              <div class="chat-bubble-row assistant">
-                <div class="bubble-avatar">🤖</div>
-                <div class="bubble-content">
-                  <div class="bubble-header">
-                    <span class="bubble-sender">FoodRescue AI Assistant</span>
-                    <span class="bubble-time">Just now</span>
+            <!-- Right Pane: Active Chat Window -->
+            <div class="conversation-main" id="conversation-main-view">
+              <div class="chat-header" id="chat-header-bar">
+                <div class="chat-user-info">
+                  <div class="chat-user-avatar" id="chat-avatar">👤</div>
+                  <div class="chat-user-details">
+                    <div class="chat-user-name" id="chat-active-name">Select a Conversation</div>
+                    <div class="chat-user-sub" id="chat-active-sub">WhatsApp Thread • +94...</div>
                   </div>
-                  <div class="bubble-text">
-                    <p>👋 Hello! I am the <strong>FoodRescue AI Assistant</strong> powered by <strong>Agent Kernel</strong> and <strong>Gemini</strong>.</p>
-                    <p>I coordinate surplus food logistics through natural language:</p>
-                    <ul class="welcome-capabilities-list">
-                      <li><strong>Natural-Language Donation Creation</strong>: Extract food type, quantities, dietary labels, location, and deadlines.</li>
-                      <li><strong>Multi-Turn Memory</strong>: Update details in subsequent messages without losing previous context.</li>
-                      <li><strong>Autonomous Organization Matching</strong>: Match donor surplus with verified community kitchens & food banks.</li>
-                      <li><strong>Volunteer Courier Assignment</strong>: Find and dispatch available volunteers based on proximity.</li>
-                      <li><strong>Lifecycle Progression Tracking</strong>: Monitor tasks across all 7 stages to confirmed delivery.</li>
-                    </ul>
-                    <div class="bubble-callout">
-                      💡 <strong>Quick Demonstration</strong>: Click <strong>"▶ 3-Turn Demo"</strong> in the top bar to watch a full multi-turn coordination flow automated in seconds!
-                    </div>
+                </div>
+                <div class="chat-header-badges" id="chat-header-badges">
+                  <span class="badge badge-emerald" id="chat-badge-lang">English</span>
+                  <span class="badge badge-slate" id="chat-badge-mode">Text Mode</span>
+                </div>
+              </div>
+
+              <!-- Message Bubbles Scroll Area -->
+              <div class="chat-messages" id="chat-messages-container">
+                <div class="empty-state">Select a conversation thread on the left to view message history.</div>
+              </div>
+
+              <!-- Chat Input / Simulator Box -->
+              <div class="chat-composer">
+                <form class="composer-form" onsubmit="App.handleSendSimulatorMessage(event)">
+                  <input type="text" class="composer-input" id="composer-text-input" placeholder="Type a message as this WhatsApp user..." required>
+                  <label class="voice-toggle-label">
+                    <input type="checkbox" id="composer-is-voice">
+                    <span>🎤 Voice</span>
+                  </label>
+                  <button type="submit" class="btn btn-primary btn-sm" id="btn-send-simulated">Send</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. PICKUP & DELIVERY TAB -->
+        <section class="tab-view" id="view-pickups">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Pickup Tasks & Travel Reimbursements</h2>
+                <p class="panel-desc">Dispatch assignments, two-leg route metrics, and volunteer reimbursement status.</p>
+              </div>
+              <select class="form-select form-select-sm" id="filter-pickups-status" onchange="App.filterPickups()">
+                <option value="all">All Pickup Tasks</option>
+                <option value="ASSIGNED">Assigned</option>
+                <option value="EN_ROUTE">En Route</option>
+                <option value="COLLECTED">Collected</option>
+                <option value="COMPLETED">Completed</option>
+              </select>
+            </div>
+            <div class="panel-body p-0">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Task ID</th>
+                      <th>Donation Link</th>
+                      <th>Pickup (Origin)</th>
+                      <th>Delivery (Destination)</th>
+                      <th>Assigned Courier</th>
+                      <th>Status</th>
+                      <th>Distance</th>
+                      <th>Transport Cost</th>
+                      <th>Reimbursement</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pickups-table-body">
+                    <!-- Rendered dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. OPERATIONS MAP TAB -->
+        <section class="tab-view" id="view-map">
+          <div class="panel h-full flex-col">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Live Geographic Operations Map</h2>
+                <p class="panel-desc">Active pickup tasks, recipient hubs, and courier GPS coordinates (Sri Lanka region).</p>
+              </div>
+              <div class="map-legend">
+                <span class="legend-item"><span class="legend-dot bg-emerald"></span> Donor Pickup</span>
+                <span class="legend-item"><span class="legend-dot bg-blue"></span> Recipient Kitchen</span>
+                <span class="legend-item"><span class="legend-dot bg-purple"></span> Volunteer Courier</span>
+              </div>
+            </div>
+            <div class="panel-body p-0 flex-1">
+              <div id="operations-leaflet-map" style="width: 100%; height: 580px; min-height: 450px;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 10. AGENT ACTIVITY (AUDIT LOG) TAB -->
+        <section class="tab-view" id="view-agent-activity">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Agent Kernel Audit Trail & Tool Executions</h2>
+                <p class="panel-desc">Audited chronological record of automated AI decisions, tool dispatches, and match operations.</p>
+              </div>
+              <select class="form-select form-select-sm" id="filter-audit-actor" onchange="App.filterAuditEvents()">
+                <option value="all">All Actors</option>
+                <option value="Agent Kernel Coordinator">Coordinator Agent</option>
+                <option value="Matching Engine">Matching Engine</option>
+                <option value="WhatsApp Webhook">WhatsApp Webhook</option>
+                <option value="Logistics Engine">Logistics Engine</option>
+              </select>
+            </div>
+            <div class="panel-body p-0">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Event Type</th>
+                      <th>Actor / Agent</th>
+                      <th>Related Entity</th>
+                      <th>Execution Metadata</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-events-table-body">
+                    <!-- Rendered dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 11. NOTIFICATIONS TAB -->
+        <section class="tab-view" id="view-notifications">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">System & WhatsApp Notifications Log</h2>
+                <p class="panel-desc">Outbound alerts dispatched to donors, organizations, and volunteers.</p>
+              </div>
+            </div>
+            <div class="panel-body p-0">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Notification ID</th>
+                      <th>Recipient Type</th>
+                      <th>Recipient ID / Phone</th>
+                      <th>Channel</th>
+                      <th>Message Content</th>
+                      <th>Status</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody id="notifications-table-body">
+                    <!-- Rendered dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 12. REPORTS & IMPACT TAB -->
+        <section class="tab-view" id="view-reports">
+          <div class="reports-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Environmental & Social Impact Summary</h2>
+              </div>
+              <div class="panel-body">
+                <div class="impact-stats-grid" id="reports-impact-stats">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Regional Food Rescue Distribution</h2>
+              </div>
+              <div class="panel-body">
+                <div class="distribution-bars" id="reports-regional-bars">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+            </div>
+
+            <div class="panel full-width">
+              <div class="panel-header">
+                <h2 class="panel-title">Volunteer Courier Leaderboard</h2>
+              </div>
+              <div class="panel-body p-0">
+                <div class="table-container">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Courier Name</th>
+                        <th>Transport Mode</th>
+                        <th>Completed Deliveries</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reports-volunteer-leaderboard">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 13. SETTINGS TAB -->
+        <section class="tab-view" id="view-settings">
+          <div class="settings-grid">
+            <!-- Transport Configuration -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">Dynamic Transport Reimbursement Rates</h2>
+                  <p class="panel-desc">Configure base fares and per-kilometer rates for courier logistics.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <form id="form-settings-transport" onsubmit="App.handleSaveTransportSettings(event)">
+                  <div class="form-group">
+                    <label class="form-label">Base Fare (LKR)</label>
+                    <input type="number" step="10" class="form-input" id="setting-base-fare" value="150" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Rate Per Kilometer (LKR / km)</label>
+                    <input type="number" step="5" class="form-input" id="setting-cost-per-km" value="80" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Currency</label>
+                    <input type="text" class="form-input" id="setting-currency" value="LKR" readonly>
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
+                </form>
+              </div>
+            </div>
+
+            <!-- WhatsApp Production Health -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">WhatsApp Meta Cloud API Integration Health</h2>
+                  <p class="panel-desc">Live production configuration verification.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="settings-meta-list" id="settings-wa-diagnostics">
+                  <div class="meta-item">
+                    <span class="meta-k">Production Phone:</span>
+                    <span class="meta-v font-mono">+94 75 526 3482</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-k">Phone Number ID:</span>
+                    <span class="meta-v font-mono">1285744151285887</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-k">WABA ID:</span>
+                    <span class="meta-v font-mono">2279553849254105</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-k">Meta App ID:</span>
+                    <span class="meta-v font-mono">1591721079088296</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-k">Live Webhook Endpoint:</span>
+                    <span class="meta-v font-mono">https://foodrescue-ai-ten.vercel.app/whatsapp/webhook</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-k">Integration Status:</span>
+                    <span class="badge badge-emerald">ONLINE & VERIFIED</span>
                   </div>
                 </div>
               </div>
             </div>
-
-            <!-- Chat Input Bar -->
-            <div class="chat-input-container">
-              <form id="chat-input-form" class="chat-form">
-                <textarea 
-                  id="chat-user-prompt" 
-                  rows="2" 
-                  placeholder="Tell FoodRescue AI about your donation or command (e.g. 'I am donor d1. I have 40 vegetarian lunch boxes in Colombo 3')..." 
-                  required
-                ></textarea>
-                <div class="chat-form-bottom">
-                  <div class="chat-form-hints">
-                    <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line</span>
-                  </div>
-                  <button type="submit" class="btn btn-primary" id="btn-send-chat">
-                    <span>Send Command</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="22" y1="2" x2="11" y2="13"></line>
-                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                  </button>
-                </div>
-              </form>
-            </div>
           </div>
+        </section>
 
-          <!-- Chat Right: Active Working Memory & Quick Actions -->
-          <div class="chat-sidebar glass">
-            <!-- Active Working Memory Card -->
-            <div class="sidebar-block">
-              <div class="block-header">
-                <span class="block-title">🧠 Active Session Memory</span>
-                <span class="badge badge-pill badge-primary" id="chat-workflow-badge">IDLE</span>
-              </div>
-              
-              <div class="memory-card" id="chat-active-memory-card">
-                <div class="memory-row">
-                  <span class="mem-lbl">Donation ID:</span>
-                  <span class="mem-val highlight" id="mem-active-don-id">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Donor ID:</span>
-                  <span class="mem-val" id="mem-active-donor-id">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Food Details:</span>
-                  <span class="mem-val" id="mem-active-food">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Location:</span>
-                  <span class="mem-val" id="mem-active-loc">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Deadline:</span>
-                  <span class="mem-val" id="mem-active-deadline">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Recipient Org:</span>
-                  <span class="mem-val text-blue" id="mem-active-org">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Volunteer:</span>
-                  <span class="mem-val text-amber" id="mem-active-vol">None</span>
-                </div>
-                <div class="memory-row">
-                  <span class="mem-lbl">Pickup Task:</span>
-                  <span class="mem-val" id="mem-active-task">None</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Quick Step Actions -->
-            <div class="sidebar-block">
-              <div class="block-header">
-                <span class="block-title">⚡ Step-by-Step Lifecycle Triggers</span>
-              </div>
-              <div class="quick-action-buttons">
-                <button class="btn btn-secondary btn-block text-left" id="btn-quick-create-d1">
-                  <span>1️⃣ Create 40 Meals (d1)</span>
-                </button>
-                <button class="btn btn-secondary btn-block text-left" id="btn-quick-update-time">
-                  <span>2️⃣ Update Deadline to 7 PM</span>
-                </button>
-                <button class="btn btn-secondary btn-block text-left" id="btn-quick-match-assign">
-                  <span>3️⃣ Match Org & Assign Volunteer</span>
-                </button>
-                <button class="btn btn-secondary btn-block text-left" id="btn-quick-en-route">
-                  <span>4️⃣ Mark Task En Route</span>
-                </button>
-                <button class="btn btn-secondary btn-block text-left" id="btn-quick-delivered">
-                  <span>5️⃣ Confirm Delivery Complete</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 3: DONATIONS & 7-STAGE LIFECYCLE TRACKER -->
-      <section class="tab-content" id="tab-donations">
-        <div class="donations-view-container">
-          <!-- Active Donation 7-Stage Visual Lifecycle Stepper Card -->
-          <div class="stepper-showcase glass" id="active-lifecycle-showcase">
-            <div class="stepper-header">
-              <div class="stepper-info">
-                <div class="badge badge-pill badge-primary">Active Visual Lifecycle</div>
-                <h3 class="stepper-title" id="stepper-don-title">Select a donation to track its 7-stage lifecycle</h3>
-              </div>
-              <div class="stepper-actions" id="stepper-action-buttons">
-                <!-- Dynamic actions rendered based on active stage -->
-              </div>
-            </div>
-
-            <!-- The Exact 7-Stage Stepper: AVAILABLE -> MATCHED -> PICKUP PENDING -> PICKUP ASSIGNED -> EN ROUTE -> COLLECTED -> DELIVERED -->
-            <div class="lifecycle-steps" id="lifecycle-steps-bar">
-              <div class="step-node" data-stage="AVAILABLE">
-                <div class="step-circle">1</div>
-                <div class="step-name">AVAILABLE</div>
-                <div class="step-sub">Donation Created</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="MATCHED">
-                <div class="step-circle">2</div>
-                <div class="step-name">MATCHED</div>
-                <div class="step-sub">Org Accepted</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="PICKUP_PENDING">
-                <div class="step-circle">3</div>
-                <div class="step-name">PICKUP PENDING</div>
-                <div class="step-sub">Task Created</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="PICKUP_ASSIGNED">
-                <div class="step-circle">4</div>
-                <div class="step-name">PICKUP ASSIGNED</div>
-                <div class="step-sub">Volunteer Ready</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="EN_ROUTE">
-                <div class="step-circle">5</div>
-                <div class="step-name">EN ROUTE</div>
-                <div class="step-sub">Courier In Transit</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="COLLECTED">
-                <div class="step-circle">6</div>
-                <div class="step-name">COLLECTED</div>
-                <div class="step-sub">Food Picked Up</div>
-              </div>
-              <div class="step-line"></div>
-
-              <div class="step-node" data-stage="DELIVERED">
-                <div class="step-circle">7</div>
-                <div class="step-name">DELIVERED</div>
-                <div class="step-sub">Delivered to Org</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Filter and Search Toolbar -->
-          <div class="toolbar-card glass">
-            <div class="toolbar-left">
-              <div class="search-input-wrap">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="donation-search-input" placeholder="Search donations by ID, food, location, donor...">
-              </div>
-
-              <div class="status-filter-pills" id="status-filter-group">
-                <button class="pill active" data-filter="ALL">All</button>
-                <button class="pill" data-filter="AVAILABLE">Available</button>
-                <button class="pill" data-filter="MATCHED">Matched</button>
-                <button class="pill" data-filter="PICKUP_ASSIGNED">Assigned</button>
-                <button class="pill" data-filter="EN_ROUTE">En Route</button>
-                <button class="pill" data-filter="COLLECTED">Collected</button>
-                <button class="pill" data-filter="DELIVERED">Delivered</button>
-              </div>
-            </div>
-
-            <div class="toolbar-right">
-              <button class="btn btn-primary btn-sm" id="btn-new-donation-tab">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                <span>Report Donation</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Donations Table -->
-          <div class="donations-table-wrap glass">
-            <table class="data-table" id="donations-data-table">
-              <thead>
-                <tr>
-                  <th>Donation ID</th>
-                  <th>Food & Quantity</th>
-                  <th>Dietary Info</th>
-                  <th>Pickup Location</th>
-                  <th>Time Window</th>
-                  <th>Lifecycle Status</th>
-                  <th>Created At</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="donations-table-body">
-                <tr>
-                  <td colspan="8" class="text-center py-6">
-                    <div class="loading-spinner"></div>
-                    <p class="text-muted mt-2">Loading live donation records...</p>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 4: RECIPIENT ORGANIZATIONS -->
-      <section class="tab-content" id="tab-organizations">
-        <div class="view-header-banner glass">
-          <div>
-            <h3 class="view-title">Verified Recipient Organizations</h3>
-            <p class="view-subtitle">Community kitchens, food banks, and shelters partnered with FoodRescue AI for autonomous donation dispatch.</p>
-          </div>
-          <span class="badge badge-primary" id="header-org-count">0 Partners</span>
-        </div>
-
-        <div class="cards-grid" id="organizations-grid-container">
-          <div class="loading-spinner"></div>
-        </div>
-      </section>
-
-      <!-- TAB 5: VOLUNTEERS -->
-      <section class="tab-content" id="tab-volunteers">
-        <div class="view-header-banner glass">
-          <div>
-            <h3 class="view-title">Registered Volunteer Couriers</h3>
-            <p class="view-subtitle">Active community volunteers and logistics couriers dispatched autonomously for food pickups and deliveries.</p>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <span class="badge badge-amber" id="header-vol-count">0 Volunteers</span>
-            <button class="btn btn-primary btn-sm" id="btn-open-volunteer-modal">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-              <span>Register Volunteer</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="cards-grid" id="volunteers-grid-container">
-          <div class="loading-spinner"></div>
-        </div>
-      </section>
-
-      <!-- TAB 6: PICKUPS & LOGISTICS -->
-      <section class="tab-content" id="tab-pickups">
-        <div class="view-header-banner glass">
-          <div>
-            <h3 class="view-title">Pickup & Delivery Logistics Tasks</h3>
-            <p class="view-subtitle">Active and completed pickup tasks with dynamic routing, road distance estimation, live opt-in GPS, and travel reimbursement.</p>
-          </div>
-          <span class="badge badge-cyan" id="header-pickups-count">0 Tasks</span>
-        </div>
-
-        <!-- Live Route & GPS Visualizer Card -->
-        <div class="logistics-map-card glass mb-6">
-          <div class="logistics-card-header">
-            <div class="logistics-header-left">
-              <span class="logistics-icon">🗺️</span>
-              <div>
-                <h4 class="logistics-card-title">Live Route Geometry & GPS Tracking</h4>
-                <p class="logistics-card-subtitle">Visualizes origin donor, volunteer courier live GPS position, and destination charity with road distance & ETA.</p>
-              </div>
-            </div>
-            <div class="logistics-header-right">
-              <span class="gps-status-badge inactive" id="global-gps-badge">
-                <span class="gps-pulse"></span> GPS Tracking Inactive
-              </span>
-              <button class="btn btn-secondary btn-sm" id="btn-toggle-live-gps">
-                <span>🛰️ Start Live GPS</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="route-canvas-container">
-            <canvas id="route-map-canvas" width="900" height="220"></canvas>
-            <div class="route-stats-overlay" id="route-stats-overlay">
-              <div class="route-stat-item">
-                <span class="stat-lbl">Route Distance</span>
-                <span class="stat-val" id="stat-route-distance">-- km</span>
-              </div>
-              <div class="route-stat-item">
-                <span class="stat-lbl">Estimated ETA</span>
-                <span class="stat-val" id="stat-route-eta">-- min</span>
-              </div>
-              <div class="route-stat-item">
-                <span class="stat-lbl">Transport Mode</span>
-                <span class="stat-val" id="stat-transport-mode">Motorbike</span>
-              </div>
-              <div class="route-stat-item">
-                <span class="stat-lbl">Est. Reimbursement</span>
-                <span class="stat-val text-emerald" id="stat-route-reimb">-- LKR</span>
-              </div>
-              <div class="route-stat-item">
-                <span class="stat-lbl">Routing Provider</span>
-                <span class="stat-val" id="stat-routing-provider">Haversine / Google</span>
-              </div>
-            </div>
-          </div>
-          <div class="route-disclaimer-bar">
-            <span>ℹ️ <strong>Logistics Notice:</strong> Reimbursement is an internal accounting estimate for volunteer travel expenses. No financial transactions or credit card payments occur.</span>
-          </div>
-        </div>
-
-        <div class="donations-table-wrap glass">
-          <table class="data-table" id="pickups-data-table">
-            <thead>
-              <tr>
-                <th>Task ID</th>
-                <th>Donation ID</th>
-                <th>Recipient Org</th>
-                <th>Assigned Courier</th>
-                <th>Route (Pickup ➔ Delivery)</th>
-                <th>Distance & Cost</th>
-                <th>GPS Status</th>
-                <th>Task Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="pickups-table-body">
-              <tr>
-                <td colspan="9" class="text-center py-6">
-                  <div class="loading-spinner"></div>
-                  <p class="text-muted mt-2">Loading live pickup tasks...</p>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- TAB 7: VOLUNTEER REIMBURSEMENTS LEDGER -->
-      <section class="tab-content" id="tab-reimbursements">
-        <div class="view-header-banner glass">
-          <div>
-            <h3 class="view-title">Volunteer Travel Reimbursement Ledger</h3>
-            <p class="view-subtitle">Accounting records for volunteer mileage and travel reimbursement. Strictly non-profit civic ledger — no payment gateway or real banking transfers.</p>
-          </div>
-          <div class="reimb-header-kpis">
-            <span class="badge badge-emerald" id="header-reimb-total">Pool: 0 LKR</span>
-            <span class="badge badge-amber" id="header-reimb-pending">0 Pending</span>
-          </div>
-        </div>
-
-        <!-- Ledger Disclaimer Banner -->
-        <div class="alert-banner-glass mb-6">
-          <div class="alert-icon">⚖️</div>
-          <div>
-            <div class="alert-title">Non-Profit Civic Accounting Ledger</div>
-            <div class="alert-body">This prototype records estimated volunteer travel reimbursement amounts based on transparent distance calculations. It does not process real monetary transactions, credit card payments, or online bank transfers.</div>
-          </div>
-        </div>
-
-        <div class="donations-table-wrap glass">
-          <table class="data-table" id="reimbursements-data-table">
-            <thead>
-              <tr>
-                <th>Reimbursement ID</th>
-                <th>Volunteer</th>
-                <th>Pickup Task</th>
-                <th>Distance (km)</th>
-                <th>Rate / km</th>
-                <th>Transport Mode</th>
-                <th>Estimated Amount</th>
-                <th>Status</th>
-                <th>Created At</th>
-                <th>Administrative Actions</th>
-              </tr>
-            </thead>
-            <tbody id="reimbursements-table-body">
-              <tr>
-                <td colspan="10" class="text-center py-6">
-                  <div class="loading-spinner"></div>
-                  <p class="text-muted mt-2">Loading reimbursement ledger records...</p>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- TAB 8: SESSION / ACTIVITY -->
-      <section class="tab-content" id="tab-session">
-        <div class="session-inspector-layout">
-          <!-- Session Header Banner -->
-          <div class="session-banner glass">
-            <div class="session-banner-left">
-              <div class="session-icon-wrap">🧠</div>
-              <div>
-                <h2 class="session-banner-title">Agent Kernel Multi-Turn Session Memory</h2>
-                <p class="session-banner-subtitle">
-                  Inspect the persistent <code>KeyValueCache</code> maintaining state across multi-turn conversations without reprompting.
-                </p>
-              </div>
-            </div>
-
-            <div class="session-banner-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-refresh-session">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                </svg>
-                <span>Refresh Memory</span>
-              </button>
-
-              <button class="btn btn-danger btn-sm" id="btn-clear-session-state">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                <span>Clear Context</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Session Grid Details -->
-          <div class="session-details-grid">
-            <!-- Left: Structured Session Variables -->
-            <div class="session-card glass">
-              <h3 class="session-card-title">Structured Session Variables</h3>
-              <div class="session-kv-list" id="session-kv-container">
-                <!-- Rendered via JS -->
-              </div>
-            </div>
-
-            <!-- Right: Architecture Explainer & Activity Stream -->
-            <div class="session-card glass">
-              <h3 class="session-card-title">Multi-Turn Continuity Architecture</h3>
-              <div class="arch-explainer">
-                <div class="arch-box">
-                  <div class="turn-title">Turn 1: Initial Partial Input</div>
-                  <div class="turn-desc">"I have 40 vegetarian lunch boxes in Colombo 3."</div>
-                  <div class="turn-result">→ Creates donation record & sets <code>current_donation_id</code></div>
-                </div>
-
-                <div class="arch-box">
-                  <div class="turn-title">Turn 2: Incremental Detail Update</div>
-                  <div class="turn-desc">"They need to be collected before 7 PM."</div>
-                  <div class="turn-result">→ Looks up active donation from cache & updates deadline without re-asking</div>
-                </div>
-
-                <div class="arch-box">
-                  <div class="turn-title">Turn 3: Lifecycle Continuation</div>
-                  <div class="turn-desc">"Find a matching organization and assign a volunteer."</div>
-                  <div class="turn-result">→ Matches org, creates pickup task, and assigns courier automatically</div>
-                </div>
-              </div>
-
-              <div class="session-raw-json-block">
-                <span class="raw-title">Raw Sanitized Session Payload:</span>
-                <pre id="session-raw-json">{}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      </div>
     </main>
   </div>
 
-  <!-- MODAL: CREATE DONATION -->
-  <div class="modal-backdrop" id="modal-create-donation">
-    <div class="modal-container glass">
+  <!-- MODALS -->
+
+  <!-- 1. New Donation Modal -->
+  <div class="modal-backdrop" id="modal-new-donation">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <div class="modal-title-wrap">
-          <span class="modal-icon">📦</span>
-          <div>
-            <h3 class="modal-title">Report Surplus Food Donation</h3>
-            <p class="modal-subtitle">Submits a natural language coordination request to the FoodRescue AI Assistant</p>
-          </div>
-        </div>
-        <button class="modal-close" id="btn-close-modal">✕</button>
+        <h3 class="modal-title">Create Food Donation</h3>
+        <button class="modal-close" onclick="App.closeModal('modal-new-donation')">&times;</button>
       </div>
-
-      <form id="form-create-donation" class="modal-form">
-        <div class="form-row">
+      <form onsubmit="App.handleCreateDonation(event)">
+        <div class="modal-body">
           <div class="form-group">
-            <label for="input-donor-id">Donor Account</label>
-            <select id="input-donor-id" required>
-              <option value="d1">d1 — Grand Hotel Colombo</option>
-              <option value="d2">d2 — City Bakery Colombo</option>
-              <option value="custom_donor">Custom Donor</option>
-            </select>
+            <label class="form-label">Food Description</label>
+            <input type="text" class="form-input" id="modal-don-food" placeholder="e.g. 25 packets of Rice & Curry" required>
           </div>
-
-          <div class="form-group">
-            <label for="input-food-type">Food Type / Description</label>
-            <input type="text" id="input-food-type" placeholder="e.g. Vegetarian Lunch Boxes, Prepared Meals, Fresh Bread" required value="Vegetarian Meal Boxes">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Quantity</label>
+              <input type="number" step="1" class="form-input" id="modal-don-qty" placeholder="25" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit</label>
+              <select class="form-select" id="modal-don-unit">
+                <option value="portions">portions</option>
+                <option value="packets">packets</option>
+                <option value="meals">meals</option>
+                <option value="boxes">boxes</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-quantity">Quantity</label>
-            <input type="number" id="input-quantity" min="1" step="1" required value="40">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Dietary Information</label>
+              <select class="form-select" id="modal-don-dietary">
+                <option value="Standard">Standard</option>
+                <option value="Vegetarian">Vegetarian</option>
+                <option value="Vegan">Vegan</option>
+                <option value="Halal">Halal</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Pickup Location</label>
+              <input type="text" class="form-input" id="modal-don-location" placeholder="e.g. Colombo 03" required>
+            </div>
           </div>
-
-          <div class="form-group">
-            <label for="input-unit">Unit</label>
-            <select id="input-unit" required>
-              <option value="boxes">boxes / packets</option>
-              <option value="meals">meals / portions</option>
-              <option value="kg">kilograms (kg)</option>
-              <option value="loaves">loaves / items</option>
-            </select>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Donor Name</label>
+              <input type="text" class="form-input" id="modal-don-donor-name" placeholder="Grand Hotel" value="Grand Hotel">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Donor Phone</label>
+              <input type="text" class="form-input" id="modal-don-donor-phone" placeholder="+94770001001" value="+94770001001">
+            </div>
           </div>
-        </div>
-
-        <div class="form-row">
           <div class="form-group">
-            <label for="input-dietary">Dietary Classification</label>
-            <input type="text" id="input-dietary" placeholder="e.g. Vegetarian, Halal, Vegan, Standard" value="Vegetarian">
-          </div>
-
-          <div class="form-group">
-            <label for="input-location">Pickup Location</label>
-            <input type="text" id="input-location" placeholder="e.g. Colombo 3, Galle Road, Colombo 7" required value="Colombo 3">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-available-from">Available From</label>
-            <input type="text" id="input-available-from" placeholder="e.g. Now, 11:30 AM" required value="Now">
-          </div>
-
-          <div class="form-group">
-            <label for="input-deadline">Pickup Deadline</label>
-            <input type="text" id="input-deadline" placeholder="e.g. 07:00 PM, End of Day" required value="07:00 PM">
+            <label class="form-label">Available Until</label>
+            <input type="text" class="form-input" id="modal-don-deadline" placeholder="Before 8 PM" value="Before 8 PM">
           </div>
         </div>
-
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-submit-donation">
-            <span>Coordinate via AI Assistant</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-          </button>
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-new-donation')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Donation</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- MODAL: REGISTER VOLUNTEER -->
-  <div class="modal-backdrop" id="modal-create-volunteer">
-    <div class="modal-container glass">
+  <!-- 2. Register Volunteer Modal -->
+  <div class="modal-backdrop" id="modal-new-volunteer">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <div class="modal-title-wrap">
-          <span class="modal-icon">🚴</span>
-          <div>
-            <h3 class="modal-title">Register Volunteer Courier</h3>
-            <p class="modal-subtitle">Add a community volunteer to the autonomous surplus-food dispatch roster</p>
-          </div>
-        </div>
-        <button class="modal-close" id="btn-close-volunteer-modal">✕</button>
+        <h3 class="modal-title">Register Volunteer Courier</h3>
+        <button class="modal-close" onclick="App.closeModal('modal-new-volunteer')">&times;</button>
       </div>
-
-      <form id="form-create-volunteer" class="modal-form">
-        <div class="form-row">
+      <form onsubmit="App.handleCreateVolunteer(event)">
+        <div class="modal-body">
           <div class="form-group">
-            <label for="input-vol-name">Full Name</label>
-            <input type="text" id="input-vol-name" placeholder="e.g. Nuwan Fernando, Sara Jayasinghe" required value="Nuwan Fernando">
+            <label class="form-label">Courier Name</label>
+            <input type="text" class="form-input" id="modal-vol-name" placeholder="Amara Silva" required>
           </div>
-
           <div class="form-group">
-            <label for="input-vol-phone">Contact Phone</label>
-            <input type="tel" id="input-vol-phone" placeholder="e.g. +94 77 987 6543" required value="+94779876543">
+            <label class="form-label">WhatsApp Phone</label>
+            <input type="text" class="form-input" id="modal-vol-phone" placeholder="+94771234567" required>
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-vol-area">Service Area / Coverage</label>
-            <input type="text" id="input-vol-area" placeholder="e.g. Colombo 3, Colombo 7, Dehiwala" required value="Colombo 3, Colombo 7">
-          </div>
-
-          <div class="form-group">
-            <label for="input-vol-transport">Transport Mode</label>
-            <select id="input-vol-transport" required>
-              <option value="Motorbike">Motorbike (50 LKR/km)</option>
-              <option value="Electric Bike">Electric Bike (25 LKR/km)</option>
-              <option value="Bicycle">Bicycle (25 LKR/km)</option>
-              <option value="Car">Car (80 LKR/km)</option>
-              <option value="Van">Van (120 LKR/km)</option>
-            </select>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Transport Mode</label>
+              <select class="form-select" id="modal-vol-transport">
+                <option value="Motorbike">Motorbike</option>
+                <option value="Car">Car</option>
+                <option value="Van">Van</option>
+                <option value="Three-Wheeler">Three-Wheeler</option>
+                <option value="Bicycle">Bicycle</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Service Area</label>
+              <input type="text" class="form-input" id="modal-vol-area" placeholder="Colombo, Dehiwala" required>
+            </div>
           </div>
         </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-vol-availability">Availability Window</label>
-            <input type="text" id="input-vol-availability" placeholder="e.g. immediate, evenings, weekends" required value="immediate, evenings">
-          </div>
-
-          <div class="form-group">
-            <label for="input-vol-location">Base Location</label>
-            <input type="text" id="input-vol-location" placeholder="e.g. Colombo 3" value="Colombo 3">
-          </div>
-        </div>
-
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="btn-cancel-volunteer-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-submit-volunteer">
-            <span>Register Courier</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-new-volunteer')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Courier</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- TOAST NOTIFICATION CONTAINER -->
-  <div class="toast-container" id="toast-container"></div>
+  <!-- 3. Simulate WhatsApp Message Modal -->
+  <div class="modal-backdrop" id="modal-simulate-whatsapp">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Simulate WhatsApp Message</h3>
+        <button class="modal-close" onclick="App.closeModal('modal-simulate-whatsapp')">&times;</button>
+      </div>
+      <form onsubmit="App.handleTriggerSimulateModal(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Sender Phone Number</label>
+            <input type="text" class="form-input" id="modal-sim-phone" value="+94771122334" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Message Text</label>
+            <textarea class="form-textarea" id="modal-sim-text" rows="3" placeholder="e.g. 'I have 30 meals available from my restaurant'" required></textarea>
+          </div>
+          <div class="form-group">
+            <label class="voice-toggle-label">
+              <input type="checkbox" id="modal-sim-is-voice">
+              <span>Simulate as Voice Message (Voice Note Transcription)</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal('modal-simulate-whatsapp')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send to Agent Kernel</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-  <!-- APPLICATION SCRIPTS -->
+  <!-- Main JavaScript Bundle -->
   <script src="/static/app.js"></script>
 </body>
 </html>

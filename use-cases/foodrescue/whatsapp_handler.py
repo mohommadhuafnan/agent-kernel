@@ -309,9 +309,21 @@ async def process_incoming_whatsapp_message(
 
         clean_lower = prompt_text.lower().strip()
 
-        # Check Natural Script Language Detection
+        # Record incoming message from user for persistent conversation tracking
+        try:
+            database.record_message(
+                phone=from_number,
+                sender="user",
+                text=prompt_text,
+                is_voice=is_voice_message,
+                transcript=prompt_text if is_voice_message else None
+            )
+        except Exception as rec_err:
+            logger.warning(f"Failed to record user message: {rec_err}")
+
+        # Check Natural Script Language Detection (if non-Latin script detected e.g. Sinhala/Tamil)
         detected_lang = translation_service.detect_language(prompt_text)
-        if detected_lang and detected_lang != preferred_language:
+        if detected_lang and detected_lang in ["si", "ta", "ml"] and detected_lang != preferred_language:
             database.set_user_language(from_number, detected_lang)
             preferred_language = detected_lang
             try:
@@ -320,17 +332,19 @@ async def process_incoming_whatsapp_message(
                 pass
 
         # Check if user was in language menu
-        in_lang_menu = False
-        try:
-            in_lang_menu = (cache.get("workflow_step") == "AWAITING_LANGUAGE")
-        except Exception:
-            pass
+        conv_state = database.get_user_conversation_state(from_number)
+        in_lang_menu = bool(
+            conv_state.get("workflow") == "LANGUAGE" or
+            conv_state.get("current_question") == "LANGUAGE_MENU" or
+            (cache.has("workflow_step") and cache.get("workflow_step") == "AWAITING_LANGUAGE")
+        )
 
         # Check Explicit Language Selection Intent
         lang_intent = translation_service.is_language_selection_intent(prompt_text, in_language_menu=in_lang_menu)
         if lang_intent:
             database.set_user_language(from_number, lang_intent)
             database.set_onboarding_completed(from_number, True)
+            database.clear_user_conversation_state(from_number)
             preferred_language = lang_intent
             try:
                 cache.set("preferred_language", lang_intent)
@@ -338,14 +352,35 @@ async def process_incoming_whatsapp_message(
             except Exception:
                 pass
             reply_text = translation_service.get_localized_message("language_selected", lang=lang_intent)
+            try:
+                database.record_message(phone=from_number, sender="agent", text=reply_text)
+            except Exception:
+                pass
             send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
             return {"status": "language_updated", "language": lang_intent, "reply": reply_text, "send_status": send_res}
 
-        if clean_lower in ["language", "languages", "භාෂාව", "மொழி", "ഭാഷ"]:
+        # Check Response Mode Preference
+        resp_mode_intent = translation_service.is_response_mode_intent(prompt_text)
+        if resp_mode_intent:
+            database.set_user_response_mode(from_number, resp_mode_intent)
+            reply_text = translation_service.get_localized_message("response_mode_updated", lang=preferred_language, mode=resp_mode_intent.upper())
+            try:
+                database.record_message(phone=from_number, sender="agent", text=reply_text)
+            except Exception:
+                pass
+            send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
+            return {"status": "response_mode_updated", "mode": resp_mode_intent, "reply": reply_text, "send_status": send_res}
+
+        if clean_lower in ["language", "languages", "භාෂාව", "மொழி", "ഭാഷ", "change language"]:
             try:
                 cache.set("workflow_step", "AWAITING_LANGUAGE")
             except Exception:
                 pass
+            database.set_user_conversation_state(from_number, {
+                "workflow": "LANGUAGE",
+                "current_question": "LANGUAGE_MENU",
+                "expected_input_type": "CHOICE"
+            })
             reply_text = (
                 "🌍 *FoodRescue AI Language Selection / භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்*:\n\n"
                 "Reply with:\n"
@@ -354,6 +389,10 @@ async def process_incoming_whatsapp_message(
                 "3 - English\n"
                 "4 - Malayalam (മലയാളം)"
             )
+            try:
+                database.record_message(phone=from_number, sender="agent", text=reply_text)
+            except Exception:
+                pass
             send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
             return {"status": "language_menu", "reply": reply_text, "send_status": send_res}
 
@@ -364,6 +403,10 @@ async def process_incoming_whatsapp_message(
             if is_initial_greeting:
                 database.set_onboarding_completed(from_number, True)
                 reply_text = translation_service.get_localized_message("onboarding_welcome", lang=preferred_language)
+                try:
+                    database.record_message(phone=from_number, sender="agent", text=reply_text)
+                except Exception:
+                    pass
                 send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
                 return {"status": "onboarding_welcome_sent", "reply": reply_text, "send_status": send_res}
             else:
@@ -372,7 +415,15 @@ async def process_incoming_whatsapp_message(
 
         # Returning user explicit menu request
         if not is_new_user and clean_lower in ["hi", "hello", "hey", "menu", "start"] and not is_voice_message:
-            reply_text = translation_service.get_localized_message("returning_welcome", lang=preferred_language)
+            donor = database.get_donor_by_phone(from_number)
+            if donor:
+                reply_text = translation_service.get_localized_message("returning_donor_welcome", lang=preferred_language, name=donor.get("name", ""))
+            else:
+                reply_text = translation_service.get_localized_message("returning_welcome", lang=preferred_language)
+            try:
+                database.record_message(phone=from_number, sender="agent", text=reply_text)
+            except Exception:
+                pass
             send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
             return {"status": "returning_welcome_sent", "reply": reply_text, "send_status": send_res}
 
@@ -389,6 +440,12 @@ async def process_incoming_whatsapp_message(
         except Exception as exc:
             logger.error(f"Error executing resilient agent for {session_id}: {exc}")
             reply_text = translation_service.get_localized_message("error_recovery", lang=preferred_language)
+
+        # Record agent reply in database for conversation tracking
+        try:
+            database.record_message(phone=from_number, sender="agent", text=reply_text)
+        except Exception:
+            pass
 
         # Audit notification in database
         try:
