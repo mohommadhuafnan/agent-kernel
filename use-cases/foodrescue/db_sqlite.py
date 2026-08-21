@@ -292,6 +292,25 @@ class SQLiteRepository(BaseRepository):
                 except sqlite3.OperationalError:
                     pass
 
+            # Seed default system settings if not present
+            cursor.execute("SELECT COUNT(*) FROM system_settings WHERE setting_key = 'transport_cost'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(
+                    "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)",
+                    ("transport_cost", json.dumps({
+                        "base_fare": 150.0,
+                        "cost_per_km": 80.0,
+                        "currency": "LKR",
+                        "vehicle_multipliers": {
+                            "Motorbike": 1.0,
+                            "Bicycle": 0.6,
+                            "Car": 1.5,
+                            "Van": 2.0,
+                            "Three-Wheeler": 1.2
+                        }
+                    }), self._now())
+                )
+
         conn.close()
 
     def seed_test_data(self) -> None:
@@ -327,24 +346,6 @@ class SQLiteRepository(BaseRepository):
                     ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "weekends, evenings", "available", "Colombo 5", self._now())
                 )
 
-            # Seed default system settings if not present
-            cursor.execute("SELECT COUNT(*) FROM system_settings WHERE setting_key = 'transport_cost'")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute(
-                    "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)",
-                    ("transport_cost", json.dumps({
-                        "base_fare": 150.0,
-                        "cost_per_km": 80.0,
-                        "currency": "LKR",
-                        "vehicle_multipliers": {
-                            "Motorbike": 1.0,
-                            "Bicycle": 0.6,
-                            "Car": 1.5,
-                            "Van": 2.0,
-                            "Three-Wheeler": 1.2
-                        }
-                    }), self._now())
-                )
         conn.close()
 
     def _normalize_phone(self, phone: str) -> str:

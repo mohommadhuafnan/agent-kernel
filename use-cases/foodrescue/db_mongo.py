@@ -170,6 +170,25 @@ class MongoRepository(BaseRepository):
             self.pickup_location_history_col.create_index([("pickup_task_id", pymongo.ASCENDING)])
             self.pickup_location_history_col.create_index([("volunteer_id", pymongo.ASCENDING)])
             self.pickup_location_history_col.create_index([("timestamp", pymongo.DESCENDING)])
+
+            # Seed default system settings if not present
+            if self.system_settings_col.count_documents({"setting_key": "transport_cost"}) == 0:
+                self.system_settings_col.insert_one({
+                    "setting_key": "transport_cost",
+                    "setting_value": {
+                        "base_fare": 150.0,
+                        "cost_per_km": 80.0,
+                        "currency": "LKR",
+                        "vehicle_multipliers": {
+                            "Motorbike": 1.0,
+                            "Bicycle": 0.6,
+                            "Car": 1.5,
+                            "Van": 2.0,
+                            "Three-Wheeler": 1.2
+                        }
+                    },
+                    "updated_at": self._now()
+                })
         except Exception:
             pass
 
