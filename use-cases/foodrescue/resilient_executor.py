@@ -410,21 +410,24 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         )
 
     # 7. Recipient Flow ("2", "request food", "need food", "community kitchen")
-    if clean_p == "2" or any(m in clean_p for m in ["need food", "request food", "community kitchen", "food bank", "shelter"]):
-        tools.register_organization(
-            name="Community Food Organization",
-            location="Colombo",
-            service_area="Colombo",
-            accepted_food_types="prepared meals, bakery, dry rations",
-            phone=phone
-        )
-        avail_dons_raw = tools.get_available_donations(location="Colombo")
+    if clean_p == "2" or any(m in clean_p for m in ["need food", "request food", "community kitchen", "food bank", "shelter", "we need", "meals for", "packets for", "food for our", "for our shelter"]):
+        existing_org = database.get_organization_by_phone(phone) if phone else None
+        org_name = (existing_org.get("name") if existing_org else None) or "Community Food Organization"
+        org_loc = (existing_org.get("location") if existing_org else None) or "Colombo"
+        if not existing_org and phone:
+            tools.register_organization(
+                name=org_name,
+                location=org_loc,
+                service_area="Colombo",
+                accepted_food_types="prepared meals, bakery, dry rations",
+                phone=phone
+            )
+        avail_dons_raw = tools.get_available_donations(location=org_loc)
         avail_dons = json.loads(avail_dons_raw) if isinstance(avail_dons_raw, str) else {}
         count = avail_dons.get("count", 0)
         return (
-            f"🏠 **Recipient Organization Service**\n\n"
-            f"We have registered your organization with FoodRescue AI.\n\n"
-            f"🔎 I currently found **{count} available surplus donation(s)** in your area.\n\n"
+            f"🏠 **Recipient Organization Service — {org_name}**\n\n"
+            f"🔎 I found **{count} available surplus donation(s)** in your service area ({org_loc}).\n\n"
             f"Would you like me to reserve the available surplus food for your community?\n"
             f"1️⃣ Yes, request top available donation\n"
             f"2️⃣ View all available donations\n"

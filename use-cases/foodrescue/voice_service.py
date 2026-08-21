@@ -222,8 +222,8 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     # 4. Location
     location = None
     loc_patterns = [
-        r'(?:in|at|from|location\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|கொழும்பு|කොළඹ))',
-        r'\b((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla))\b',
+        r'(?:in|at|from|location\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kurunegala|Negombo|Matara|Jaffna|கொழும்பு|කොළඹ))',
+        r'\b((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kurunegala|Negombo|Matara|Jaffna))\b',
         r'(கொழும்பு(?:\s*\d+)?)',
         r'(කොළඹ(?:\s*\d+)?)'
     ]

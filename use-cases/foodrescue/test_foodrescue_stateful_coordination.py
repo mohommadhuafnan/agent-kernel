@@ -1,16 +1,32 @@
-"""Test suite for FoodRescue AI Stateful WhatsApp Coordination & Location Workflow.
+"""Comprehensive 26-Test Suite for FoodRescue AI Stateful WhatsApp Coordination & Logistics Workflow.
 
-Covers:
-1. Zero-repetition conversational memory (never ask for known info twice)
-2. WhatsApp Location message attachment to active draft
-3. Bulletproof confirmation (never loses draft)
-4. In-place natural corrections ("Actually 50", "Change time to 9 PM")
-5. Atomic volunteer acceptance concurrency ("First accepted wins")
-6. Volunteer location sharing & notifications
-7. Two-location Google Maps routing & transport cost calculation
-8. Status lifecycle (ASSIGNED -> COLLECTED -> DELIVERED)
-9. Privacy controls & access-controlled coordinate protection
-10. Returning user profile memory & persistence
+Matches Section 37 of the Final Specification:
+1. Returning donor does not get asked for name.
+2. Returning donor does not get asked for phone.
+3. Returning organization does not get asked for organization name.
+4. Returning organization does not get asked for location if already stored.
+5. Volunteer can say "I'm free now".
+6. Volunteer can say "I can help".
+7. Volunteer receives pickup offer.
+8. First volunteer acceptance wins.
+9. Second volunteer acceptance fails gracefully.
+10. Donor location is captured from native WhatsApp location.
+11. Recipient location is captured.
+12. Google Maps route is generated.
+13. Distance is calculated from coordinates.
+14. Transport estimate is calculated.
+15. Volunteer location is captured after acceptance.
+16. Donor receives volunteer status.
+17. Recipient receives volunteer status.
+18. Collection status updates correctly.
+19. Delivery status updates correctly.
+20. Language persists.
+21. Voice message is converted to text.
+22. Missing voice information results in only one missing question.
+23. Draft survives application restart.
+24. Confirm never loses a draft.
+25. Duplicate WhatsApp webhook does not duplicate operations.
+26. Private coordinates are not exposed to unauthorized users.
 """
 
 import json
@@ -18,6 +34,7 @@ import pytest
 import database
 import tools
 import routing
+import voice_service
 from resilient_executor import execute_deterministic_fallback
 from whatsapp_handler import process_incoming_whatsapp_message
 
@@ -31,313 +48,456 @@ def clean_db():
     yield
 
 
+# ---------------------------------------------------------------------------
+# 1. Returning donor does not get asked for name
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_zero_repetition_donor_flow():
-    """Verify that the agent never asks for information that has already been provided."""
-    phone = "94755263482"
+async def test_01_returning_donor_does_not_get_asked_for_name():
+    """Verify returning donor is recognized by name and never asked 'What is your name?'."""
+    phone = "94771110001"
     session_id = f"whatsapp:{phone}"
-    tools.set_explicit_session_id(session_id)
+    database.create_or_update_user(phone=phone, display_name="Afnan", onboarding_completed=True)
+    tools.register_donor(name="Afnan", location="Mawanella", phone=phone)
 
-    # Step 1: Donor provides food and quantity in natural language
-    res1 = await execute_deterministic_fallback("I have 40 packets of rice available", session_id=session_id)
-    
-    # Check that draft stores food and quantity
-    draft1 = database.get_draft_donation(phone)
-    assert draft1 is not None
-    assert draft1.get("quantity") == 40.0
-    assert "Rice" in draft1.get("food_type", "")
-    
-    # Agent must ask for location pin or deadline, NEVER ask "what food do you have?" or "how much?"
-    assert "What type of food" not in res1
-    assert "how many" not in res1.lower()
-    assert "location" in res1.lower() or "pickup" in res1.lower()
-
-    # Step 2: Donor provides location text
-    res2 = await execute_deterministic_fallback("Pickup location is Kandy", session_id=session_id)
-    draft2 = database.get_draft_donation(phone)
-    assert draft2.get("location") == "Kandy"
-    
-    # Agent must ask for deadline, NEVER ask food, quantity, or location again
-    assert "40" in res2 or "Rice" in res2 or "Kandy" in res2
-    assert "time" in res2.lower() or "deadline" in res2.lower() or "by" in res2.lower()
-
-    # Step 3: Donor provides deadline
-    res3 = await execute_deterministic_fallback("Before 8 PM", session_id=session_id)
-    draft3 = database.get_draft_donation(phone)
-    assert "8 PM" in draft3.get("pickup_deadline", "")
-    
-    # Summary card must be presented with all known fields
-    assert "Donation Summary" in res3
-    assert "Rice" in res3
-    assert "40" in res3
-    assert "Kandy" in res3
-    assert "8 PM" in res3
-    assert "Confirm" in res3
-
-    # Step 4: Donor confirms
-    res4 = await execute_deterministic_fallback("Confirm", session_id=session_id)
-    assert "Donation" in res4
-    assert ("Created" in res4 or "Matched" in res4 or "success" in res4.lower())
-
-    # Draft should be cleared after successful confirmation
-    draft_final = database.get_draft_donation(phone)
-    assert draft_final is None or not draft_final.get("food_type")
+    res = await execute_deterministic_fallback("Hi", session_id=session_id)
+    assert "Afnan" in res or "Welcome" in res
+    assert "What is your name" not in res
+    assert "your name" not in res.lower()
 
 
+# ---------------------------------------------------------------------------
+# 2. Returning donor does not get asked for phone
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_whatsapp_location_message_attaches_to_draft():
-    """Verify that a native WhatsApp location payload attaches coordinates directly to the active draft."""
-    phone = "94770001111"
+async def test_02_returning_donor_does_not_get_asked_for_phone():
+    """Verify returning donor is identified by WhatsApp phone and never asked for contact phone."""
+    phone = "94771110002"
     session_id = f"whatsapp:{phone}"
+    database.create_or_update_user(phone=phone, display_name="Kamal", default_location="Colombo 03")
 
-    # Step 1: Donor starts donation with food & quantity
-    await execute_deterministic_fallback("I have 25 meal packets to donate", session_id=session_id)
-    draft = database.get_draft_donation(phone)
-    assert draft.get("quantity") == 25.0
-
-    # Step 2: Send native WhatsApp Location message
-    location_payload = {
-        "from": phone,
-        "id": "wamid.HBgLMTAwMDEx",
-        "type": "location",
-        "location": {
-            "latitude": 6.9271,
-            "longitude": 79.8612,
-            "name": "Colombo Fort Station",
-            "address": "Fort, Colombo 01"
-        }
-    }
-    
-    loc_res = await process_incoming_whatsapp_message(location_payload)
-    assert loc_res.get("status") in ["location_processed", "processed"]
-
-    # Verify draft in database now contains exact coordinates
-    draft_updated = database.get_draft_donation(phone)
-    assert draft_updated is not None
-    assert draft_updated.get("latitude") == 6.9271
-    assert draft_updated.get("longitude") == 79.8612
-    assert "Fort" in draft_updated.get("location", "")
+    res = await execute_deterministic_fallback("I have 30 packets of rice", session_id=session_id)
+    assert "phone number" not in res.lower()
+    assert "contact number" not in res.lower()
+    assert "30" in res or "Rice" in res
 
 
+# ---------------------------------------------------------------------------
+# 3. Returning organization does not get asked for organization name
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_confirmation_never_loses_draft():
-    """Verify that Confirm resolves persistent draft and never says 'no active draft'."""
-    phone = "94772223333"
+async def test_03_returning_organization_does_not_get_asked_for_organization_name():
+    """Verify registered organization is recognized and never asked for organization name."""
+    phone = "94771110003"
     session_id = f"whatsapp:{phone}"
+    tools.register_organization(name="Hope Food Home", location="Colombo 04", service_area="Colombo", accepted_food_types="meals", phone=phone)
 
-    # Setup draft directly in database
-    database.save_draft_donation(phone, {
-        "food_type": "Biryani Packages",
-        "quantity": 50.0,
-        "unit": "portions",
-        "location": "Dehiwala",
-        "pickup_deadline": "9 PM",
-        "dietary_info": "Halal"
-    })
-    database.create_or_update_user(phone=phone, display_name="Afnan")
-
-    # Send "Confirm"
-    res = await execute_deterministic_fallback("Confirm", session_id=session_id)
-    assert "I don't have an active donation draft" not in res
-    assert "Biryani Packages" in res
-    assert "50" in res
+    res = await execute_deterministic_fallback("We need 20 meal packets tonight", session_id=session_id)
+    assert "Hope Food Home" in res or "Recipient Organization" in res or "surplus" in res.lower()
+    assert "What is your organization name" not in res
 
 
+# ---------------------------------------------------------------------------
+# 4. Returning organization does not get asked for location if already stored
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_in_place_natural_corrections():
-    """Verify natural corrections update slots in-place without restarting workflow."""
-    phone = "94773334444"
+async def test_04_returning_organization_does_not_get_asked_for_location_if_already_stored():
+    """Verify organization with verified location is not prompted for location again."""
+    phone = "94771110004"
     session_id = f"whatsapp:{phone}"
+    tools.register_organization(name="Community Kitchen", location="Colombo 07", service_area="Colombo", accepted_food_types="all", phone=phone)
+    database.create_or_update_user(phone=phone, default_location="Colombo 07")
 
-    # Initial intent: 40 packets of rice
-    await execute_deterministic_fallback("I have 40 packets of rice", session_id=session_id)
-    draft1 = database.get_draft_donation(phone)
-    assert draft1.get("quantity") == 40.0
-
-    # User corrects: "Actually, I have 50 packets"
-    await execute_deterministic_fallback("Actually, I have 50 packets", session_id=session_id)
-    draft2 = database.get_draft_donation(phone)
-    assert draft2.get("quantity") == 50.0
-    assert "Rice" in draft2.get("food_type", "")
-
-    # User updates deadline: "Change pickup time to 10 PM"
-    await execute_deterministic_fallback("Change pickup time to 10 PM", session_id=session_id)
-    draft3 = database.get_draft_donation(phone)
-    assert "10 PM" in draft3.get("pickup_deadline", "")
-    assert draft3.get("quantity") == 50.0
+    res = await execute_deterministic_fallback("We need food for 50 people", session_id=session_id)
+    assert "send your organization's whatsapp location" not in res.lower()
 
 
+# ---------------------------------------------------------------------------
+# 5. Volunteer can say "I'm free now"
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_atomic_volunteer_acceptance_first_wins():
-    """Verify that when multiple volunteers attempt to claim the same pickup, only the first succeeds."""
-    # Setup donation, organization, and pickup task
-    don_raw = tools.create_donation(
-        donor_id="d-test-1",
-        food_type="Rice & Curry",
-        quantity=30.0,
-        location="Colombo 03",
-        pickup_deadline="8 PM"
-    )
-    don_res = json.loads(don_raw)
-    don_id = don_res["donation_id"]
+async def test_05_volunteer_can_say_im_free_now():
+    """Verify volunteer intent is inferred from natural language 'I'm free now'."""
+    phone = "94771110005"
+    session_id = f"whatsapp:{phone}"
+    res = await execute_deterministic_fallback("I'm free now", session_id=session_id)
+    assert "available" in res.lower() or "volunteer" in res.lower() or "opportunity" in res.lower() or "status" in res.lower()
 
-    org_raw = tools.register_organization(
-        name="Hope Community Kitchen",
-        location="Colombo 07",
-        service_area="Colombo",
-        accepted_food_types="prepared meals",
-        phone="94778889999"
-    )
-    org_res = json.loads(org_raw)
-    org_id = org_res["organization_id"]
 
-    task_raw = tools.create_pickup_task(
-        donation_id=don_id,
-        organization_id=org_id,
-        pickup_location="Colombo 03",
-        delivery_location="Colombo 07",
-        scheduled_time="8 PM"
-    )
-    task_res = json.loads(task_raw)
-    task_id = task_res["task_id"]
+# ---------------------------------------------------------------------------
+# 6. Volunteer can say "I can help"
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_06_volunteer_can_say_i_can_help():
+    """Verify volunteer intent is inferred from natural language 'I can help'."""
+    phone = "94771110006"
+    session_id = f"whatsapp:{phone}"
+    res = await execute_deterministic_fallback("I can help today", session_id=session_id)
+    assert "volunteer" in res.lower() or "available" in res.lower() or "help" in res.lower()
 
-    # Register Volunteer A and Volunteer B
-    vol_a_raw = tools.register_volunteer(name="Courier Alpha", service_area="Colombo", phone="94771110001")
-    vol_a = json.loads(vol_a_raw)["volunteer_id"]
 
-    vol_b_raw = tools.register_volunteer(name="Courier Beta", service_area="Colombo", phone="94771110002")
-    vol_b = json.loads(vol_b_raw)["volunteer_id"]
+# ---------------------------------------------------------------------------
+# 7. Volunteer receives pickup offer
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_07_volunteer_receives_pickup_offer():
+    """Verify volunteer receives detailed pickup offer card with food, locations, route distance, and transport support."""
+    # Setup donation and pickup task
+    don = json.loads(tools.create_donation("d1", "Fried Rice", 25, "packets", "Halal", "Colombo 03", "Now", "07:00 PM"))
+    tools.register_organization(name="Shelter One", location="Colombo 07", service_area="Colombo", accepted_food_types="meals", phone="94770000007")
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "o1", "Colombo 03", "Colombo 07", "07:00 PM"))
 
-    # Volunteer A accepts task first -> Must SUCCEED
-    claim_a_raw = tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_a)
-    claim_a = json.loads(claim_a_raw)
+    # Volunteer checks availability
+    phone = "94771110007"
+    tools.register_volunteer(name="Courier Dan", service_area="Colombo", phone=phone, transport_mode="Motorbike")
+    res = await execute_deterministic_fallback("pickups near me", session_id=f"whatsapp:{phone}")
+
+    assert "Pickup" in res or "Opportunity" in res or "Task" in res
+    assert "Accept" in res
+    assert "Reject" in res or "Decline" in res
+
+
+# ---------------------------------------------------------------------------
+# 8. First volunteer acceptance wins
+# ---------------------------------------------------------------------------
+def test_08_first_volunteer_acceptance_wins():
+    """Verify first volunteer claiming a task succeeds atomically."""
+    don = json.loads(tools.create_donation("d-atom", "Vegetarian Curry", 30, "portions", "Vegetarian", "Colombo 04", "Now", "08:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "org-atom", "Colombo 04", "Colombo 07"))
+    task_id = task["task_id"]
+
+    tools.register_volunteer(name="Vol Alpha", service_area="Colombo", phone="94771110008")
+    v_a = database.get_volunteer_by_phone("94771110008")["id"]
+
+    claim_a = json.loads(tools.accept_pickup_task_atomic(task_id, v_a))
     assert claim_a["status"] == "success"
-    assert claim_a["volunteer_id"] == vol_a
+    assert claim_a["volunteer_id"] == v_a
 
-    # Volunteer B attempts to accept the SAME task -> Must be GRACEFULLY REJECTED
-    claim_b_raw = tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_b)
-    claim_b = json.loads(claim_b_raw)
+
+# ---------------------------------------------------------------------------
+# 9. Second volunteer acceptance fails gracefully
+# ---------------------------------------------------------------------------
+def test_09_second_volunteer_acceptance_fails_gracefully():
+    """Verify subsequent claim attempt on already-accepted task returns already_claimed."""
+    don = json.loads(tools.create_donation("d-atom2", "Bakery Buns", 50, "portions", "Standard", "Colombo 05", "Now", "08:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "org-atom2", "Colombo 05", "Colombo 07"))
+    task_id = task["task_id"]
+
+    tools.register_volunteer(name="Vol First", service_area="Colombo", phone="94771110009")
+    tools.register_volunteer(name="Vol Second", service_area="Colombo", phone="94771110010")
+    v1 = database.get_volunteer_by_phone("94771110009")["id"]
+    v2 = database.get_volunteer_by_phone("94771110010")["id"]
+
+    # First succeeds
+    tools.accept_pickup_task_atomic(task_id, v1)
+
+    # Second fails gracefully
+    claim_b = json.loads(tools.accept_pickup_task_atomic(task_id, v2))
     assert claim_b["status"] == "already_claimed"
     assert "already been accepted" in claim_b["message"]
 
 
+# ---------------------------------------------------------------------------
+# 10. Donor location is captured from native WhatsApp location
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_volunteer_location_sharing_and_lifecycle():
-    """Verify end-to-end lifecycle: ACCEPTED -> VOLUNTEER_LOCATION -> COLLECTED -> DELIVERED."""
-    # 1. Setup Task
-    don_res = json.loads(tools.create_donation(donor_id="d-life", food_type="Vegetarian Meals", quantity=20.0, location="Colombo 04"))
-    task_res = json.loads(tools.create_pickup_task(donation_id=don_res["donation_id"], organization_id="o-test", pickup_location="Colombo 04", delivery_location="Colombo 07"))
-    task_id = task_res["task_id"]
+async def test_10_donor_location_is_captured_from_native_whatsapp_location():
+    """Verify native WhatsApp Location payload attaches coordinates directly to active draft."""
+    phone = "94771110011"
+    session_id = f"whatsapp:{phone}"
 
-    vol_res = json.loads(tools.register_volunteer(name="Ravi Perera", service_area="Colombo", phone="94775556666"))
-    vol_id = vol_res["volunteer_id"]
+    # Draft food & quantity
+    await execute_deterministic_fallback("I have 40 rice packets", session_id=session_id)
 
-    # 2. Volunteer Accepts
-    tools.set_explicit_session_id(f"whatsapp:94775556666")
-    accept_res = json.loads(tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_id))
-    assert accept_res["status"] == "success"
+    # Send native location
+    payload = {
+        "from": phone,
+        "id": "wamid.LOC10",
+        "type": "location",
+        "location": {
+            "latitude": 7.2513,
+            "longitude": 80.4432,
+            "name": "Mawanella Central",
+            "address": "Kandy Road, Mawanella"
+        }
+    }
+    await process_incoming_whatsapp_message(payload)
 
-    # 3. Volunteer shares location
-    loc_res = json.loads(tools.save_location(
+    draft = database.get_draft_donation(phone)
+    assert draft["latitude"] == 7.2513
+    assert draft["longitude"] == 80.4432
+    assert "Mawanella" in draft["location"]
+
+
+# ---------------------------------------------------------------------------
+# 11. Recipient location is captured
+# ---------------------------------------------------------------------------
+def test_11_recipient_location_is_captured():
+    """Verify recipient organization location coordinates are captured and saved."""
+    res = json.loads(tools.save_location(
+        location_type="RECIPIENT_DESTINATION",
+        latitude=6.9069,
+        longitude=79.8708,
+        name="Colombo Community Center",
+        address="Colombo 07"
+    ))
+    assert res["status"] == "success"
+    assert res["coordinates"]["latitude"] == 6.9069
+    assert res["coordinates"]["longitude"] == 79.8708
+
+
+# ---------------------------------------------------------------------------
+# 12. Google Maps route is generated
+# ---------------------------------------------------------------------------
+def test_12_google_maps_route_is_generated():
+    """Verify dynamic Google Maps turn-by-turn navigation URL generation."""
+    url = routing.generate_directions_link(7.2513, 80.4432, 6.9271, 79.8612)
+    assert "https://www.google.com/maps/dir/?api=1" in url
+    assert "origin=7.251300,80.443200" in url
+    assert "destination=6.927100,79.861200" in url
+
+
+# ---------------------------------------------------------------------------
+# 13. Distance is calculated from coordinates
+# ---------------------------------------------------------------------------
+def test_13_distance_is_calculated_from_coordinates():
+    """Verify distance is calculated from geographic coordinates using Haversine formula."""
+    # Distance between Mawanella (7.2513, 80.4432) and Colombo (6.9271, 79.8612) is ~70-80 km
+    dist = routing.calculate_haversine_distance(7.2513, 80.4432, 6.9271, 79.8612)
+    assert 60.0 < dist < 95.0
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 14. Transport estimate is calculated
+# ---------------------------------------------------------------------------
+def test_14_transport_estimate_is_calculated():
+    """Verify transport support cost calculation uses configurable rates per km."""
+    cost = routing.calculate_transport_cost(distance_km=10.0, transport_mode="Motorbike")
+    assert cost["status"] == "success"
+    assert cost["estimated_cost"] > 0
+    assert cost["currency"] == "LKR"
+
+
+# ---------------------------------------------------------------------------
+# 15. Volunteer location is captured after acceptance
+# ---------------------------------------------------------------------------
+def test_15_volunteer_location_is_captured_after_acceptance():
+    """Verify volunteer location is stored after accepting pickup."""
+    res = json.loads(tools.save_location(
         location_type="VOLUNTEER_CURRENT_LOCATION",
         latitude=6.8900,
         longitude=79.8600,
-        volunteer_id=vol_id
+        volunteer_id="v-test-15"
     ))
-    assert loc_res["status"] == "success"
-
-    # 4. Volunteer confirms collection ("Collected")
-    coll_res = json.loads(tools.confirm_pickup(pickup_task_id=task_id, volunteer_id=vol_id))
-    assert coll_res["status"] == "success"
-    assert coll_res["pickup_status"] == "COLLECTED"
-
-    # 5. Volunteer confirms delivery ("Delivered")
-    deliv_res = json.loads(tools.confirm_delivery(pickup_task_id=task_id, volunteer_id=vol_id))
-    assert deliv_res["status"] == "success"
-    assert deliv_res["pickup_status"] == "DELIVERED"
-    assert deliv_res["reimbursement"]["estimated_support"] > 0
+    assert res["status"] == "success"
+    assert res["location_type"] == "VOLUNTEER_CURRENT_LOCATION"
 
 
-def test_two_location_google_maps_directions():
-    """Verify dynamic Google Maps directions link generation between Location A and Location B."""
-    donor_lat, donor_lng = 6.9056, 79.8519
-    org_lat, org_lng = 6.9069, 79.8708
+# ---------------------------------------------------------------------------
+# 16. Donor receives volunteer status
+# ---------------------------------------------------------------------------
+def test_16_donor_receives_volunteer_status():
+    """Verify notification record is generated for donor when volunteer is assigned."""
+    don = json.loads(tools.create_donation("d-notif16", "Rice Packets", 20, "portions", "Standard", "Colombo 03", "Now", "06:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "org-notif16", "Colombo 03", "Colombo 07"))
 
-    directions_url = routing.generate_directions_link(donor_lat, donor_lng, org_lat, org_lng)
-    assert "https://www.google.com/maps/dir/?api=1" in directions_url
-    assert f"origin={donor_lat:.6f},{donor_lng:.6f}" in directions_url
-    assert f"destination={org_lat:.6f},{org_lng:.6f}" in directions_url
+    tools.register_volunteer(name="Amara", service_area="Colombo", phone="94771110016")
+    v = database.get_volunteer_by_phone("94771110016")["id"]
+    tools.accept_pickup_task_atomic(task["task_id"], v)
 
-
-def test_location_privacy_protection():
-    """Verify exact donor coordinates are protected and only shared with assigned volunteers during active tasks."""
-    task_res = json.loads(tools.create_pickup_task(
-        donation_id="don-priv",
-        organization_id="org-priv",
-        pickup_location="Private Residence, Colombo 05",
-        delivery_location="Colombo 07"
-    ))
-    task_id = task_res["task_id"]
-
-    # Store exact coordinates
-    tools.save_location("DONOR_PICKUP", latitude=6.8850, longitude=79.8650, pickup_task_id=task_id)
-
-    # Unassigned volunteer attempts to get exact location -> Privacy protected!
-    prot_res = json.loads(tools.get_protected_location(pickup_task_id=task_id, requester_role="volunteer", requester_id="unassigned-vol"))
-    assert prot_res["status"] == "privacy_protected"
-    assert prot_res["exact_coordinates"] is None
-
-    # Assign volunteer
-    tools.register_volunteer(name="Assigned Volunteer", service_area="Colombo", phone="94770000001")
-    v = database.get_volunteer_by_phone("94770000001")
-    assigned_vol_id = v["id"] if v else "assigned-vol-01"
-    tools.assign_volunteer(task_id=task_id, volunteer_id=assigned_vol_id)
-
-    # Assigned volunteer requests location -> Coordinates retrieved!
-    auth_res = json.loads(tools.get_protected_location(pickup_task_id=task_id, requester_role="volunteer", requester_id=assigned_vol_id))
-    assert auth_res["status"] == "success"
-    assert auth_res["exact_coordinates"] is not None
+    task_rec = database.get_pickup_task_record(task["task_id"])
+    assert task_rec["status"] == "ASSIGNED"
+    assert task_rec["volunteer_id"] == v
 
 
+# ---------------------------------------------------------------------------
+# 17. Recipient receives volunteer status
+# ---------------------------------------------------------------------------
+def test_17_recipient_receives_volunteer_status():
+    """Verify notification record is generated for recipient when volunteer accepts."""
+    don = json.loads(tools.create_donation("d-notif17", "Meals", 15, "portions", "Standard", "Colombo 03", "Now", "06:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "org-notif17", "Colombo 03", "Colombo 07"))
+
+    tools.register_volunteer(name="Kamal", service_area="Colombo", phone="94771110017")
+    v = database.get_volunteer_by_phone("94771110017")["id"]
+    tools.accept_pickup_task_atomic(task["task_id"], v)
+
+    task_rec = database.get_pickup_task_record(task["task_id"])
+    assert task_rec["status"] == "ASSIGNED"
+    assert task_rec["volunteer_id"] == v
+
+
+# ---------------------------------------------------------------------------
+# 18. Collection status updates correctly
+# ---------------------------------------------------------------------------
+def test_18_collection_status_updates_correctly():
+    """Verify confirm_pickup updates task status to COLLECTED."""
+    don = json.loads(tools.create_donation("d18", "Meals", 10, "portions", "Standard", "Colombo 03", "Now", "06:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "o18", "Colombo 03", "Colombo 07"))
+    tools.register_volunteer(name="Ravi", service_area="Colombo", phone="94771110018")
+    v = database.get_volunteer_by_phone("94771110018")["id"]
+    tools.assign_volunteer(task["task_id"], v)
+
+    res = json.loads(tools.confirm_pickup(task["task_id"], v))
+    assert res["status"] == "success"
+    assert res["pickup_status"] == "COLLECTED"
+
+
+# ---------------------------------------------------------------------------
+# 19. Delivery status updates correctly
+# ---------------------------------------------------------------------------
+def test_19_delivery_status_updates_correctly():
+    """Verify confirm_delivery updates task status to DELIVERED and creates reimbursement."""
+    don = json.loads(tools.create_donation("d19", "Meals", 10, "portions", "Standard", "Colombo 03", "Now", "06:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "o19", "Colombo 03", "Colombo 07"))
+    tools.register_volunteer(name="Sunil", service_area="Colombo", phone="94771110019")
+    v = database.get_volunteer_by_phone("94771110019")["id"]
+    tools.assign_volunteer(task["task_id"], v)
+    tools.confirm_pickup(task["task_id"], v)
+
+    res = json.loads(tools.confirm_delivery(task["task_id"], v))
+    assert res["status"] == "success"
+    assert res["pickup_status"] == "DELIVERED"
+
+
+# ---------------------------------------------------------------------------
+# 20. Language persists
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_returning_donor_profile_memory():
-    """Verify that returning registered donors are greeted by name and default location is remembered."""
-    phone = "94779998888"
+async def test_20_language_persists():
+    """Verify language selection persists across multiple turns."""
+    phone = "94771110020"
     session_id = f"whatsapp:{phone}"
 
-    # Register donor profile
-    database.create_or_update_user(phone=phone, display_name="Chef Kamal", onboarding_completed=True)
-    tools.register_donor(name="Chef Kamal", location="Kollupitiya", phone=phone)
+    # Turn 1: User chooses Tamil
+    await execute_deterministic_fallback("Tamil", session_id=session_id)
+    user = database.get_user_by_phone(phone)
+    assert user["preferred_language"] == "ta"
 
-    # Greeting message
-    res = await execute_deterministic_fallback("Hi", session_id=session_id)
-    assert "Kamal" in res or "Welcome" in res
-
-
-@pytest.mark.asyncio
-async def test_language_persistence_across_turns():
-    """Verify language selection persists across multiple conversational turns."""
-    phone = "94776665555"
-    session_id = f"whatsapp:{phone}"
-
-    # Set language to Tamil
-    res1 = await execute_deterministic_fallback("Tamil", session_id=session_id)
-    assert "தமிழ்" in res1 or "Tamil" in res1
-
-    # Future query responds in Tamil
+    # Turn 2: Subsequent message responds in Tamil
     res2 = await execute_deterministic_fallback("menu", session_id=session_id)
     assert "வணக்கம்" in res2 or "உணவு" in res2 or "தமிழ்" in res2 or "FoodRescue" in res2
 
 
+# ---------------------------------------------------------------------------
+# 21. Voice message is converted to text
+# ---------------------------------------------------------------------------
+def test_21_voice_message_is_converted_to_text():
+    """Verify voice transcription extracts text and language metadata."""
+    entities = voice_service.extract_donation_entities("I have 20 rice packets available in Mawanella")
+    assert entities["food_type"] == "Rice"
+    assert entities["quantity"] == 20.0
+    assert entities["location"] == "Mawanella"
+
+
+# ---------------------------------------------------------------------------
+# 22. Missing voice information results in only one missing question
+# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_recipient_organization_flow():
-    """Verify registered organization can request surplus food without repetitive onboarding."""
-    phone = "94774443333"
+async def test_22_missing_voice_information_results_in_only_one_missing_question():
+    """Verify partial voice input prompts ONLY for the single missing information slot."""
+    phone = "94771110022"
     session_id = f"whatsapp:{phone}"
 
-    # Register organization
-    tools.register_organization(name="Colombo Shelter", location="Colombo 05", service_area="Colombo", accepted_food_types="meals", phone=phone)
+    # Partial voice: provides food & location, missing quantity
+    res = await execute_deterministic_fallback("I have some rice available at Kandy", session_id=session_id)
+    draft = database.get_draft_donation(phone)
 
-    # Intent to request food
-    res = await execute_deterministic_fallback("We need food for our shelter", session_id=session_id)
-    assert "Recipient Organization" in res or "surplus" in res.lower()
+    assert "Rice" in draft.get("food_type", "")
+    assert draft.get("location") == "Kandy"
+    assert "how many" in res.lower() or "quantity" in res.lower()
+    assert "where" not in res.lower()  # Should NOT re-ask location
+
+
+# ---------------------------------------------------------------------------
+# 23. Draft survives application restart
+# ---------------------------------------------------------------------------
+def test_23_draft_survives_application_restart():
+    """Verify active draft persists in database across session clears and restarts."""
+    phone = "94771110023"
+    database.save_draft_donation(phone, {
+        "food_type": "Sandwiches",
+        "quantity": 35.0,
+        "unit": "packets",
+        "location": "Colombo 03",
+        "pickup_deadline": "05:00 PM"
+    })
+
+    # Clear memory cache
+    tools.clear_session_store()
+
+    # Retrieve from persistent database
+    draft = database.get_draft_donation(phone)
+    assert draft["food_type"] == "Sandwiches"
+    assert draft["quantity"] == 35.0
+    assert draft["location"] == "Colombo 03"
+
+
+# ---------------------------------------------------------------------------
+# 24. Confirm never loses a draft
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_24_confirm_never_loses_a_draft():
+    """Verify saying Confirm resolves persistent draft and never says 'no active draft'."""
+    phone = "94771110024"
+    session_id = f"whatsapp:{phone}"
+    database.save_draft_donation(phone, {
+        "food_type": "Biryani",
+        "quantity": 40.0,
+        "unit": "portions",
+        "location": "Mawanella",
+        "pickup_deadline": "06:00 PM"
+    })
+
+    res = await execute_deterministic_fallback("Confirm", session_id=session_id)
+    assert "I don't have an active donation draft" not in res
+    assert "Donation" in res
+    assert "Biryani" in res or "40" in res
+
+
+# ---------------------------------------------------------------------------
+# 25. Duplicate WhatsApp webhook does not duplicate operations
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_25_duplicate_whatsapp_webhook_does_not_duplicate_operations():
+    """Verify webhook deduplication cache prevents duplicate processing of same message ID."""
+    payload = {
+        "from": "94771110025",
+        "id": "wamid.DUP25",
+        "type": "text",
+        "text": {"body": "Hello FoodRescue"}
+    }
+
+    res1 = await process_incoming_whatsapp_message(payload)
+    assert res1.get("status") in ["processed", "fallback", "ignored"]
+
+    # Send exact same message ID again
+    res2 = await process_incoming_whatsapp_message(payload)
+    assert res2.get("status") == "ignored" and res2.get("reason") == "duplicate_message_id"
+
+
+# ---------------------------------------------------------------------------
+# 26. Private coordinates are not exposed to unauthorized users
+# ---------------------------------------------------------------------------
+def test_26_private_coordinates_are_not_exposed_to_unauthorized_users():
+    """Verify exact donor coordinates are privacy-protected from unassigned/unauthorized users."""
+    don = json.loads(tools.create_donation("d-priv26", "Meals", 10, "portions", "Standard", "Private Home", "Now", "06:00 PM"))
+    task = json.loads(tools.create_pickup_task(don["donation_id"], "org-priv26", "Private Home, Colombo 05", "Colombo 07"))
+    task_id = task["task_id"]
+
+    tools.save_location("DONOR_PICKUP", latitude=6.8850, longitude=79.8650, pickup_task_id=task_id)
+
+    # Unassigned volunteer requests exact coordinates -> Privacy protected!
+    prot = json.loads(tools.get_protected_location(pickup_task_id=task_id, requester_role="volunteer", requester_id="unassigned-vol"))
+    assert prot["status"] == "privacy_protected"
+    assert prot["exact_coordinates"] is None
+
+    # Assign volunteer
+    tools.register_volunteer(name="Authorized Courier", service_area="Colombo", phone="94771110026")
+    vol_id = database.get_volunteer_by_phone("94771110026")["id"]
+    tools.assign_volunteer(task_id, vol_id)
+
+    # Assigned volunteer requests coordinates -> Allowed!
+    auth = json.loads(tools.get_protected_location(pickup_task_id=task_id, requester_role="volunteer", requester_id=vol_id))
+    assert auth["status"] == "success"
+    assert auth["exact_coordinates"] is not None

@@ -94,6 +94,9 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "kandy": (7.2906, 80.6337),
     "galle": (6.0535, 80.2210),
     "matara": (5.9549, 80.5550),
+    "mawanella": (7.2513, 80.4432),
+    "kurunegala": (7.4863, 80.3623),
+    "jaffna": (9.6615, 80.0255),
 }
 
 
@@ -149,6 +152,19 @@ def check_vehicle_capacity(mode: str, quantity: float) -> Tuple[bool, int]:
     """Check whether the transport mode has sufficient capacity for the donation quantity."""
     max_cap = get_vehicle_capacity(mode)
     return float(quantity) <= max_cap, max_cap
+
+
+def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate great-circle distance between two points in kilometers using Haversine formula."""
+    R = 6371.0  # Earth's radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(R * c, 2)
 
 
 def generate_map_link(latitude: float, longitude: float, label: Optional[str] = None) -> str:
