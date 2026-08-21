@@ -204,7 +204,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return "🛑 **Donation Cancelled**\n\nYour active donation draft has been cancelled. Let me know if you need anything else!"
 
     # 6. Volunteer Availability & Natural Language Intent ("I'm free", "I can help", "pickups near me")
-    if any(m in clean_p for m in ["i'm free", "i am free", "free now", "i can help", "available", "pickups near me", "any pickups", "have time", "ready to help", "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"]):
+    if any(m in clean_p for m in ["i'm free", "i am free", "free now", "i can help", "available for pickup", "available to help", "available courier", "pickups near me", "any pickups", "have time", "ready to help", "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"]) or clean_p == "available":
         vol_id = "v1"
         if phone:
             v = database.get_volunteer_by_phone(phone)
@@ -263,31 +263,57 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         )
 
     # 6b. Volunteer Accept / Reject Task
-    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
+    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "claim", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
             st = database.get_user_conversation_state(phone)
             task_id = st.get("task_id", "")
         if not task_id:
             pending = database.get_all_pickup_tasks()
-            avail = [t for t in pending if t.get("status") in ["PENDING", "OFFERED"]]
+            avail = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
             if avail:
                 task_id = avail[0]["id"]
             else:
                 task_id = "task-assigned-01"
                 
         if task_id:
-            vol_id = tools._get_context_val("current_volunteer_id", "v1")
-            tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
-            tools.request_donor_location(pickup_task_id=task_id)
+            vol_id = tools._get_context_val("current_volunteer_id", "")
+            res_raw = tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_id, phone=phone)
+            res = json.loads(res_raw) if isinstance(res_raw, str) else {}
+            
+            if res.get("status") == "already_claimed":
+                if phone:
+                    database.clear_user_conversation_state(phone)
+                return "Sorry, this pickup has already been accepted by another volunteer. 🚚 I'll look for another available task for you."
+                
             if phone:
                 database.clear_user_conversation_state(phone)
+                
+            f_info = res.get("food_info", "Surplus food package")
+            d_name = res.get("donor_name", "Donor Partner")
+            d_contact = res.get("donor_contact", "")
+            p_loc = res.get("pickup_location", "Colombo")
+            r_name = res.get("recipient_name", "Community Organization")
+            r_loc = res.get("delivery_location", "Colombo")
+            dist = res.get("total_distance_km", 6.2)
+            cost = res.get("estimated_support_lkr", 310)
+            route_link = res.get("directions_link", "")
+            contact_line = f"\n• 📞 **Donor Contact**: {d_contact}" if d_contact else ""
+            route_line = f"\n• 🗺️ **Open Route**: {route_link}" if route_link else ""
+            
             return (
-                f"✅ **Pickup Task Assigned!**\n\n"
-                f"• **Task ID**: `{task_id}`\n"
-                f"• **Status**: `ASSIGNED`\n\n"
-                f"We have notified the donor to share their exact pickup location via WhatsApp.\n"
-                f"You will receive their location map link as soon as they share it.\n\n"
+                f"✅ **Pickup Task Assigned & Accepted**\n\n"
+                f"• 🆔 **Pickup**: `{task_id}`\n"
+                f"• **Status**: `ASSIGNED`\n"
+                f"• 🍚 **Food**: {f_info}\n"
+                f"• 👤 **Donor**: {d_name}{contact_line}\n"
+                f"• 🟢 **Pickup Location**: 📍 {p_loc}\n"
+                f"• 🏢 **Recipient**: {r_name} ({r_loc})\n"
+                f"• 📏 **Total Route**: ~{dist} km\n"
+                f"• 💰 **Estimated Transport Support**: LKR {cost}{route_line}\n\n"
+                f"📍 **Please share your current location**\n"
+                f"Tap: **+ → Location → Send your current location**\n"
+                f"This helps the donor and recipient know that you are on the way! 🚚\n\n"
                 f"Once you collect the food, simply reply *'Collected'*."
             )
         return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
@@ -423,18 +449,25 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     existing_draft = (database.get_draft_donation(phone) if phone else {}) or {}
 
     # 9a. Handle Confirmation Stage ("Confirm" / 1 -> commit donation)
-    if curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION":
-        if clean_p in ["1", "confirm", "yes", "y", "ok", "okay", "correct", "create", "තහවුරුයි", "ඔව්", "உறுதி", "ஆம்"]:
-            # Commit donation
+    is_confirm_intent = clean_p in [
+        "1", "confirm", "yes", "y", "ok", "okay", "correct", "create", "confirm donation",
+        "තහවුරුයි", "ඔව්", "உறுதி", "ஆம்", "ശരി"
+    ] or clean_p == "confirm" or "confirm" in clean_p
+    
+    if (curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION" or (is_confirm_intent and existing_draft.get("food_type"))):
+        if is_confirm_intent:
+            # Commit donation from persistent draft
             qty = float(existing_draft.get("quantity") or 25.0)
             food = existing_draft.get("food_type") or "Prepared Meals"
             unit = existing_draft.get("unit") or "portions"
             dietary = existing_draft.get("dietary_info") or "Standard"
-            loc = existing_draft.get("location") or "Colombo 05"
+            loc = existing_draft.get("location") or existing_draft.get("pickup_location") or "Colombo"
             deadline = existing_draft.get("pickup_deadline") or "Before 8 PM"
 
             if phone:
-                tools.register_donor(name=user.get("display_name", "Donor Partner") if user else "Donor Partner", location=loc, phone=phone)
+                donor_user = database.get_user_by_phone(phone)
+                donor_name = (donor_user.get("display_name") if donor_user else None) or "Donor Partner"
+                tools.register_donor(name=donor_name, location=loc, phone=phone)
 
             don_raw = tools.create_donation(
                 donor_id="d1",
@@ -633,77 +666,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     dietary_val = existing_draft.get("dietary_info", "Standard")
     unit_val = existing_draft.get("unit", "portions")
 
-    # Direct one-step donation matching when user explicitly says "to donate"
-    if "to donate" in clean_p and food_val and qty_val:
-        loc = loc_val or "Colombo"
-        deadline = time_val or "06:00 PM"
-        if phone:
-            tools.register_donor(name=user.get("display_name", "Donor Partner") if user else "Donor Partner", location=loc, phone=phone)
-        don_raw = tools.create_donation(
-            donor_id="d1",
-            food_type=food_val,
-            quantity=float(qty_val),
-            unit=unit_val,
-            dietary_information=dietary_val,
-            location=loc,
-            available_from="Now",
-            pickup_deadline=deadline
-        )
-        don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
-        don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
-
-        match_raw = tools.find_matching_organizations(food_type=food_val, location=loc)
-        match_res = json.loads(match_raw) if isinstance(match_raw, str) else {}
-        org_id = "o1"
-        org_name = "Community Kitchen Colombo"
-        deliv_loc = "Colombo 7"
-        if match_res.get("organizations"):
-            top_org = match_res["organizations"][0]
-            org_id = top_org.get("id", top_org.get("org_id", "o1"))
-            org_name = top_org.get("name", "Community Kitchen Colombo")
-            deliv_loc = top_org.get("location", "Colombo 7")
-            if don_id:
-                tools.accept_donation(donation_id=don_id, organization_id=org_id)
-
-        vol_raw = tools.find_available_volunteers(location=loc)
-        vol_res = json.loads(vol_raw) if isinstance(vol_raw, str) else {}
-        vol_id = "v1"
-        vol_name = "Amara Silva"
-        if vol_res.get("volunteers"):
-            top_vol = vol_res["volunteers"][0]
-            vol_id = top_vol.get("id", top_vol.get("volunteer_id", "v1"))
-            vol_name = top_vol.get("name", "Amara Silva")
-
-        task_id = ""
-        if don_id:
-            task_raw = tools.create_pickup_task(
-                donation_id=don_id,
-                organization_id=org_id,
-                pickup_location=loc,
-                delivery_location=deliv_loc,
-                scheduled_time=deadline
-            )
-            task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
-            task_id = task_res.get("task_id", "")
-            if task_id and vol_id:
-                tools.assign_volunteer(task_id=task_id, volunteer_id=vol_id)
-
-        if phone:
-            database.clear_draft_donation(phone)
-            database.clear_user_conversation_state(phone)
-
-        return (
-            f"✅ **Donation Created & Matched!**\n\n"
-            f"• **Donation ID**: `{don_id}`\n"
-            f"• **Food**: {qty_val} {unit_val} of {food_val} ({dietary_val})\n"
-            f"• **Collect from**: 📍 {loc} (Deadline: {deadline})\n"
-            f"• **Recipient**: 🏢 {org_name} ({deliv_loc})\n"
-            f"• **Volunteer Assigned**: 🚚 {vol_name}\n"
-            f"• **Pickup Task ID**: `{task_id or 'task-assigned'}`\n"
-            f"• **Status**: `PICKUP_ASSIGNED`\n\n"
-            f"You can ask *'Where is my donation?'* or *'Show my pickup'* anytime to track live status!"
-        )
-
     # Check next missing slot
     if not food_val:
         if phone:
@@ -731,8 +693,10 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 "expected_input_type": "LOCATION"
             })
         return (
-            f"Great! 👍 I recorded {qty_val} {unit_val} of {food_val}.\n\n" +
-            translation_service.get_localized_message("slot_ask_location", lang=lang)
+            f"Great! I have recorded {qty_val} {unit_val} of {food_val}. 🍚\n\n"
+            "📍 Before I create the donation, please share the exact pickup location using WhatsApp.\n\n"
+            "Tap: **+ → Location → Send your current location**\n\n"
+            "This location will only be shared with the assigned volunteer courier."
         )
 
     if not time_val:
@@ -742,7 +706,10 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 "current_question": "DEADLINE",
                 "expected_input_type": "DEADLINE"
             })
-        return translation_service.get_localized_message("slot_ask_deadline", lang=lang)
+        return (
+            f"Great! I have recorded {qty_val} {unit_val} of {food_val}.\n\n"
+            "What time should the food be collected by?"
+        )
 
     # All slots collected! Present Summary Confirmation
     if phone:
@@ -752,15 +719,20 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             "expected_input_type": "CONFIRMATION"
         })
 
-    return translation_service.get_localized_message(
-        "donation_summary_confirm",
-        lang=lang,
-        food_type=food_val,
-        quantity=qty_val,
-        unit=unit_val,
-        dietary=dietary_val,
-        location=loc_val,
-        deadline=time_val
+    donor_user = database.get_user_by_phone(phone) if phone else None
+    donor_name = (donor_user.get("display_name") if donor_user else None) or "Donor Partner"
+
+    return (
+        "📦 **Donation Summary**\n\n"
+        f"🍚 Food: {food_val}\n"
+        f"📦 Quantity: {qty_val} {unit_val}\n"
+        f"📍 Pickup location: {loc_val}\n"
+        f"⏰ Pickup deadline: {time_val}\n"
+        f"👤 Donor: {donor_name}\n\n"
+        "Everything is ready.\n\n"
+        "**Confirm donation?**\n\n"
+        "Reply:\n"
+        "**Confirm** or **Change**"
     )
 
 

@@ -218,8 +218,8 @@ def get_pickup_tasks_for_organization(org_id: str) -> List[Dict[str, Any]]:
     return get_repository().get_pickup_tasks_for_organization(org_id)
 
 
-def assign_volunteer_record(task_id: str, volunteer_id: str) -> bool:
-    return get_repository().assign_volunteer_record(task_id, volunteer_id)
+def assign_volunteer_record(task_id: str, volunteer_id: str, atomic_claim: bool = False) -> bool:
+    return get_repository().assign_volunteer_record(task_id, volunteer_id, atomic_claim=atomic_claim)
 
 
 def update_pickup_status_record(task_id: str, status: str) -> bool:

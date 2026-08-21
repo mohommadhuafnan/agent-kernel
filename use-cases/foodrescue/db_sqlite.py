@@ -747,12 +747,18 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return [dict(r) for r in rows]
 
-    def assign_volunteer_record(self, task_id: str, volunteer_id: str) -> bool:
+    def assign_volunteer_record(self, task_id: str, volunteer_id: str, atomic_claim: bool = False) -> bool:
         conn = self._get_connection()
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ?", (volunteer_id, now, task_id))
+            if atomic_claim:
+                cursor.execute(
+                    "UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ? AND (status IN ('PENDING', 'OFFERED', 'OPEN') OR volunteer_id IS NULL OR volunteer_id = '')",
+                    (volunteer_id, now, task_id)
+                )
+            else:
+                cursor.execute("UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ?", (volunteer_id, now, task_id))
             rows = cursor.rowcount
         conn.close()
         return rows > 0

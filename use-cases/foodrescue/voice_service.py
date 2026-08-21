@@ -147,6 +147,10 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     qty = None
     unit = "portions"
     
+    # Check if number in text is part of a time expression (e.g. 10 PM, 8:00 AM, 7 PM)
+    time_match = re.search(r'\b(\d{1,2}(?::\d{2})?)\s*(?:am|pm|AM|PM)\b', text)
+    time_number = time_match.group(1).split(":")[0] if time_match else None
+
     # Check English and transliterated / localized unit patterns
     qty_match = re.search(
         r'(\d+(?:\.\d+)?)\s*(packets?|meals?|boxes?|portions?|kg|plates?|servings?|bunches?|parcels?|பொதிகள்|பாக்கெட்டுகள்|පාර්සල්|පැකට්)?',
@@ -154,23 +158,28 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
         re.IGNORECASE
     )
     if qty_match:
-        try:
-            qty = float(qty_match.group(1))
-            raw_unit = (qty_match.group(2) or "").lower().strip()
-            if raw_unit in ["packets", "packet", "පාර්සල්", "පැකට්", "பாக்கெட்டுகள்"]:
-                unit = "packets"
-            elif raw_unit in ["boxes", "box"]:
-                unit = "boxes"
-            elif raw_unit in ["kg", "kilograms"]:
-                unit = "kg"
-            elif raw_unit in ["meals", "meal", "பொதிகள்"]:
-                unit = "meals"
-            elif raw_unit in ["portions", "portion"]:
-                unit = "portions"
-            else:
-                unit = "portions"
-        except (ValueError, TypeError):
-            pass
+        matched_num_str = qty_match.group(1)
+        raw_unit = (qty_match.group(2) or "").lower().strip()
+        # If no food unit and this number is actually the time expression (e.g. 10 PM), do not treat as quantity
+        if not raw_unit and (matched_num_str == time_number or re.search(rf'\b{re.escape(matched_num_str)}\s*(?:am|pm|AM|PM)\b', text, re.IGNORECASE)):
+            qty = None
+        else:
+            try:
+                qty = float(matched_num_str)
+                if raw_unit in ["packets", "packet", "පාර්සල්", "පැකට්", "பாக்கெட்டுகள்"]:
+                    unit = "packets"
+                elif raw_unit in ["boxes", "box"]:
+                    unit = "boxes"
+                elif raw_unit in ["kg", "kilograms"]:
+                    unit = "kg"
+                elif raw_unit in ["meals", "meal", "பொதிகள்"]:
+                    unit = "meals"
+                elif raw_unit in ["portions", "portion"]:
+                    unit = "portions"
+                else:
+                    unit = "portions"
+            except (ValueError, TypeError):
+                pass
 
     # 2. Dietary Information
     dietary_info = "Standard"

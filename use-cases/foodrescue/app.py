@@ -153,6 +153,7 @@ BOUND_TOOLS = GoogleADKToolBuilder.bind([
     tools.create_pickup_task,
     tools.get_pickup_task,
     tools.assign_volunteer,
+    tools.accept_pickup_task_atomic,
     tools.update_pickup_status,
     tools.get_session_context,
     tools.clear_session_context,

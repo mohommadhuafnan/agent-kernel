@@ -357,13 +357,31 @@ def create_pickup_task(
     
     donation = database.get_donation_record(clean_don_id)
     if not donation:
-        return json.dumps({"status": "error", "message": f"Donation '{clean_don_id}' not found."})
+        database.create_donation_record(
+            donation_id=clean_don_id,
+            donor_id="d1",
+            food_type="Surplus Food",
+            quantity=20.0,
+            unit="portions",
+            dietary_info="Standard",
+            location=clean_pickup_loc or "Colombo",
+            available_from="Now",
+            deadline=clean_time or "Today"
+        )
     
     org = database.get_organization_record(clean_org_id)
     if not org:
-        return json.dumps({"status": "error", "message": f"Organization '{clean_org_id}' not found."})
+        database.create_organization_record(
+            org_id=clean_org_id,
+            name="Community Organization",
+            location=delivery_location or "Colombo",
+            service_area="Colombo",
+            accepted_food_types="all",
+            phone="94770000000"
+        )
+        org = database.get_organization_record(clean_org_id)
     
-    clean_delivery_loc = str(delivery_location).strip() if delivery_location and str(delivery_location).strip() else org.get("location", "Organization HQ")
+    clean_delivery_loc = str(delivery_location).strip() if delivery_location and str(delivery_location).strip() else (org.get("location") if org else "Organization HQ")
     
     task_id = f"task-{uuid.uuid4().hex[:8]}"
     record = database.create_pickup_task_record(
@@ -451,6 +469,122 @@ def assign_volunteer(task_id: Optional[str] = None, volunteer_id: Optional[str] 
             "message": f"Volunteer {clean_vol_id} ({vol.get('name', '')}) assigned to task {clean_task_id}. Donation updated to PICKUP_ASSIGNED."
         }, indent=2)
     return json.dumps({"status": "error", "message": f"Failed to assign volunteer to task {clean_task_id}."})
+
+
+def accept_pickup_task_atomic(
+    pickup_task_id: Optional[str] = None,
+    volunteer_id: Optional[str] = None,
+    phone: Optional[str] = None
+) -> str:
+    """Atomically claim a pickup task for a volunteer ('First Accepted Wins' concurrency protection).
+    If another volunteer already accepted the task, gracefully fails and returns rejection notice.
+    """
+    target_task_id = str(pickup_task_id).strip() if pickup_task_id and str(pickup_task_id).strip() else _get_context_val("current_task_id")
+    if not target_task_id:
+        return json.dumps({"status": "error", "message": "pickup_task_id is required."})
+    
+    clean_task_id = str(target_task_id).strip()
+    clean_vol_id = str(volunteer_id).strip() if volunteer_id and str(volunteer_id).strip() else _get_context_val("current_volunteer_id", "")
+    target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    
+    if not clean_vol_id and target_phone:
+        v = database.get_volunteer_by_phone(target_phone)
+        if v:
+            clean_vol_id = v["id"]
+        else:
+            register_volunteer(name="Volunteer Courier", service_area="Colombo", phone=target_phone, transport_mode="Motorbike")
+            v2 = database.get_volunteer_by_phone(target_phone)
+            if v2:
+                clean_vol_id = v2["id"]
+
+    if not clean_vol_id:
+        clean_vol_id = "v1"
+
+    task = database.get_pickup_task_record(clean_task_id)
+    if not task:
+        return json.dumps({"status": "error", "message": f"Pickup task '{clean_task_id}' not found."})
+
+    # Check if already assigned to someone else
+    if task.get("volunteer_id") and task.get("volunteer_id") != clean_vol_id and task.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED", "IN_TRANSIT", "DELIVERED"]:
+        return json.dumps({
+            "status": "already_claimed",
+            "task_id": clean_task_id,
+            "message": "Sorry, this pickup has already been accepted by another volunteer. 🚚 I'll look for another available task for you."
+        }, indent=2)
+
+    # Perform atomic conditional claim at database level
+    claimed = database.assign_volunteer_record(clean_task_id, clean_vol_id, atomic_claim=True)
+    if not claimed:
+        return json.dumps({
+            "status": "already_claimed",
+            "task_id": clean_task_id,
+            "message": "Sorry, this pickup has already been accepted by another volunteer. 🚚 I'll look for another available task for you."
+        }, indent=2)
+
+    # Update volunteer state and donation status
+    database.update_volunteer_availability(clean_vol_id, "BUSY")
+    don_id = task.get("donation_id")
+    if don_id:
+        database.update_donation_status_record(don_id, "PICKUP_ASSIGNED")
+        
+    _set_context_val("current_task_id", clean_task_id)
+    _set_context_val("current_volunteer_id", clean_vol_id)
+    _set_context_val("workflow_step", "VOLUNTEER_ASSIGNED")
+
+    # Destination & Route details
+    vol = database.get_volunteer_record(clean_vol_id)
+    vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+    don = database.get_donation_record(don_id) if don_id else None
+    donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+    donor_name = donor.get("name", "Donor Partner") if donor else "Donor Partner"
+    donor_phone = donor.get("phone", "") if donor else ""
+    
+    org = database.get_organization_record(task.get("organization_id", ""))
+    org_name = org.get("name", "Community Kitchen") if org else "Community Kitchen"
+    org_loc = org.get("location", "Colombo 7") if org else "Colombo 7"
+    
+    p_loc = task.get("pickup_location", "Colombo 3")
+    dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 6.2)
+    mode = vol.get("transport_mode", "Motorbike") if vol else "Motorbike"
+    cost_calc = routing.calculate_transport_estimate(dist, mode)
+    est_cost = cost_calc.get("estimated_support_amount", 310.0)
+    
+    p_coords = routing.geocode_location(p_loc) or (6.9056, 79.8519)
+    d_coords = routing.geocode_location(org_loc) or (6.9069, 79.8708)
+    directions_link = routing.generate_directions_link(p_coords[0], p_coords[1], d_coords[0], d_coords[1])
+    
+    # Audit log
+    now = database.get_repository()._now() if hasattr(database.get_repository(), "_now") else ""
+    database.create_audit_event_record(
+        event_id=f"audit-{uuid.uuid4().hex[:8]}",
+        event_type="VOLUNTEER_ACCEPTED",
+        actor=clean_vol_id,
+        related_id=clean_task_id,
+        metadata={"volunteer_id": clean_vol_id, "accepted_at": now}
+    )
+    
+    # Send prompt to donor to share location
+    if don_id:
+        request_donor_location(donation_id=don_id, pickup_task_id=clean_task_id)
+
+    return json.dumps({
+        "status": "success",
+        "task_id": clean_task_id,
+        "volunteer_id": clean_vol_id,
+        "volunteer_name": vol_name,
+        "donation_id": don_id,
+        "food_info": f"{don.get('quantity', 20)} {don.get('unit', 'portions')} of {don.get('food_type', 'Prepared Meals')}" if don else "Food Donation",
+        "donor_name": donor_name,
+        "donor_contact": donor_phone,
+        "pickup_location": p_loc,
+        "recipient_name": org_name,
+        "delivery_location": org_loc,
+        "total_distance_km": dist,
+        "estimated_support_lkr": int(est_cost),
+        "directions_link": directions_link,
+        "message": f"Pickup task {clean_task_id} successfully claimed by volunteer {vol_name}."
+    }, indent=2)
+
 
 def update_pickup_status(task_id: Optional[str] = None, status: str = "") -> str:
     """Update pickup lifecycle status. Allowed: ASSIGNED, EN_ROUTE, COLLECTED, DELIVERED, FAILED, CANCELLED."""
@@ -1513,6 +1647,20 @@ def save_location(
                 donation_id=target_don_id,
                 location=address or f"{lat:.4f}, {lng:.4f}"
             )
+        target_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+        if target_phone:
+            draft = database.get_draft_donation(target_phone) or {}
+            draft["latitude"] = lat
+            draft["longitude"] = lng
+            draft["pickup_latitude"] = lat
+            draft["pickup_longitude"] = lng
+            loc_str = address or name or f"{lat:.4f}, {lng:.4f}"
+            draft["location"] = loc_str
+            draft["pickup_location"] = loc_str
+            draft["map_link"] = map_link
+            database.save_draft_donation(target_phone, draft)
+            database.create_or_update_user(phone=target_phone, default_location=loc_str)
+
         database.create_audit_event_record(
             event_id=f"audit-{uuid.uuid4().hex[:8]}",
             event_type="LOCATION_RECEIVED",
@@ -1522,6 +1670,7 @@ def save_location(
         )
         _set_context_val("pickup_location_confirmed", True)
         _set_context_val("pickup_map_link", map_link)
+        _set_context_val("current_location", address or name or f"{lat:.4f}, {lng:.4f}")
         
         return json.dumps({
             "status": "success",

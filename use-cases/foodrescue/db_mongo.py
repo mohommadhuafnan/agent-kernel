@@ -581,13 +581,19 @@ class MongoRepository(BaseRepository):
         docs = list(self.pickup_tasks_col.find({"organization_id": org_id}).sort("created_at", pymongo.DESCENDING))
         return self._clean_docs(docs)
 
-    def assign_volunteer_record(self, task_id: str, volunteer_id: str) -> bool:
+    def assign_volunteer_record(self, task_id: str, volunteer_id: str, atomic_claim: bool = False) -> bool:
         now = self._now()
+        filter_q = {"id": task_id}
+        if atomic_claim:
+            filter_q["$or"] = [
+                {"status": {"$in": ["PENDING", "OFFERED", "OPEN"]}},
+                {"volunteer_id": {"$in": [None, ""]}}
+            ]
         res = self.pickup_tasks_col.update_one(
-            {"id": task_id},
+            filter_q,
             {"$set": {"volunteer_id": volunteer_id, "status": "ASSIGNED", "updated_at": now}}
         )
-        return res.matched_count > 0
+        return res.modified_count > 0 or (not atomic_claim and res.matched_count > 0)
 
     def update_pickup_status_record(self, task_id: str, status: str) -> bool:
         now = self._now()

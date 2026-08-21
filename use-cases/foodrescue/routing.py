@@ -512,3 +512,18 @@ async def compute_two_leg_route(
         "currency": "LKR",
         "display_text": f"Leg 1: {leg1_dist} km | Leg 2: {leg2_dist} km | Total: {total_dist} km (~{total_dur_min} min) | Support: LKR {int(cost_est.get('estimated_support_amount', 0.0))}"
     }
+
+
+def generate_map_link(latitude: float, longitude: float) -> str:
+    """Generate a direct Google Maps search link for single coordinate pin."""
+    return f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"
+
+
+def generate_directions_link(
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float
+) -> str:
+    """Generate a dynamic Google Maps turn-by-turn directions URL between two coordinates."""
+    return f"https://www.google.com/maps/dir/?api=1&origin={origin_lat:.6f},{origin_lng:.6f}&destination={dest_lat:.6f},{dest_lng:.6f}"

@@ -516,11 +516,62 @@ async def process_incoming_whatsapp_message(
                 volunteer_id=vol_id,
                 phone=from_number
             )
+            vol_name = cache.get("volunteer_name", "Volunteer Courier")
+            
+            # If volunteer has an active task, notify donor and recipient
+            target_t_id = active_task_id
+            if not target_t_id and vol_id:
+                v_tasks = database.get_pickup_tasks_for_volunteer(vol_id)
+                open_v_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
+                if open_v_tasks:
+                    target_t_id = open_v_tasks[0]["id"]
+                    
+            if target_t_id:
+                task = database.get_pickup_task_record(target_t_id)
+                if task:
+                    don_id = task.get("donation_id")
+                    don = database.get_donation_record(don_id) if don_id else None
+                    food_desc = f"{don.get('quantity', 20)} {don.get('unit', 'portions')}" if don else "food donation"
+                    
+                    # Notify Donor
+                    if don and don.get("donor_id"):
+                        donor_rec = database.get_donor_record(don["donor_id"])
+                        if donor_rec and donor_rec.get("phone"):
+                            d_notif = (
+                                "🚚 *Volunteer Assigned & On The Way*\n\n"
+                                f"Your donation has been accepted by a volunteer.\n\n"
+                                f"👤 Volunteer: {vol_name}\n"
+                                f"📍 Current volunteer location: {map_link}\n"
+                                f"🍚 Food: {food_desc}\n\n"
+                                "The volunteer is coordinating the pickup now."
+                            )
+                            try:
+                                await send_whatsapp_message(to_number=donor_rec["phone"], text=d_notif)
+                            except Exception:
+                                pass
+                                
+                    # Notify Recipient Organization
+                    if task.get("organization_id"):
+                        org_rec = database.get_organization_record(task["organization_id"])
+                        if org_rec and org_rec.get("phone"):
+                            o_notif = (
+                                "🚚 *Delivery Volunteer Assigned*\n\n"
+                                f"Your food delivery is being coordinated.\n\n"
+                                f"👤 Volunteer: {vol_name}\n"
+                                f"📍 Current volunteer location: {map_link}\n"
+                                f"🍚 Food: {food_desc}\n\n"
+                                "We'll notify you when the food is collected and delivered."
+                            )
+                            try:
+                                await send_whatsapp_message(to_number=org_rec["phone"], text=o_notif)
+                            except Exception:
+                                pass
+
             reply_text = (
                 "📍 *Location Updated!*\n\n"
                 f"Your courier location is now active: {lat:.4f}, {lng:.4f}\n"
                 f"• Map: {map_link}\n\n"
-                "You are marked as *AVAILABLE*. We will notify you when a pickup opportunity is ready near you!"
+                "Thank you! We have updated the donor and recipient with your live coordination."
             )
         elif user_role == "organization":
             # Recipient sharing destination location
@@ -551,13 +602,56 @@ async def process_incoming_whatsapp_message(
                 pickup_task_id=active_task_id,
                 phone=from_number
             )
-            reply_text = (
-                "📍 *Pickup Location Confirmed!*\n\n"
-                f"Thank you! Your pickup location has been securely recorded.\n"
-                f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
-                f"• Map: {map_link}\n\n"
-                "Your assigned volunteer courier has been provided navigation directions and will arrive soon! 🚚"
-            )
+            
+            # Check if donor is in drafting workflow
+            draft = database.get_draft_donation(from_number) or {}
+            qty = draft.get("quantity")
+            food = draft.get("food_type")
+            unit = draft.get("unit", "portions")
+            deadline = draft.get("pickup_deadline")
+            
+            if qty and food and not active_don_id:
+                # Drafting donor
+                if not deadline or deadline.lower() in ["tbd", "now", "today", ""]:
+                    database.set_user_conversation_state(from_number, {
+                        "workflow": "DONATION",
+                        "current_question": "PICKUP_DEADLINE",
+                        "expected_input_type": "TEXT"
+                    })
+                    reply_text = (
+                        "📍 *Pickup Location Received!* 🗺️\n\n"
+                        f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
+                        f"• Map: {map_link}\n\n"
+                        "What is the latest time the volunteer courier can collect the food?"
+                    )
+                else:
+                    # All fields present -> Show Confirmation Summary!
+                    database.set_user_conversation_state(from_number, {
+                        "workflow": "DONATION",
+                        "current_question": "CONFIRMATION",
+                        "expected_input_type": "CONFIRMATION"
+                    })
+                    donor_user = database.get_user_by_phone(from_number)
+                    donor_name = (donor_user.get("display_name") if donor_user else None) or "Donor Partner"
+                    reply_text = (
+                        "📦 *Donation Summary*\n\n"
+                        f"🍚 Food: {food}\n"
+                        f"📦 Quantity: {qty} {unit}\n"
+                        f"📍 Pickup location: Location received ({lat:.4f}, {lng:.4f})\n"
+                        f"⏰ Pickup deadline: {deadline}\n"
+                        f"👤 Donor: {donor_name}\n\n"
+                        "Everything is ready.\n\n"
+                        "*Confirm donation?*\n\n"
+                        "Reply: *Confirm* or *Change*"
+                    )
+            else:
+                reply_text = (
+                    "📍 *Pickup Location Confirmed!*\n\n"
+                    f"Thank you! Your pickup location has been securely recorded.\n"
+                    f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
+                    f"• Map: {map_link}\n\n"
+                    "Your assigned volunteer courier has been provided navigation directions and will arrive soon! 🚚"
+                )
             
             # Also notify assigned volunteer if task exists
             if active_task_id:
@@ -572,7 +666,10 @@ async def process_incoming_whatsapp_message(
                             f"• Navigation: {map_link}\n\n"
                             f"Please proceed to collect the food donation. Once collected, reply *Collected*."
                         )
-                        await send_whatsapp_message(to_number=vol["phone"], text=vol_text)
+                        try:
+                            await send_whatsapp_message(to_number=vol["phone"], text=vol_text)
+                        except Exception:
+                            pass
 
         # Audit notification
         try:

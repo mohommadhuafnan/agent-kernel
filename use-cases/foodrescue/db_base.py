@@ -188,8 +188,8 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def assign_volunteer_record(self, task_id: str, volunteer_id: str) -> bool:
-        """Assign an available volunteer to a pickup task and update task status to ASSIGNED."""
+    def assign_volunteer_record(self, task_id: str, volunteer_id: str, atomic_claim: bool = False) -> bool:
+        """Assign an available volunteer to a pickup task. If atomic_claim is True, only assign if unassigned."""
         pass
 
     @abstractmethod
