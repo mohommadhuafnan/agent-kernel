@@ -47,6 +47,7 @@ def setup_test_environment():
 # =============================================================================
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_first_time_user_onboarding_welcome():
     """Scenario 1: First-time WhatsApp message triggers comprehensive onboarding with website URL."""
     phone = "94770000001"
@@ -63,10 +64,10 @@ async def test_first_time_user_onboarding_welcome():
         assert res["status"] == "onboarding_welcome_sent"
         assert "Welcome to FoodRescue AI" in res["reply"]
         assert "https://foodrescue-ai-ten.vercel.app/" in res["reply"]
-        assert "change language" in res["reply"].lower()
         assert "Sinhala" in res["reply"]
         assert "Tamil" in res["reply"]
-        assert "Malayalam" in res["reply"]
+        assert "English" in res["reply"]
+        assert "Malayalam" not in res["reply"]
 
     # Verify user profile in DB
     user = database.get_user_by_phone(phone)
@@ -95,7 +96,7 @@ async def test_onboarding_only_occurs_once():
         assert res["status"] == "returning_welcome_sent"
         assert "Welcome back to FoodRescue AI" in res["reply"]
         # Should not have the long onboarding intro
-        assert "Language Options / භාෂාව තෝරන්න" not in res["reply"]
+        assert "Choose your language" not in res["reply"]
 
 
 @pytest.mark.asyncio
@@ -150,19 +151,19 @@ async def test_explicit_language_selection_numeric_and_text():
         assert res2["language"] == "ta"
         assert "தமிழ்" in res2["reply"]
 
-    # In language menu, numeric selection 4 -> Malayalam
+    # In language menu, numeric selection 1 -> English, 2 -> Sinhala, 3 -> Tamil
     msg_menu = {"from": phone, "id": "wamid.LangMenuPrompt", "type": "text", "text": {"body": "language"}}
     with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"status": "sent"}
         await whatsapp_handler.process_incoming_whatsapp_message(msg_menu)
 
-    msg4 = {"from": phone, "id": "wamid.LangMl", "type": "text", "text": {"body": "4"}}
+    msg3 = {"from": phone, "id": "wamid.LangEn", "type": "text", "text": {"body": "1"}}
     with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"status": "sent"}
-        res4 = await whatsapp_handler.process_incoming_whatsapp_message(msg4)
-        assert res4["status"] == "language_updated"
-        assert res4["language"] == "ml"
-        assert "മലയാളം" in res4["reply"]
+        res3 = await whatsapp_handler.process_incoming_whatsapp_message(msg3)
+        assert res3["status"] == "language_updated"
+        assert res3["language"] == "en"
+        assert "English" in res3["reply"]
 
 
 @pytest.mark.asyncio
@@ -184,13 +185,11 @@ async def test_main_menu_digit_1_triggers_donation():
 
 
 def test_natural_script_language_detection():
-    """Scenario 5: Unicode script analysis detects Sinhala, Tamil, Malayalam, and English."""
+    """Scenario 5: Unicode script analysis detects Sinhala, Tamil, and English."""
     # Sinhala
     assert translation_service.detect_language("මට කෑම දානයක් ලබා දෙන්න ඕන") == "si"
     # Tamil
     assert translation_service.detect_language("என்னிடம் அதிகமான உணவு உள்ளது") == "ta"
-    # Malayalam
-    assert translation_service.detect_language("എനിക്ക് ഭക്ഷണം സംഭാവന ചെയ്യണം") == "ml"
     # English
     assert translation_service.detect_language("I have 20 meals available") == "en"
 
@@ -204,10 +203,10 @@ async def test_language_command_displays_menu():
         mock_send.return_value = {"status": "sent"}
         res = await whatsapp_handler.process_incoming_whatsapp_message(msg)
         assert res["status"] == "language_menu"
-        assert "1 - Sinhala" in res["reply"]
-        assert "2 - Tamil" in res["reply"]
-        assert "3 - English" in res["reply"]
-        assert "4 - Malayalam" in res["reply"]
+        assert "English" in res["reply"]
+        assert "Sinhala" in res["reply"]
+        assert "Tamil" in res["reply"]
+        assert "Malayalam" not in res["reply"]
 
 
 # =============================================================================

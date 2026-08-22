@@ -323,7 +323,7 @@ async def process_incoming_whatsapp_message(
 
         # Check Natural Script Language Detection (if non-Latin script detected e.g. Sinhala/Tamil)
         detected_lang = translation_service.detect_language(prompt_text)
-        if detected_lang and detected_lang in ["si", "ta", "ml"] and detected_lang != preferred_language:
+        if detected_lang and detected_lang in ["si", "ta"] and detected_lang != preferred_language:
             database.set_user_language(from_number, detected_lang)
             preferred_language = detected_lang
             try:
@@ -371,7 +371,7 @@ async def process_incoming_whatsapp_message(
             send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
             return {"status": "response_mode_updated", "mode": resp_mode_intent, "reply": reply_text, "send_status": send_res}
 
-        if clean_lower in ["language", "languages", "භාෂාව", "மொழி", "ഭാഷ", "change language"]:
+        if clean_lower in ["language", "languages", "භාෂාව", "மொழி", "change language"]:
             try:
                 cache.set("workflow_step", "AWAITING_LANGUAGE")
             except Exception:
@@ -384,10 +384,9 @@ async def process_incoming_whatsapp_message(
             reply_text = (
                 "🌍 *FoodRescue AI Language Selection / භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்*:\n\n"
                 "Reply with:\n"
-                "1 - Sinhala (සිංහල)\n"
-                "2 - Tamil (தமிழ்)\n"
-                "3 - English\n"
-                "4 - Malayalam (മലയാളം)"
+                "1️⃣ English\n"
+                "2️⃣ Sinhala (සිංහල)\n"
+                "3️⃣ Tamil (தமிழ்)"
             )
             try:
                 database.record_message(phone=from_number, sender="agent", text=reply_text)
@@ -605,9 +604,20 @@ async def process_incoming_whatsapp_message(
             
             # Check if donor is in drafting workflow
             draft = database.get_draft_donation(from_number) or {}
+            # Update draft with location data
+            draft_loc_update = {
+                "latitude": lat,
+                "longitude": lng,
+                "location_received": True,
+                "address": loc_address or loc_name or draft.get("city") or "Colombo"
+            }
+            if not draft.get("city") and (loc_name or loc_address):
+                draft_loc_update["city"] = loc_address or loc_name
+            draft = database.save_draft_donation(from_number, draft_loc_update)
+            
             qty = draft.get("quantity")
             food = draft.get("food_type")
-            unit = draft.get("unit", "portions")
+            unit = draft.get("unit", "packets")
             deadline = draft.get("pickup_deadline")
             
             if qty and food and not active_don_id:
@@ -616,13 +626,13 @@ async def process_incoming_whatsapp_message(
                     database.set_user_conversation_state(from_number, {
                         "workflow": "DONATION",
                         "current_question": "PICKUP_DEADLINE",
-                        "expected_input_type": "TEXT"
+                        "expected_input_type": "DEADLINE"
                     })
-                    reply_text = (
-                        "📍 *Pickup Location Received!* 🗺️\n\n"
-                        f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
-                        f"• Map: {map_link}\n\n"
-                        "What is the latest time the volunteer courier can collect the food?"
+                    city_label = draft.get("city") or "Colombo"
+                    reply_text = translation_service.get_localized_message(
+                        "donor_ask_deadline",
+                        lang=preferred_language,
+                        city=city_label
                     )
                 else:
                     # All fields present -> Show Confirmation Summary!
@@ -632,18 +642,25 @@ async def process_incoming_whatsapp_message(
                         "expected_input_type": "CONFIRMATION"
                     })
                     donor_user = database.get_user_by_phone(from_number)
-                    donor_name = (donor_user.get("display_name") if donor_user else None) or "Donor Partner"
-                    reply_text = (
-                        "📦 *Donation Summary*\n\n"
-                        f"🍚 Food: {food}\n"
-                        f"📦 Quantity: {qty} {unit}\n"
-                        f"📍 Pickup location: Location received ({lat:.4f}, {lng:.4f})\n"
-                        f"⏰ Pickup deadline: {deadline}\n"
-                        f"👤 Donor: {donor_name}\n\n"
-                        "Everything is ready.\n\n"
-                        "*Confirm donation?*\n\n"
-                        "Reply: *Confirm* or *Change*"
+                    donor_rec = database.get_donor_by_phone(from_number)
+                    d_name = draft.get("donor_name") or draft.get("business_name") or (donor_rec.get("name") if donor_rec else None) or (donor_user.get("display_name") if donor_user and not donor_user.get("display_name", "").startswith("User_") else "Donor Partner")
+                    b_name = draft.get("business_name") or d_name
+                    city_val = draft.get("city") or (donor_rec.get("location") if donor_rec else None) or "Colombo"
+                    
+                    loc_ack = translation_service.get_localized_message("donor_location_received", lang=preferred_language)
+                    summary_msg = translation_service.get_localized_message(
+                        "donation_summary_confirm",
+                        lang=preferred_language,
+                        donor_name=d_name,
+                        business_name=b_name,
+                        food_type=food,
+                        quantity=qty,
+                        unit=unit,
+                        city=city_val,
+                        deadline=deadline,
+                        contact_phone=from_number
                     )
+                    reply_text = f"{loc_ack}\n\n{summary_msg}"
             else:
                 reply_text = (
                     "📍 *Pickup Location Confirmed!*\n\n"

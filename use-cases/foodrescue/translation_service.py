@@ -1,7 +1,7 @@
 """FoodRescue AI Multilingual Localization and Language Detection Engine.
 
 Provides:
-1. Script-based and keyword-based language detection for English (en), Sinhala (si), Tamil (ta), and Malayalam (ml).
+1. Script-based and keyword-based language detection for English (en), Sinhala (si), and Tamil (ta).
 2. Curated, natural localized conversational message catalogs.
 3. Language preference resolution and fallback handling.
 """
@@ -9,25 +9,23 @@ Provides:
 import re
 from typing import Optional, Dict, Any
 
-SUPPORTED_LANGUAGES = {"en", "si", "ta", "ml"}
+SUPPORTED_LANGUAGES = {"en", "si", "ta"}
 DEFAULT_LANGUAGE = "en"
 
 LANGUAGE_NAMES = {
     "en": "English",
     "si": "සිංහල (Sinhala)",
-    "ta": "தமிழ் (Tamil)",
-    "ml": "മലയാളം (Malayalam)"
+    "ta": "தமிழ் (Tamil)"
 }
 
 # Unicode Script Ranges for Natural Script Detection
 SINHALA_REGEX = re.compile(r'[\u0D80-\u0DFF]')
 TAMIL_REGEX = re.compile(r'[\u0B80-\u0BFF]')
-MALAYALAM_REGEX = re.compile(r'[\u0D00-\u0D7F]')
 
 
 def detect_language(text: str) -> Optional[str]:
     """Detect language of incoming text based on script analysis.
-    Returns 'si', 'ta', 'ml', or 'en' if confident, or None if ambiguous."""
+    Returns 'si', 'ta', or 'en' if confident, or None if ambiguous."""
     if not text or not isinstance(text, str):
         return None
         
@@ -38,7 +36,6 @@ def detect_language(text: str) -> Optional[str]:
     # Count characters in respective script ranges
     si_count = len(SINHALA_REGEX.findall(s))
     ta_count = len(TAMIL_REGEX.findall(s))
-    ml_count = len(MALAYALAM_REGEX.findall(s))
     
     total_len = max(1, len(s.replace(" ", "")))
     
@@ -46,8 +43,6 @@ def detect_language(text: str) -> Optional[str]:
         return "si"
     if ta_count >= 2 or (ta_count / total_len) > 0.2:
         return "ta"
-    if ml_count >= 2 or (ml_count / total_len) > 0.2:
-        return "ml"
         
     # Check if purely latin text
     latin_count = len(re.findall(r'[a-zA-Z]', s))
@@ -60,39 +55,42 @@ def detect_language(text: str) -> Optional[str]:
 def is_language_selection_intent(text: str, in_language_menu: bool = False) -> Optional[str]:
     """Check if the user is explicitly selecting or requesting a language change.
     Handles:
-    - Keywords & codes: 'sinhala', 'tamil', 'english', 'malayalam', 'si', 'ta', 'en', 'ml', 'L1'..'L4'
+    - Keywords & codes: 'sinhala', 'tamil', 'english', 'si', 'ta', 'en', 'L1'..'L3'
+    - Numbers:
+        1 -> English (or Sinhala if in legacy menu)
+        2 -> Sinhala (or Tamil)
+        3 -> Tamil (or English)
     - Natural language phrases:
         'change language to tamil', 'tamil please', 'தமிழ்', 'தமிழில் பேசுங்கள்', 'speak in tamil'
         'change language to sinhala', 'sinhala please', 'සිංහල', 'සිංහලෙන් කතා කරන්න', 'speak in sinhala'
         'change language to english', 'english please', 'speak in english'
-        'change language to malayalam', 'malayalam please', 'മലയാളം'
-    - Plain digits 1-4 if in_language_menu is True.
     """
     if not text:
         return None
     clean = text.strip().lower()
     
-    if in_language_menu:
-        if clean in ["1", "l1", "si"]:
-            return "si"
-        elif clean in ["2", "l2", "ta"]:
-            return "ta"
-        elif clean in ["3", "l3", "en"]:
-            return "en"
-        elif clean in ["4", "l4", "ml"]:
-            return "ml"
-
-    # Exact codes or explicit change phrases
-    if clean in ["tamil", "ta", "l2"] or any(p in clean for p in ["தமிழ்", "தமிழில்", "தமிழுக்கு", "change language to tamil", "speak in tamil", "tamil please", "change to tamil"]):
+    # Exact native script checks first
+    if any(p in clean for p in ["தமிழ்", "தமிழில்", "தமிழுக்கு"]):
         return "ta"
-
-    if clean in ["sinhala", "si", "l1"] or any(p in clean for p in ["සිංහල", "සිංහලෙන්", "change language to sinhala", "speak in sinhala", "sinhala please", "change to sinhala"]):
+    if any(p in clean for p in ["සිංහල", "සිංහලෙන්", "සිංහලෙන් කතා කරන්න"]):
         return "si"
 
-    if clean in ["malayalam", "ml", "l4"] or any(p in clean for p in ["മലയാളം", "change language to malayalam", "speak in malayalam", "malayalam please", "change to malayalam"]):
-        return "ml"
+    if in_language_menu:
+        if clean in ["1", "l1"]:
+            return "en"
+        elif clean in ["2", "l2"]:
+            return "si"
+        elif clean in ["3", "l3"]:
+            return "ta"
 
-    if clean in ["english", "en", "l3"] or any(p in clean for p in ["speak in english", "english please", "change language to english", "change to english"]):
+    # Exact codes or explicit change phrases
+    if clean in ["tamil", "ta", "l3"] or any(p in clean for p in ["change language to tamil", "speak in tamil", "tamil please", "change to tamil", "in tamil", "tamil language"]):
+        return "ta"
+
+    if clean in ["sinhala", "si", "l2"] or any(p in clean for p in ["change language to sinhala", "speak in sinhala", "sinhala please", "change to sinhala", "in sinhala", "sinhala language"]):
+        return "si"
+
+    if clean in ["english", "en", "l1"] or any(p in clean for p in ["speak in english", "english please", "change language to english", "change to english", "in english", "english language"]):
         return "en"
 
     # Safe regex for standalone language names or commands
@@ -100,8 +98,6 @@ def is_language_selection_intent(text: str, in_language_menu: bool = False) -> O
         return "ta"
     if re.search(r'\b(sinhala)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
         return "si"
-    if re.search(r'\b(malayalam)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
-        return "ml"
     if re.search(r'\b(english)\b', clean) and (len(clean) <= 10 or any(w in clean for w in ["language", "speak", "switch", "change", "please", "in", "to"])):
         return "en"
 
@@ -130,66 +126,67 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     # 1. First-Time User Onboarding Welcome
     "onboarding_welcome": {
         "en": (
-            "👋 *Welcome to FoodRescue AI!*\n\n"
-            "We help rescue surplus food and connect it with people and organizations that need it.\n\n"
-            "🍱 *What can you do here?*\n\n"
+            "👋 Welcome to FoodRescue AI!\n"
+            "We help connect surplus food from donors with organizations and communities that need it.\n\n"
+            "You can use this WhatsApp number to:\n"
             "1️⃣ Donate surplus food\n"
-            "2️⃣ Find available food (Recipient Org)\n"
-            "3️⃣ Become a volunteer courier\n"
-            "4️⃣ Track my donation\n"
-            "5️⃣ Track my pickup\n"
-            "6️⃣ Help & Language settings\n\n"
-            "You can simply type what you need. For example:\n"
-            "• _\"I have 20 meals available\"_\n"
-            "• _\"I need food for our community kitchen\"_\n"
-            "• _\"I am free to volunteer today\"_\n\n"
-            "🌐 *Learn more*: https://foodrescue-ai-ten.vercel.app/\n\n"
-            "🌍 *To change language, type*:\n"
-            "• *Sinhala* (or *si* / සිංහල)\n"
-            "• *Tamil* (or *ta* / தமிழ்)\n"
-            "• *English* (or *en*)\n"
-            "• *Malayalam* (or *ml* / മലയാളം)\n"
-            "• or type *Language*\n\n"
-            "Or simply send a voice message. 🎤"
+            "2️⃣ Request available food\n"
+            "3️⃣ Volunteer to collect and deliver food\n"
+            "4️⃣ Check your donation or pickup status\n"
+            "5️⃣ Get help\n\n"
+            "🌐 Website:\n"
+            "https://foodrescue-ai-ten.vercel.app/\n\n"
+            "🌍 Choose your language:\n"
+            "1️⃣ English\n"
+            "2️⃣ Sinhala\n"
+            "3️⃣ Tamil\n\n"
+            "🎤 You can also send a voice message.\n\n"
+            "You can simply tell me what you need, for example:\n"
+            "• \"I have 20 packets of rice available.\"\n"
+            "• \"We need food for 30 people.\"\n"
+            "• \"I am free to volunteer today.\""
         ),
         "si": (
-            "👋 *FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු!*\n\n"
-            "අතිරික්ත ආහාර අපතේ යාම වළක්වා අවශ්‍යතා ඇති අයට බෙදාදීමට අපි සහාය වෙමු.\n\n"
-            "🍱 *ඔබට කළ හැකි දේ:*\n"
-            "1️⃣ අතිරික්ත ආහාර පරිත්‍යාග කරන්න\n"
-            "2️⃣ ආහාර ලබාගන්න (සංවිධාන සඳහා)\n"
-            "3️⃣ ස්වේච්ඡා බෙදාහරින්නෙකු වන්න\n"
-            "4️⃣ පරිත්‍යාග තත්ත්වය පරීක්ෂා කරන්න\n"
-            "5️⃣ බෙදාහැරීම පරීක්ෂා කරන්න\n"
-            "6️⃣ උපකාර / මෙනුව\n\n"
-            "ඔබට අවශ්‍ය දේ කෙලින්ම ලියන්න හෝ හඬ පණිවිඩයක් එවන්න. 🎤\n\n"
-            "🌐 වැඩි විස්තර: https://foodrescue-ai-ten.vercel.app/"
+            "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු!\n"
+            "අතිරික්ත ආහාර පරිත්‍යාගශීලීන්ගෙන් ලබාගෙන අවශ්‍යතා ඇති සංවිධාන සහ ප්‍රජාවන් වෙත සම්බන්ධ කිරීමට අපි සහාය වෙමු.\n\n"
+            "ඔබට මෙම WhatsApp අංකය භාවිතා කළ හැක්කේ:\n"
+            "1️⃣ අතිරික්ත ආහාර පරිත්‍යාග කිරීමට\n"
+            "2️⃣ ලබාගත හැකි ආහාර ඉල්ලුම් කිරීමට\n"
+            "3️⃣ ආහාර එකතු කර බෙදාහැරීමට ස්වේච්ඡාවෙන් ඉදිරිපත් වීමට\n"
+            "4️⃣ ඔබගේ පරිත්‍යාග හෝ බෙදාහැරීම් තත්ත්වය පරීක්ෂා කිරීමට\n"
+            "5️⃣ උපකාර ලබාගැනීමට\n\n"
+            "🌐 වෙබ් අඩවිය:\n"
+            "https://foodrescue-ai-ten.vercel.app/\n\n"
+            "🌍 ඔබගේ භාෂාව තෝරන්න:\n"
+            "1️⃣ English\n"
+            "2️⃣ Sinhala\n"
+            "3️⃣ Tamil\n\n"
+            "🎤 ඔබට හඬ පණිවිඩයක් ද එවිය හැක.\n\n"
+            "ඔබට අවශ්‍ය දේ කෙලින්ම පැවසිය හැක, උදාහරණයක් ලෙස:\n"
+            "• \"මා ළඟ බත් පැකට් 20ක් තියෙනවා.\"\n"
+            "• \"අපිට 30 දෙනෙකුට ආහාර අවශ්‍යයි.\"\n"
+            "• \"මට අද ස්වේච්ඡාවෙන් උදව් කරන්න පුළුවන්.\""
         ),
         "ta": (
-            "👋 *FoodRescue AI இற்கு அன்புடன் வரவேற்கிறோம்!*\n\n"
-            "மீதமுள்ள உணவை வீணாக்காமல் தேவையானவர்களுக்கு பகிர்ந்தளிக்க நாங்கள் உதவுகிறோம்.\n\n"
-            "🍱 *நீங்கள் செய்யக்கூடியவை:*\n"
-            "1️⃣ உணவை தானமாக வழங்க\n"
-            "2️⃣ உணவைப் பெற (அமைப்புகள்)\n"
-            "3️⃣ தன்னார்வலராக இணைய\n"
-            "4️⃣ எனது நன்கொடையை கண்காணிக்க\n"
-            "5️⃣ டெலிவரியை கண்காணிக்க\n"
-            "6️⃣ உதவி / மெனு\n\n"
-            "உங்கள் தேவையை நேரடியாக எழுதலாம் அல்லது குரல் செய்தியை (Voice Message) அனுப்பலாம். 🎤\n\n"
-            "🌐 மேலும் அறிய: https://foodrescue-ai-ten.vercel.app/"
-        ),
-        "ml": (
-            "👋 *FoodRescue AI-ലേക്ക് സ്വാഗതം!*\n\n"
-            "ഭക്ഷണം പാഴാക്കാതെ ആവശ്യക്കാരിലേക്ക് എത്തിക്കാൻ ഞങ്ങൾ സഹായിക്കുന്നു.\n\n"
-            "🍱 *നിങ്ങൾക്ക് ചെയ്യാവുന്ന കാര്യങ്ങൾ:*\n"
-            "1️⃣ ഭക്ഷണം ദാനം ചെയ്യുക\n"
-            "2️⃣ ഭക്ഷണം ആവശ്യപ്പെടുക\n"
-            "3️⃣ സന്നദ്ധപ്രവർത്തകനാകുക\n"
-            "4️⃣ സംഭാവന ട്രാക്ക് ചെയ്യുക\n"
-            "5️⃣ ഡെലിവറി ട്രാക്ക് ചെയ്യുക\n"
-            "6️⃣ സഹായം\n\n"
-            "നിങ്ങളുടെ ആവശ്യം ടൈപ്പ് ചെയ്യുകയോ വോയ്സ് മെസ്സേജ് അയക്കുകയോ ചെയ്യാം. 🎤\n\n"
-            "🌐 കൂടുതൽ വിവരങ്ങൾക്ക്: https://foodrescue-ai-ten.vercel.app/"
+            "👋 FoodRescue AI இற்கு அன்புடன் வரவேற்கிறோம்!\n"
+            "நன்கொடையாளர்களிடமிருந்து மீதமுள்ள உணவை பெற்று தேவைப்படும் அமைப்புகள் மற்றும் சமூகங்களுடன் இணைக்க நாங்கள் உதவுகிறோம்.\n\n"
+            "நீங்கள் இந்த WhatsApp எண்ணைப் பயன்படுத்தி:\n"
+            "1️⃣ உபரி உணவை தானமாக வழங்கலாம்\n"
+            "2️⃣ கிடைக்கும் உணவைக் கோரலாம்\n"
+            "3️⃣ உணவைச் சேகரித்து வழங்க தன்னார்வலராக உதவலாம்\n"
+            "4️⃣ உங்கள் நன்கொடை அல்லது டெலிவரி நிலையைச் சரிபார்க்கலாம்\n"
+            "5️⃣ உதவி பெறலாம்\n\n"
+            "🌐 இணையதளம்:\n"
+            "https://foodrescue-ai-ten.vercel.app/\n\n"
+            "🌍 உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:\n"
+            "1️⃣ English\n"
+            "2️⃣ Sinhala\n"
+            "3️⃣ Tamil\n\n"
+            "🎤 நீங்கள் குரல் செய்தியையும் (Voice Message) அனுப்பலாம்.\n\n"
+            "உங்களுக்கு என்ன தேவை என்பதை நேரடியாகக் கூறலாம், உதாரணமாக:\n"
+            "• \"என்னிடம் 20 அரிசி பொட்டலங்கள் உள்ளன.\"\n"
+            "• \"எங்களுக்கு 30 பேருக்கு உணவு தேவை.\"\n"
+            "• \"நான் இன்று தன்னார்வலராக உதவத் தயார்.\""
         )
     },
 
@@ -221,83 +218,51 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "3️⃣ தன்னார்வலர் சேவை\n"
             "4️⃣ நிலையை அறிய\n"
             "5️⃣ மொழி மற்றும் உதவி"
-        ),
-        "ml": (
-            "👋 *വീണ്ടും സ്വാഗതം!*\n\n"
-            "ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?\n\n"
-            "1️⃣ ഭക്ഷണം ദാനം ചെയ്യുക\n"
-            "2️⃣ ഭക്ഷണം കണ്ടെത്തുക\n"
-            "3️⃣ സന്നദ്ധപ്രവർത്തനം\n"
-            "4️⃣ സ്റ്റാറ്റസ് പരിശോധിക്കുക\n"
-            "5️⃣ ഭാഷ & സഹായം"
         )
     },
 
     # 3. Language Selection Confirmation
     "language_selected": {
-        "en": "🌐 Language set to *English*. How can I assist your food rescue coordination today?",
-        "si": "🌐 භාෂාව *සිංහල* ලෙස තෝරාගන්නා ලදී. අද ඔබට අවශ්‍ය ආහාර සහනාධාරය කුමක්ද?",
-        "ta": "🌐 மொழி *தமிழ்* ஆக அமைக்கப்பட்டது. இன்று உங்களுக்கு என்ன உதவி தேவை?",
-        "ml": "🌐 ഭാഷ *മലയാളം* ആയി തിരഞ്ഞെടുത്തു. ഇന്ന് ഞാൻ എങ്ങനെ സഹായിക്കണം?"
+        "en": "English language selected. I will respond to your messages in English from now on.",
+        "si": "සිංහල භාෂාව තෝරා ගන්නා ලදී. මින් පසු මම ඔබට සිංහලෙන් පිළිතුරු දෙන්නෙමි.",
+        "ta": "தமிழ் மொழி தேர்ந்தெடுக்கப்பட்டது. இனி உங்கள் செய்திகளுக்கு தமிழில் பதிலளிப்பேன்."
     },
 
     # 4. Location Prompt
     "request_location": {
         "en": (
-            "📍 *Please share your location using WhatsApp*:\n\n"
-            "Tap: 📎 (attachment) → *Location* → *Send Your Current Location*\n\n"
-            "🔒 _Your exact coordinates will only be shared securely with your assigned courier._"
+            "Almost done! 📍\n"
+            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n"
+            "Tap ➕ → Location → Send your current location."
         ),
         "si": (
-            "📍 *කරුණාකර WhatsApp මඟින් ඔබගේ ස්ථානය එවන්න*:\n\n"
-            "📎 (attachment) → *Location* → *Send Your Current Location* තෝරන්න.\n\n"
-            "🔒 _ඔබගේ නිශ්චිත ස්ථානය පැමිණෙන කුරියර්වරයාට පමණක් ආරක්ෂිතව ලබා දේ._"
+            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n"
+            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n"
+            "Tap ➕ → Location → Send your current location."
         ),
         "ta": (
-            "📍 *தயவுசெய்து WhatsApp மூலம் உங்கள் இருப்பிடத்தை (Location) பகிரவும்*:\n\n"
-            "📎 → *Location* → *Send Your Current Location* ஐ அழுத்தவும்.\n\n"
-            "🔒 _உங்கள் இருப்பிடம் நியமிக்கப்பட்ட தன்னார்வலருக்கு மட்டுமே பாதுகாப்பாக பகிரப்படும்._"
-        ),
-        "ml": (
-            "📍 *ദയവായി WhatsApp വഴി ലൊക്കേഷൻ അയക്കുക*:\n\n"
-            "📎 → *Location* → *Send Your Current Location* ക്ലിക്ക് ചെയ്യുക.\n\n"
-            "🔒 _നിങ്ങളുടെ കൃത്യമായ സ്ഥലം ചുമതലപ്പെടുത്തിയ ആൾക്ക് മാത്രമേ ലഭ്യമാക്കൂ._"
+            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n"
+            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n"
+            "Tap ➕ → Location → Send your current location."
         )
     },
 
     # 5. Missing Info Extraction Prompt
     "missing_location": {
         "en": (
-            "Thanks! I have noted:\n"
-            "• 🍱 *Food*: {food_type}\n"
-            "• 📦 *Quantity*: {quantity} {unit}\n"
-            "• ⏰ *Available until*: {deadline}\n\n"
-            "I still need your pickup location.\n\n"
-            "📍 *Please share your location using WhatsApp Location* (📎 → Location)."
+            "Almost done! 📍\n"
+            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n"
+            "Tap ➕ → Location → Send your current location."
         ),
         "si": (
-            "ස්තූතියි! මා සටහන් කරගත්තා:\n"
-            "• 🍱 *ආහාර*: {food_type}\n"
-            "• 📦 *ප්‍රමාණය*: {quantity} {unit}\n"
-            "• ⏰ *වේලාව*: {deadline}\n\n"
-            "ආහාර ලබාගන්නා ස්ථානය අවශ්‍යයි.\n\n"
-            "📍 *කරුණාකර WhatsApp Location මඟින් ස්ථානය එවන්න* (📎 → Location)."
+            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n"
+            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n"
+            "Tap ➕ → Location → Send your current location."
         ),
         "ta": (
-            "நன்றி! விபரங்கள் பதிவு செய்யப்பட்டன:\n"
-            "• 🍱 *உணவு*: {food_type}\n"
-            "• 📦 *அளவு*: {quantity} {unit}\n"
-            "• ⏰ *நேரம்*: {deadline}\n\n"
-            "உணவை பெற்றுக்கொள்ளும் இடம் தேவை.\n\n"
-            "📍 *தயவுசெய்து WhatsApp Location ஐ பகிரவும்* (📎 → Location)."
-        ),
-        "ml": (
-            "നന്ദി! വിവരങ്ങൾ രേഖപ്പെടുത്തി:\n"
-            "• 🍱 *ഭക്ഷണം*: {food_type}\n"
-            "• 📦 *അളവ്*: {quantity} {unit}\n"
-            "• ⏰ *സമയം*: {deadline}\n\n"
-            "ലൊക്കേഷൻ ആവശ്യമാണ്.\n\n"
-            "📍 *ദയവായി WhatsApp ലൊക്കേഷൻ പങ്കിടുക* (📎 → Location)."
+            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n"
+            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n"
+            "Tap ➕ → Location → Send your current location."
         )
     },
 
@@ -314,10 +279,6 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "ta": (
             "🎉 *சிறப்பு! நீங்கள் இப்போது AVAILABLE ஆக பதிவு செய்யப்பட்டுள்ளீர்கள்.*\n\n"
             "அருகிலுள்ள உணவு சேகரிப்புப் பணிகள் பற்றி விரைவில் அறிவிப்போம்! 🚚"
-        ),
-        "ml": (
-            "🎉 *നിങ്ങൾ ഇപ്പോൾ AVAILABLE ആണ്.*\n\n"
-            "സമീപത്തുള്ള ഭക്ഷണ ശേഖരണങ്ങൾ ഉടൻ അറിയിക്കും! 🚚"
         )
     },
 
@@ -346,145 +307,316 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "• 🏢 **பெறுநர்**: {dest_org} ({dest_loc})\n"
             "• 📍 **Navigation**: {map_link}\n\n"
             "ஒப்படைத்த பிறகு *'Delivered'* என்று பதிலளிக்கவும்."
-        ),
-        "ml": (
-            "🍱 *ഭക്ഷണം ശേഖരിച്ചതായി സ്ഥിരീകരിച്ചു!*\n\n"
-            "**അടുത്ത ഘട്ടം**: ഭക്ഷണം എത്തിക്കേണ്ട സ്ഥലം:\n"
-            "• 🏢 {dest_org} ({dest_loc})\n"
-            "• 📍 {map_link}\n\n"
-            "ഡെലിവറി ചെയ്ത ശേഷം *'Delivered'* എന്ന് മറുപടി നൽകുക."
         )
     },
 
     # 8. Delivery Completed Celebration
     "delivery_completed": {
         "en": (
-            "🎉 *Delivery Completed!*\n\n"
-            "• **Task ID**: `{task_id}`\n"
-            "• **Status**: `DELIVERED` / `COMPLETED`\n\n"
-            "Thank you for helping rescue and deliver surplus meals to people in need! ❤️\n\n"
-            "💰 **Transport Support**: Estimated reimbursement of **LKR {reimb_amount}** recorded in accounting ledger.\n\n"
-            "You are now marked as **AVAILABLE** for your next rescue."
+            "❤️ *Donation delivered successfully!*\n\n"
+            "Your {quantity} {unit} of {food_type} have reached the recipient organization.\n"
+            "Thank you for helping reduce food waste and support your community! 🙏"
         ),
         "si": (
-            "🎉 *බෙදාහැරීම සාර්ථකව අවසන් විය!*\n\n"
-            "අවශ්‍යතා ඇති අයට ආහාර ලබාදීමට කළ සේවයට ඔබට බෙහෙවින් ස්තූතියි! ❤️\n\n"
-            "💰 **ගමන් වියදම් සහනාධාරය**: රු. **{reimb_amount}** ගිණුම් වාර්තාවට ඇතුළත් විය.\n\n"
-            "ඔබ ඊළඟ බෙදාහැරීම සඳහා නැවතත් **AVAILABLE** ලෙස සටහන් විය."
+            "❤️ *පරිත්‍යාගය සාර්ථකව භාරදෙන ලදී!*\n\n"
+            "ඔබගේ {food_type} {quantity} {unit} සංවිධානය වෙත ළඟා විය.\n"
+            "ආහාර අපතේ යාම වළක්වා ප්‍රජාවට සහාය වීම පිළිබඳව ඔබට ස්තූතියි! 🙏"
         ),
         "ta": (
-            "🎉 *உணவு விநியோகம் வெற்றிகரமாக முடிந்தது!*\n\n"
-            "தேவைப்படுவோருக்கு உணவளிக்க உதவியதற்கு மிக்க நன்றி! ❤️\n\n"
-            "💰 **பயண உதவித்தொகை**: ரூ. **{reimb_amount}** பதிவேட்டில் பதிவு செய்யப்பட்டது.\n\n"
-            "அடுத்த உதவிக்கு நீங்கள் இப்போது **AVAILABLE** ஆக உள்ளீர்கள்."
-        ),
-        "ml": (
-            "🎉 *ഡെലിവറി വിജയകരമായി പൂർത്തിയായി!*\n\n"
-            "സഹായത്തിന് വളരെ നന്ദി! ❤️\n\n"
-            "💰 **യാത്രാ സഹായം**: LKR **{reimb_amount}** രേഖപ്പെടുത്തി."
+            "❤️ *நன்கொடை வெற்றிகரமாக வழங்கப்பட்டது!*\n\n"
+            "உங்கள் {quantity} {unit} {food_type} பெறும் அமைப்பை அடைந்தது.\n"
+            "உணவு வீணாவதைத் தடுத்து சமூகத்திற்கு உதவியதற்கு மிக்க நன்றி! 🙏"
         )
     },
 
-    # 9. Slot Prompts
+    # 9. Donor Workflow Slot Prompts
+    "donor_ask_name": {
+        "en": "Great! 🙏 I've recorded {quantity} {unit} of {food_type}. 🍚 📍\n\nWhat is your name or business/hotel name?",
+        "si": "ස්තූතියි! 🙏 මා {food_type} {quantity} {unit} සටහන් කරගත්තා. 🍚 📍\n\nඔබගේ නම හෝ ව්‍යාපාරික/හෝටල් නාමය කුමක්ද?",
+        "ta": "நன்றி! 🙏 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚 📍\n\nஉங்கள் பெயர் அல்லது வணிக/ஹோட்டல் பெயர் என்ன?"
+    },
+
+    "donor_ask_city": {
+        "en": "Thanks, {name}! 📍 I've noted {quantity} {unit} of {food_type}. 🍚\n\nWhich city or area is the food currently located in?",
+        "si": "ස්තූතියි, {name}! 📍 මා {food_type} {quantity} {unit} සටහන් කරගත්තා. 🍚\n\nආහාර දැනට පිහිටා ඇති නගරය හෝ ප්‍රදේශය කුමක්ද?",
+        "ta": "நன்றி, {name}! 📍 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚\n\nஉணவு தற்போது எந்த நகரம் அல்லது பகுதியில் உள்ளது?"
+    },
+
+    "donor_ask_deadline": {
+        "en": "Got it. 📍 {city}\n\nWhat time will the food be available until for collection / pickup? (e.g. 'Before 8 PM', 'By 6:30 PM')",
+        "si": "තේරුම් ගත්තා. 📍 {city}\n\nආහාර එකතු කරගත හැකි අවසන් වේලාව කවදාද? (උදා. 'රාත්‍රී 8 ට පෙර')",
+        "ta": "புரிந்தது. 📍 {city}\n\nஉணவை எத்தனை மணிக்குள் சேகரிக்க முடியும்? (எ.கா. 'இரவு 8 மணிக்கு முன்')"
+    },
+
+    "donor_ask_location_native": {
+        "en": (
+            "Almost done! 📍\n"
+            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n"
+            "Tap ➕ → Location → Send your current location."
+        ),
+        "si": (
+            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n"
+            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n"
+            "Tap ➕ → Location → Send your current location."
+        ),
+        "ta": (
+            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n"
+            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n"
+            "Tap ➕ → Location → Send your current location."
+        )
+    },
+
+    "donor_location_received": {
+        "en": "📍 Pickup location received successfully.",
+        "si": "📍 ලබාගැනීමේ ස්ථානය සාර්ථකව ලැබිණි.",
+        "ta": "📍 உணவு சேகரிக்கும் இருப்பிடம் வெற்றிகரமாகப் பெறப்பட்டது."
+    },
+
     "slot_ask_quantity": {
-        "en": "Great! 👍 I noted {food_type}.\n\n📦 *How many meals / portions do you have available?*",
+        "en": "Great! 👍 I noted {food_type}.\n\n📦 *How many packets or portions do you have available?*",
         "si": "ඉතා හොඳයි! 👍 මා {food_type} සටහන් කරගත්තා.\n\n📦 *ඔබ සතුව ආහාර පාර්සල් / ප්‍රමාණය කොපමණ තිබේද?*",
-        "ta": "சிறப்பு! 👍 {food_type} விபரம் பதிவு செய்யப்பட்டது.\n\n📦 *உங்களிடம் எத்தனை உணவுப் பொதிகள் / அளவுகள் உள்ளன?*",
-        "ml": "നല്ലത്! 👍 {food_type} രേഖപ്പെടുത്തി.\n\n📦 *എത്ര ഭക്ഷണ പൊതികൾ ലഭ്യമാണ്?*"
+        "ta": "சிறப்பு! 👍 {food_type} விபரம் பதிவு செய்யப்பட்டது.\n\n📦 *உங்களிடம் எத்தனை பொதிகள் / உணவுகள் உள்ளன?*"
     },
 
     "slot_ask_location": {
-        "en": "📍 *Where can the food be collected?* (Please enter your address/city or share your WhatsApp Location)",
-        "si": "📍 *ආහාර ලබාගත හැකි ස්ථානය කොහේද?* (ලිපිනය/නගරය ලියන්න හෝ WhatsApp Location එවන්න)",
-        "ta": "📍 *உணவை பெற்றுக்கொள்ள வேண்டிய இடம் எது?* (முகவரி/நகரத்தை எழுதவும் அல்லது WhatsApp Location பகிரவும்)",
-        "ml": "📍 *ഭക്ഷണം ശേഖരിക്കേണ്ട സ്ഥലം എവിടെയാണ്?*"
+        "en": (
+            "Almost done! 📍\n\n"
+            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n\n"
+            "Tap ➕ → Location → Send your current location."
+        ),
+        "si": (
+            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n\n"
+            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n\n"
+            "Tap ➕ → Location → Send your current location."
+        ),
+        "ta": (
+            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n\n"
+            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n\n"
+            "Tap ➕ → Location → Send your current location."
+        )
     },
 
     "slot_ask_deadline": {
-        "en": "⏰ *What time will the food be available until for pickup?* (e.g. 'Before 8 PM', 'By 6:30 PM')",
-        "si": "⏰ *ආහාර ලබාගත යුතු අවසන් වේලාව කවදාද?* (උදා. 'රාත්‍රී 8 ට පෙර')",
-        "ta": "⏰ *உணவை எத்தனை மணிக்குள் பெற்றுக்கொள்ள வேண்டும்?* (எ.கா. 'இரவு 8 மணிக்கு முன்')",
-        "ml": "⏰ *ഏത് സമയം വരെ ഭക്ഷണം ശേഖരിക്കാം?*"
+        "en": "Until what time can the food be collected?",
+        "si": "ආහාර එකතු කරගත හැකි අවසන් වේලාව කවදාද?",
+        "ta": "உணவை எத்தனை மணிக்குள் சேகரிக்க முடியும்?"
     },
 
     "donation_summary_confirm": {
         "en": (
-            "📦 *Please confirm your donation details*:\n\n"
-            "• 🍱 *Food*: {quantity} {unit} of {food_type} ({dietary})\n"
-            "• 📍 *Pickup Location*: {location}\n"
-            "• ⏰ *Available*: {deadline}\n\n"
-            "Reply **Confirm** to create the donation, or tell me what you want to change."
+            "📦 *Donation Summary*\n\n"
+            "👤 Donor: {donor_name}\n"
+            "🏢 Business: {business_name}\n"
+            "🍚 Food: {food_type}\n"
+            "📦 Quantity: {quantity} {unit}\n"
+            "📍 Pickup area: {city}\n"
+            "⏰ Pickup deadline: {deadline}\n"
+            "📞 Contact: {contact_phone}\n"
+            "📍 Pickup location: Received\n\n"
+            "Please check the details above.\n"
+            "Reply *Confirm* to publish this donation.\n"
+            "Reply *Edit* if you want to change anything."
         ),
         "si": (
-            "📦 *කරුණාකර ඔබගේ පරිත්‍යාග විස්තර තහවුරු කරන්න*:\n\n"
-            "• 🍱 *ආහාර*: {food_type} {quantity} {unit} ({dietary})\n"
-            "• 📍 *ස්ථානය*: {location}\n"
-            "• ⏰ *වේලාව*: {deadline}\n\n"
-            "පරිත්‍යාගය නිර්මාණය කිරීමට **Confirm** (තහවුරුයි) ලෙස පිළිතුරු දෙන්න හෝ වෙනස් කිරීමට අවශ්‍ය දේ ලියන්න."
+            "📦 *පරිත්‍යාග සාරාංශය*\n\n"
+            "👤 පරිත්‍යාගශීලී: {donor_name}\n"
+            "🏢 ව්‍යාපාරය: {business_name}\n"
+            "🍚 ආහාර: {food_type}\n"
+            "📦 ප්‍රමාණය: {quantity} {unit}\n"
+            "📍 ප්‍රදේශය: {city}\n"
+            "⏰ අවසන් වේලාව: {deadline}\n"
+            "📞 දුරකථන: {contact_phone}\n"
+            "📍 ස්ථානය: ලැබිණි\n\n"
+            "කරුණාකර ඉහත විස්තර පරීක්ෂා කරන්න.\n"
+            "මෙම පරිත්‍යාගය පළ කිරීමට *Confirm* (තහවුරුයි) ලෙස පිළිතුරු දෙන්න.\n"
+            "වෙනස් කිරීමට *Edit* යැයි පිළිතුරු දෙන්න."
         ),
         "ta": (
-            "📦 *தயவுசெய்து உங்கள் நன்கொடை விபரங்களை உறுதிப்படுத்தவும்*:\n\n"
-            "• 🍱 *உணவு*: {quantity} {unit} {food_type} ({dietary})\n"
-            "• 📍 *இடம்*: {location}\n"
-            "• ⏰ *நேரம்*: {deadline}\n\n"
-            "நன்கொடையை உருவாக்க **Confirm** (உறுதி) என்று பதிலளிக்கவும், அல்லது மாற்ற வேண்டியதை கூறவும்."
-        ),
-        "ml": (
-            "📦 *വിവരങ്ങൾ സ്ഥിരീകരിക്കുക*:\n\n"
-            "• 🍱 {quantity} {unit} {food_type} ({dietary})\n"
-            "• 📍 {location}\n"
-            "• ⏰ {deadline}\n\n"
-            "സ്ഥിരീകരിക്കാൻ **Confirm** എന്ന് ടൈപ്പ് ചെയ്യുക."
+            "📦 *நன்கொடை சுருக்கம்*\n\n"
+            "👤 நன்கொடையாளர்: {donor_name}\n"
+            "🏢 வணிகம்: {business_name}\n"
+            "🍚 உணவு: {food_type}\n"
+            "📦 அளவு: {quantity} {unit}\n"
+            "📍 பகுதி: {city}\n"
+            "⏰ இறுதி நேரம்: {deadline}\n"
+            "📞 தொடர்பு: {contact_phone}\n"
+            "📍 இருப்பிடம்: பெறப்பட்டது\n\n"
+            "மேலே உள்ள விபரங்களைச் சரிபார்க்கவும்.\n"
+            "இந்த நன்கொடையை வெளியிட *Confirm* என்று பதிலளிக்கவும்.\n"
+            "மாற்ற விரும்பினால் *Edit* என்று பதிலளிக்கவும்."
         )
     },
 
     "donation_created_card": {
         "en": (
-            "✅ *Donation Created & Matched!*\n\n"
-            "• **Donation ID**: `{donation_id}`\n"
-            "• 🍱 **Food**: {quantity} {unit} of {food_type} ({dietary})\n"
-            "• 📍 **Collect from**: {pickup_loc} (Deadline: {deadline})\n"
-            "• 🏢 **Recipient**: {org_name} ({deliv_loc})\n"
-            "• 🚚 **Assigned Volunteer**: {vol_name}\n"
-            "• 📦 **Status**: `PICKUP_ASSIGNED`\n\n"
-            "Thank you for rescuing surplus food! ❤️"
+            "✅ *Donation Created Successfully!*\n\n"
+            "Thank you, {donor_name}! 🙏\n"
+            "🍚 Food: {quantity} {unit} of {food_type}\n"
+            "📍 Pickup: {city}\n"
+            "⏰ Deadline: {deadline}\n"
+            "🆔 Donation ID: {donation_id}\n"
+            "📦 Status: PICKUP_ASSIGNED\n\n"
+            "Your donation has been added to the FoodRescue network.\n"
+            "🔎 We are coordinating with recipient organizations and volunteer couriers.\n\n"
+            "Please wait while we coordinate the pickup. 🚚"
         ),
         "si": (
             "✅ *පරිත්‍යාගය සාර්ථකව නිර්මාණය විය!*\n\n"
-            "• **Donation ID**: `{donation_id}`\n"
-            "• 🍱 **ආහාර**: {food_type} {quantity} {unit} ({dietary})\n"
-            "• 📍 **ස්ථානය**: {pickup_loc}\n"
-            "• 🏢 **භාරගන්නා ආයතනය**: {org_name}\n"
-            "• 🚚 **ස්වේච්ඡා කුරියර්**: {vol_name}\n"
-            "• 📦 **තත්ත්වය**: `PICKUP_ASSIGNED`\n\n"
-            "ආහාර අපතේ යාම වැළැක්වීමට කළ සහායට ස්තූතියි! ❤️"
+            "ස්තූතියි, {donor_name}! 🙏\n"
+            "🍚 ආහාර: {food_type} {quantity} {unit}\n"
+            "📍 ස්ථානය: {city}\n"
+            "⏰ අවසන් වේලාව: {deadline}\n"
+            "🆔 Donation ID: {donation_id}\n"
+            "📦 Status: PICKUP_ASSIGNED\n\n"
+            "ඔබගේ පරිත්‍යාගය FoodRescue ජාලයට එක් කරන ලදී.\n"
+            "🔎 අපි දැන් සුදුසු භාරගන්නා සංවිධානයක් සහ ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ කරමින් සිටිමු.\n\n"
+            "කරුණාකර රැඳී සිටින්න. 🚚"
         ),
         "ta": (
-            "✅ *நன்கொடை வெற்றிகரமாக உருவாக்கப்பட்டு இணைக்கப்பட்டது!*\n\n"
-            "• **Donation ID**: `{donation_id}`\n"
-            "• 🍱 **உணவு**: {quantity} {unit} {food_type} ({dietary})\n"
-            "• 📍 **இடம்**: {pickup_loc}\n"
-            "• 🏢 **பெறுநர்**: {org_name}\n"
-            "• 🚚 **தன்னார்வலர்**: {vol_name}\n"
-            "• 📦 **நிலை**: `PICKUP_ASSIGNED`\n\n"
-            "உணவை வீணாக்காமல் பகிர்ந்தளித்தமைக்கு மிக்க நன்றி! ❤️"
-        ),
-        "ml": (
-            "✅ *സംഭാവന വിജയകരമായി പൂർത്തിയായി!*\n\n"
-            "• **Donation ID**: `{donation_id}`\n"
-            "• 🍱 {quantity} {unit} {food_type} ({dietary})\n"
-            "• 📍 {pickup_loc}\n"
-            "• 🏢 {org_name}\n"
-            "• 🚚 {vol_name}\n"
-            "• 📦 `PICKUP_ASSIGNED`"
+            "✅ *நன்கொடை வெற்றிகரமாக உருவாக்கப்பட்டது!*\n\n"
+            "நன்றி, {donor_name}! 🙏\n"
+            "🍚 உணவு: {quantity} {unit} {food_type}\n"
+            "📍 இடம்: {city}\n"
+            "⏰ நேரம்: {deadline}\n"
+            "🆔 Donation ID: {donation_id}\n"
+            "📦 Status: PICKUP_ASSIGNED\n\n"
+            "உங்கள் நன்கொடை FoodRescue நெட்வொர்க்கில் சேர்க்கப்பட்டுள்ளது.\n"
+            "🔎 நாங்கள் இப்போது பெறும் அமைப்பு மற்றும் தன்னார்வ கூரியரை இணைக்கிறோம்.\n\n"
+            "தயவுசெய்து காத்திருக்கவும். 🚚"
         )
+    },
+
+    "donor_matched_update": {
+        "en": (
+            "🏢 Good news, {donor_name}!\n\n"
+            "Your food donation has been matched with a suitable recipient organization.\n"
+            "🚚 We are now looking for an available volunteer courier to collect and deliver the food.\n"
+            "We will notify you when the pickup is accepted."
+        ),
+        "si": (
+            "🏢 සුභ ආරංචියක්, {donor_name}!\n\n"
+            "ඔබගේ ආහාර පරිත්‍යාගය සුදුසු සංවිධානයක් සමඟ සම්බන්ධ කරන ලදී.\n"
+            "🚚 ආහාර රැගෙන ගොස් භාරදීමට ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ කරමින් සිටිමු.\n"
+            "පරිත්‍යාගය භාරගත් පසු අපි ඔබට දන්වන්නෙමු."
+        ),
+        "ta": (
+            "🏢 நற்செய்தி, {donor_name}!\n\n"
+            "உங்கள் உணவு நன்கொடை பொருத்தமான பெறும் அமைப்போடு இணைக்கப்பட்டுள்ளது.\n"
+            "🚚 உணவை சேகரித்து வழங்க தன்னார்வலரைத் தேடுகிறோம்.\n"
+            "பணி ஏற்கப்பட்டதும் உங்களுக்கு அறிவிப்போம்."
+        )
+    },
+
+    "donor_volunteer_assigned_update": {
+        "en": (
+            "🚚 Great news, {donor_name}!\n\n"
+            "A volunteer courier has accepted your donation pickup.\n"
+            "The courier is preparing to collect the food and deliver it to the matched recipient organization.\n"
+            "You will receive another update when the food is collected."
+        ),
+        "si": (
+            "🚚 සුභ ආරංචියක්, {donor_name}!\n\n"
+            "ස්වේච්ඡා කුරියර්වරයෙකු ඔබගේ ආහාර ලබාගැනීම භාරගෙන ඇත.\n"
+            "ආහාර රැගෙන යාමට කුරියර්වරයා සූදානම් වෙමින් සිටී."
+        ),
+        "ta": (
+            "🚚 நற்செய்தி, {donor_name}!\n\n"
+            "ஒரு தன்னார்வ கூரியர் உங்கள் உணவு சேகரிப்பை ஏற்றுக்கொண்டார்.\n"
+            "உணவை சேகரித்து வழங்க கூரியர் தயாராகி வருகிறார்."
+        )
+    },
+
+    "donor_volunteer_location_update": {
+        "en": (
+            "🚚 Your volunteer courier has accepted the pickup.\n\n"
+            "Volunteer: {volunteer_name}\n"
+            "📍 Current volunteer location:\n"
+            "{map_link}\n\n"
+            "The courier is preparing to collect your food."
+        ),
+        "si": (
+            "🚚 ඔබගේ ස්වේච්ඡා කුරියර්වරයා ගමන් ආරම්භ කර ඇත.\n\n"
+            "කුරියර්: {volunteer_name}\n"
+            "📍 වත්මන් ස්ථානය:\n"
+            "{map_link}\n\n"
+            "ආහාර එකතු කරගැනීමට කුරියර්වරයා පැමිණෙමින් සිටී."
+        ),
+        "ta": (
+            "🚚 உங்கள் தன்னார்வ கூரியர் பணியை ஏற்றுக்கொண்டார்.\n\n"
+            "தன்னார்வலர்: {volunteer_name}\n"
+            "📍 தற்போதைய இருப்பிடம்:\n"
+            "{map_link}\n\n"
+            "கூரியர் உணவை சேகரிக்க தயாராகி வருகிறார்."
+        )
+    },
+
+    "donor_food_collected_update": {
+        "en": "📦 Your food has been collected successfully.",
+        "si": "📦 ඔබගේ ආහාර සාර්ථකව එකතු කරගන්නා ලදී.",
+        "ta": "📦 உங்கள் உணவு வெற்றிகரமாக சேகரிக்கப்பட்டது."
+    },
+
+    "volunteer_pickup_offer": {
+        "en": (
+            "🚚 FoodRescue Pickup Available\n\n"
+            "🍚 Food: {quantity} {unit} {food_type}\n"
+            "📦 Quantity: {quantity} {unit}\n"
+            "📍 Pickup: {pickup_city}\n"
+            "🏢 Delivery: {recipient_name}\n"
+            "⏰ Deadline: {deadline}\n"
+            "📏 Estimated distance: {distance_km} km\n"
+            "💰 Estimated transport support: LKR {transport_support}\n"
+            "🗺️ Route:\n"
+            "{route_url}\n\n"
+            "Would you like to accept this pickup?\n"
+            "Reply:\n"
+            "1️⃣ Accept\n"
+            "2️⃣ Reject"
+        ),
+        "si": (
+            "🚚 ආහාර බෙදාහැරීමේ අවස්ථාවක් ඇත\n\n"
+            "🍚 ආහාර: {food_type} {quantity} {unit}\n"
+            "📦 ප්‍රමාණය: {quantity} {unit}\n"
+            "📍 ලබාගැනීම: {pickup_city}\n"
+            "🏢 භාරදීම: {recipient_name}\n"
+            "⏰ අවසන් වේලාව: {deadline}\n"
+            "📏 දුර: {distance_km} km\n"
+            "💰 ඇස්තමේන්තුගත ප්‍රවාහන සහනාධාරය: රු. {transport_support}\n"
+            "🗺️ මාර්ගය:\n"
+            "{route_url}\n\n"
+            "මෙම බෙදාහැරීම භාරගැනීමට කැමතිද?\n"
+            "පිළිතුරු දෙන්න:\n"
+            "1️⃣ Accept\n"
+            "2️⃣ Reject"
+        ),
+        "ta": (
+            "🚚 உணவு சேகரிப்புப் பணி கிடைத்துள்ளது\n\n"
+            "🍚 உணவு: {quantity} {unit} {food_type}\n"
+            "📦 அளவு: {quantity} {unit}\n"
+            "📍 பெறுமிடம்: {pickup_city}\n"
+            "🏢 சேருமிடம்: {recipient_name}\n"
+            "⏰ நேரம்: {deadline}\n"
+            "📏 தூரம்: {distance_km} km\n"
+            "💰 பயண உதவித்தொகை: ரூ. {transport_support}\n"
+            "🗺️ பாதை:\n"
+            "{route_url}\n\n"
+            "இந்த பணியை ஏற்க விரும்புகிறீர்களா?\n"
+            "பதிலளிக்கவும்:\n"
+            "1️⃣ Accept\n"
+            "2️⃣ Reject"
+        )
+    },
+
+    "volunteer_already_claimed": {
+        "en": "Sorry, this pickup has already been accepted by another volunteer. Thank you for responding! 🙏",
+        "si": "සමාවන්න, මෙම බෙදාහැරීම දැනටමත් වෙනත් ස්වේච්ඡා සාමාජිකයෙකු විසින් භාරගෙන ඇත. ප්‍රතිචාර දැක්වීමට ස්තූතියි! 🙏",
+        "ta": "மன்னிக்கவும், இந்த பணி ஏற்கனவே மற்றொரு தன்னார்வலரால் ஏற்றுக்கொள்ளப்பட்டது. பதிலளித்ததற்கு நன்றி! 🙏"
     },
 
     "response_mode_updated": {
         "en": "🎙️ Response mode preference updated to *{mode}*.",
         "si": "🎙️ ප්‍රතිචාර මාදිලිය *{mode}* ලෙස යාවත්කාලීන විය.",
-        "ta": "🎙️ பதில் பயன்முறை *{mode}* ஆக மாற்றப்பட்டது.",
-        "ml": "🎙️ *{mode}* ആയി തിരഞ്ഞെടുത്തു."
+        "ta": "🎙️ பதில் பயன்முறை *{mode}* ஆக மாற்றப்பட்டது."
     },
 
     "returning_donor_welcome": {
@@ -498,7 +630,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "4️⃣ Help & Language"
         ),
         "si": (
-            "👋 *නැවතත් සාදරයෙන් පිළිගනිමු {name}!*\n\n"
+            "👋 *නැවතත් සාදරයෙන් පිළිගනිමු {name}!* (ලියාපදිංචි පරිත්‍යාගශීලී)\n\n"
             "අද ඔබට කළ යුතු දේ කුමක්ද?\n"
             "1️⃣ තවත් ආහාර පරිත්‍යාග කරන්න\n"
             "2️⃣ මගේ පරිත්‍යාග තත්ත්වය පරීක්ෂා කරන්න\n"
@@ -506,18 +638,12 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "4️⃣ උපකාර සහ භාෂාව"
         ),
         "ta": (
-            "👋 *மீண்டும் நல்வரவு {name}!*\n\n"
+            "👋 *மீண்டும் நல்வரவு {name}!* (பதிவுசெய்த நன்கொடையாளர்)\n\n"
             "இன்று நீங்கள் என்ன செய்ய விரும்புகிறீர்கள்?\n"
             "1️⃣ மேலும் உணவு தானம் செய்ய\n"
             "2️⃣ நன்கொடை நிலையை அறிய\n"
             "3️⃣ விபரங்களை மாற்ற\n"
             "4️⃣ உதவி மற்றும் மொழி"
-        ),
-        "ml": (
-            "👋 *സ്വാഗതം {name}!*\n\n"
-            "1️⃣ ഭക്ഷണം ദാനം ചെയ്യുക\n"
-            "2️⃣ സ്റ്റാറ്റസ് പരിശോധിക്കുക\n"
-            "3️⃣ സഹായം"
         )
     },
 
@@ -534,10 +660,6 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "ta": (
             "மன்னிக்கவும், அந்த கோரிக்கையை செயலாக்குவதில் சிக்கல் ஏற்பட்டது.\n\n"
             "தயவுசெய்து சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும். 🙏"
-        ),
-        "ml": (
-            "ക്ഷമിക്കണം, ഇപ്പോൾ പ്രോസസ്സ് ചെയ്യാൻ സാധിച്ചില്ല.\n\n"
-            "ദയവായി വീണ്ടും ശ്രമിക്കുക. 🙏"
         )
     }
 }
