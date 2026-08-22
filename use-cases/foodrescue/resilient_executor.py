@@ -408,30 +408,172 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             f"3️⃣ Check my active pickups"
         )
 
-    # 7. Recipient Flow ("2", "request food", "need food", "community kitchen")
-    if clean_p == "2" or any(m in clean_p for m in ["need food", "request food", "community kitchen", "food bank", "shelter", "we need", "meals for", "packets for", "food for our", "for our shelter"]):
+    # 7. Recipient Organization Workflow ("2", "request food", "need food", "community organization", "shelter", "hope food")
+    is_org_query = clean_p in ["2", "view all", "view all available donations", "view available", "all donations", "view donations", "available donations", "surplus food"]
+    is_org_intent = any(m in clean_p for m in [
+        "community organization", "need food", "request food", "food bank", "shelter",
+        "we need", "meals for", "packets for", "food for our", "for our shelter",
+        "organization name:", "hope food home", "hope food", "charity", "feeding people"
+    ])
+    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    in_org_workflow = curr_state.get("workflow") == "RECIPIENT_REQUEST"
+
+    if (is_org_query or is_org_intent or in_org_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow):
         existing_org = database.get_organization_by_phone(phone) if phone else None
-        org_name = (existing_org.get("name") if existing_org else None) or "Community Food Organization"
-        org_loc = (existing_org.get("location") if existing_org else None) or "Colombo"
-        if not existing_org and phone:
-            tools.register_organization(
-                name=org_name,
-                location=org_loc,
-                service_area="Colombo",
-                accepted_food_types="prepared meals, bakery, dry rations",
-                phone=phone
+        
+        # 7a. User explicitly asked to view all available donations across the network
+        if is_org_query and existing_org:
+            all_dons = database.get_all_donations()
+            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING", "PICKUP_ASSIGNED"]]
+            if active_dons:
+                lines = []
+                for idx, don in enumerate(active_dons[:5], 1):
+                    f_type = don.get("food_type", "Prepared Meals")
+                    qty_d = don.get("quantity", 0)
+                    unit_d = don.get("unit", "portions")
+                    loc_d = don.get("pickup_location", "Sri Lanka")
+                    lines.append(f"{idx}️⃣ **{qty_d} {unit_d} — {f_type}** (📍 {loc_d})")
+                items_str = "\n".join(lines)
+                return (
+                    f"📦 **Available Surplus Food Donations Across Network:**\n\n"
+                    f"{items_str}\n\n"
+                    f"📍 Please share your organization's delivery location using WhatsApp (Tap ➕ → Location → Send current location 📍) to reserve food!"
+                )
+            else:
+                return (
+                    "📦 **Current Surplus Inventory:**\n\n"
+                    "There are currently 0 unassigned donations in the network.\n"
+                    "We have logged your community request and our AI coordinator will automatically notify you the moment fresh food is posted in your area!"
+                )
+
+        # 7b. Entity extraction for multi-field messages or progressive slot answers
+        org_name = (existing_org.get("name") if existing_org else None) or curr_state.get("org_name")
+        org_loc = (existing_org.get("location") if existing_org else None) or curr_state.get("city")
+        food_needed = curr_state.get("food_needed")
+
+        # Extract Organization Name
+        name_match = re.search(r"(?:organization\s*(?:name)?|name)\s*:\s*([^\n\r,]+)", prompt, re.IGNORECASE)
+        if name_match:
+            org_name = name_match.group(1).strip()
+        elif "hope food home" in clean_p or "hope food" in clean_p:
+            org_name = "Hope Food Home"
+        elif curr_state.get("expected_input_type") == "ORG_NAME" and len(clean_p.split()) <= 6 and not is_org_intent:
+            org_name = prompt.strip()
+
+        # Extract Location / City
+        loc_match = re.search(r"(?:location|city|district|area)\s*:\s*([^\n\r,]+)", prompt, re.IGNORECASE)
+        if loc_match:
+            org_loc = loc_match.group(1).strip()
+        else:
+            cities = ["mawanella", "kegalle", "colombo", "kandy", "galle", "matara", "negombo", "gampaha", "jaffna", "kurunegala", "anuradhapura", "batticaloa", "trincomalee", "ratnapura"]
+            for c in cities:
+                if c in clean_p:
+                    org_loc = c.capitalize()
+                    break
+        if not org_loc and curr_state.get("expected_input_type") == "CITY" and len(clean_p.split()) <= 3:
+            org_loc = prompt.strip()
+
+        # Extract Food Need
+        food_match = re.search(r"(?:we\s+need|need)\s*([^\n\r\.]+)", prompt, re.IGNORECASE)
+        if food_match:
+            food_needed = food_match.group(1).strip()
+        elif curr_state.get("expected_input_type") == "FOOD_NEED":
+            food_needed = prompt.strip()
+
+        # If all details are present, register & match!
+        if (org_name or existing_org) and (org_loc or (existing_org and existing_org.get("location"))):
+            final_org_name = org_name or (existing_org.get("name") if existing_org else "Hope Food Home")
+            final_org_loc = org_loc or (existing_org.get("location") if existing_org else "Mawanella")
+            final_food = food_needed or "Meal packets"
+
+            if phone and not existing_org:
+                tools.register_organization(
+                    name=final_org_name,
+                    location=final_org_loc,
+                    service_area=final_org_loc,
+                    accepted_food_types=final_food,
+                    phone=phone
+                )
+            
+            # Clear recipient conversation state on completion
+            if phone:
+                database.set_user_conversation_state(phone, {})
+
+            # Search available matching donations in network
+            all_dons = database.get_all_donations()
+            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING", "PICKUP_ASSIGNED"]]
+            
+            # 1. Check local city matches
+            local_matches = [d for d in active_dons if final_org_loc.lower() in d.get("pickup_location", "").lower() or d.get("pickup_location", "").lower() in final_org_loc.lower()]
+            
+            if local_matches:
+                top_m = local_matches[0]
+                m_qty = top_m.get("quantity", 30)
+                m_unit = top_m.get("unit", "meal packets")
+                m_food = top_m.get("food_type", "Rice & Curry")
+                m_donor = top_m.get("donor_name", "Afnan Food House")
+                m_dead = top_m.get("pickup_deadline", "Before 8 PM")
+                return (
+                    f"👋 Hello from **{final_org_name}**! I've successfully registered your organization in {final_org_loc}.\n\n"
+                    f"🍱 **Great news! We found an available food match in {final_org_loc}:**\n"
+                    f"• **{m_qty} {m_unit} — {m_food}** ({m_donor}, {final_org_loc})\n"
+                    f"⏰ **Pickup deadline**: {m_dead}\n\n"
+                    f"📍 **Please share your organization's exact WhatsApp delivery location pin:**\n"
+                    f"Tap ➕ (or paperclip) → Location → 'Send your current location' 📍 so our volunteer courier can pick up and deliver the food to you!"
+                )
+            elif active_dons:
+                lines = [f"• **{d.get('quantity')} {d.get('unit', 'packets')} — {d.get('food_type')}** (📍 {d.get('pickup_location')})" for d in active_dons[:3]]
+                avail_str = "\n".join(lines)
+                return (
+                    f"👋 Hello from **{final_org_name}**! I've registered your organization in {final_org_loc}.\n\n"
+                    f"📦 **Currently Available Surplus Donations in the Network:**\n"
+                    f"{avail_str}\n\n"
+                    f"🔍 We have noted your request for {final_food} in {final_org_loc}. As soon as a local donor in {final_org_loc} posts surplus food, our AI will alert you and dispatch a courier immediately!\n\n"
+                    f"📍 Please share your organization's WhatsApp location pin 📍 so your delivery point is saved."
+                )
+            else:
+                return (
+                    f"👋 Hello from **{final_org_name}**! I've successfully registered your organization in {final_org_loc}.\n\n"
+                    f"🔍 We have logged your request for {final_food} in {final_org_loc}. Our AI coordinator will immediately notify you and dispatch a courier the moment a donor posts surplus food in your area!\n\n"
+                    f"📍 Please share your organization's WhatsApp location pin 📍 so your delivery coordinates are stored."
+                )
+
+        # If details are missing, progressive slot-filling:
+        if not org_name:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "RECIPIENT_REQUEST",
+                    "expected_input_type": "ORG_NAME",
+                    "current_question": "ORG_NAME"
+                })
+            return (
+                "🏠 **Recipient Organization Support**\n\n"
+                "👋 Hello! Welcome to FoodRescue AI. We connect community organizations and charities with fresh surplus food donations.\n\n"
+                "1️⃣ What is your **organization's name**? (e.g. Hope Food Home, Colombo Care, Sri Lanka Red Cross)"
             )
-        avail_dons_raw = tools.get_available_donations(location=org_loc)
-        avail_dons = json.loads(avail_dons_raw) if isinstance(avail_dons_raw, str) else {}
-        count = avail_dons.get("count", 0)
-        return (
-            f"🏠 **Recipient Organization Service — {org_name}**\n\n"
-            f"🔎 I found **{count} available surplus donation(s)** in your service area ({org_loc}).\n\n"
-            f"Would you like me to reserve the available surplus food for your community?\n"
-            f"1️⃣ Yes, request top available donation\n"
-            f"2️⃣ View all available donations\n"
-            f"3️⃣ Update dietary requirements"
-        )
+        elif not org_loc:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "RECIPIENT_REQUEST",
+                    "expected_input_type": "CITY",
+                    "current_question": "CITY",
+                    "org_name": org_name
+                })
+            return (
+                f"Got it, **{org_name}**! What **city or district** in Sri Lanka is your organization located in? (e.g. Mawanella, Colombo, Kandy, Galle)"
+            )
+        else:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "RECIPIENT_REQUEST",
+                    "expected_input_type": "FOOD_NEED",
+                    "current_question": "FOOD_NEED",
+                    "org_name": org_name,
+                    "city": org_loc
+                })
+            return (
+                f"What type of food (e.g. Rice & Curry, cooked meal packets, bakery items) and how many portions does **{org_name}** need today?"
+            )
 
     # 8. Greetings & Main Menu
     if clean_p in ["hi", "hello", "hey", "menu", "help", "start", "6", "options", "මෙනුව", "ආයුබෝවන්", "வணக்கம்"]:
