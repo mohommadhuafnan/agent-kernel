@@ -2,30 +2,50 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FoodRescue AI — Central Operational Control Center & WhatsApp Coordination</title>
-  <meta name="description" content="Production-grade AI food rescue coordination platform unifying WhatsApp, Agent Kernel, and MongoDB.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>FoodRescue AI — Rescuing Food. Feeding Lives. | Yaala Labs Agent Kernel</title>
+  <meta name="description" content="Autonomous surplus food rescue, volunteer dispatch, and recipient coordination platform unifying WhatsApp Cloud API, Agent Kernel, and MongoDB.">
+  <meta name="theme-color" content="#1B4332">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="alternate icon" href="/static/logo.svg">
+  <link rel="apple-touch-icon" href="/static/logo.svg">
+  
+  <!-- Open Graph / Facebook / WhatsApp Preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://foodrescue-ai-ten.vercel.app/">
+  <meta property="og:title" content="FoodRescue AI — Rescuing Food. Feeding Lives.">
+  <meta property="og:description" content="Autonomous surplus food rescue, volunteer dispatch, and recipient coordination platform powered by Agent Kernel.">
+  <meta property="og:image" content="https://foodrescue-ai-ten.vercel.app/static/logo.svg">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="FoodRescue AI — Rescuing Food. Feeding Lives.">
+  <meta name="twitter:description" content="Autonomous surplus food rescue, volunteer dispatch, and recipient coordination platform powered by Agent Kernel.">
+  <meta name="twitter:image" content="https://foodrescue-ai-ten.vercel.app/static/logo.svg">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
   <!-- Leaflet Map Assets -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <!-- Top Scroll Progress Bar -->
+  <div class="scroll-progress-bar" id="scroll-progress-bar"></div>
+
   <div class="app-layout">
     <!-- Sidebar Navigation -->
     <aside class="sidebar" id="app-sidebar">
       <div class="brand-header">
         <div class="brand-logo">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
+          <img src="/static/logo.svg" alt="FoodRescue AI Logo" class="brand-logo-img">
         </div>
         <div class="brand-text">
           <div class="brand-title">FoodRescue <span class="brand-tag">AI</span></div>
-          <div class="brand-subtitle">Operational Control Center</div>
+          <div class="brand-subtitle">Rescuing Food. Feeding Lives.</div>
         </div>
       </div>
 
@@ -116,6 +136,10 @@
           <button class="mobile-toggle" id="btn-mobile-sidebar" aria-label="Toggle Menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
           </button>
+          <div class="mobile-brand-tag">
+            <img src="/static/logo.svg" alt="FoodRescue AI Logo" class="mobile-brand-logo">
+            <span class="mobile-brand-title">FoodRescue <span class="brand-tag">AI</span></span>
+          </div>
           <div class="page-title-group">
             <h1 class="page-title" id="page-header-title">Operational Dashboard</h1>
             <p class="page-description" id="page-header-desc">Real-time surplus food coordination and WhatsApp integration overview.</p>
@@ -901,6 +925,30 @@
       </form>
     </div>
   </div>
+
+  <!-- Mobile Bottom Navigation Bar (Thumb-Friendly Mobile UX) -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="bottom-nav-btn active" data-tab="dashboard" id="bnav-dashboard" aria-label="Dashboard">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+      <span>Home</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="conversations" id="bnav-conversations" aria-label="Conversations">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      <span>Chat AI</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="donations" id="bnav-donations" aria-label="Donations">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+      <span>Donations</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="map" id="bnav-map" aria-label="Map">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+      <span>Map</span>
+    </button>
+    <button class="bottom-nav-btn" id="bnav-more-toggle" aria-label="More Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>
+      <span>Menu</span>
+    </button>
+  </nav>
 
   <!-- Main JavaScript Bundle -->
   <script src="/static/app.js"></script>

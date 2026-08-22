@@ -32,6 +32,18 @@ async def serve_index():
         return HTMLResponse(content=f.read(), status_code=200)
 
 
+@router.get("/favicon.ico")
+@router.get("/favicon.svg")
+async def serve_favicon():
+    """Serve the FoodRescue SVG favicon for browsers and search crawlers."""
+    fav_path = os.path.join(STATIC_DIR, "favicon.svg")
+    if not os.path.exists(fav_path):
+        fav_path = os.path.join(STATIC_DIR, "logo.svg")
+    if not os.path.exists(fav_path):
+        raise HTTPException(status_code=404, detail="Favicon not found.")
+    return FileResponse(fav_path, media_type="image/svg+xml")
+
+
 @router.get("/static/{file_path:path}")
 async def serve_static(file_path: str):
     """Serve static assets (CSS, JS, media)."""

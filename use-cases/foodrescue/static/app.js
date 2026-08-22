@@ -93,8 +93,11 @@ const App = (function () {
   // Initialize Application
   async function init() {
     setupNavigation();
-    setupModals();
+    setupMobileBottomNav();
     setupMobileSidebar();
+    setupScrollProgress();
+    setupScrollReveal();
+    setupModals();
     
     // Initial Data Fetch
     await fetchAllData();
@@ -113,6 +116,100 @@ const App = (function () {
     });
   }
 
+  function setupMobileBottomNav() {
+    document.querySelectorAll('.bottom-nav-btn[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.getAttribute('data-tab');
+        switchTab(targetTab);
+      });
+    });
+
+    const moreToggle = document.getElementById('bnav-more-toggle');
+    if (moreToggle) {
+      moreToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMobileSidebar();
+      });
+    }
+  }
+
+  function setupMobileSidebar() {
+    const toggleBtn = document.getElementById('btn-mobile-sidebar');
+    
+    // Create backdrop if not present
+    let backdrop = document.querySelector('.sidebar-backdrop');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.className = 'sidebar-backdrop';
+      document.body.appendChild(backdrop);
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMobileSidebar();
+      });
+    }
+
+    backdrop.addEventListener('click', () => {
+      closeMobileSidebar();
+    });
+  }
+
+  function toggleMobileSidebar() {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (!sidebar) return;
+    sidebar.classList.toggle('open');
+    if (backdrop) {
+      backdrop.classList.toggle('active', sidebar.classList.contains('open'));
+    }
+  }
+
+  function closeMobileSidebar() {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  function setupScrollProgress() {
+    const progressBar = document.getElementById('scroll-progress-bar');
+    if (!progressBar) return;
+
+    window.addEventListener('scroll', () => {
+      const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+      const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
+      progressBar.style.width = scrolled + '%';
+    }, { passive: true });
+  }
+
+  function setupScrollReveal() {
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('.reveal-on-scroll').forEach(el => el.classList.add('is-visible'));
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          obs.unobserve(entry.target);
+        }
+      });
+    }, {
+      root: null,
+      threshold: 0.08,
+      rootMargin: '0px 0px -30px 0px'
+    });
+
+    document.querySelectorAll('.reveal-on-scroll, .stat-card, .panel, .dashboard-col').forEach(el => {
+      el.classList.add('reveal-on-scroll');
+      observer.observe(el);
+    });
+  }
+
   function switchTab(tabId) {
     if (!tabMetadata[tabId]) return;
 
@@ -120,6 +217,11 @@ const App = (function () {
 
     // Update Nav Buttons
     document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
+    });
+
+    // Update Mobile Bottom Nav Buttons
+    document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
     });
 
@@ -134,10 +236,18 @@ const App = (function () {
     document.getElementById('page-header-desc').textContent = meta.desc;
 
     // Close mobile sidebar if open
-    document.getElementById('app-sidebar').classList.remove('open');
+    closeMobileSidebar();
+
+    // Smooth scroll to top of content
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // Trigger tab-specific refresh/render
     renderCurrentTab();
+
+    // Re-trigger scroll reveal for newly rendered view
+    setTimeout(() => {
+      setupScrollReveal();
+    }, 60);
 
     // Leaflet map resize trigger when switching to Map tab
     if (tabId === 'map') {

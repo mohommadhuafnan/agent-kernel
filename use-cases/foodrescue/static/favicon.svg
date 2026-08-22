@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGradFav" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FCFDFB"/>
+      <stop offset="85%" stop-color="#F3F7F2"/>
+      <stop offset="100%" stop-color="#E8EFE6"/>
+    </radialGradient>
+    <linearGradient id="leafGradFav" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#70B043"/>
+      <stop offset="100%" stop-color="#408E2F"/>
+    </linearGradient>
+    <linearGradient id="heartStemGradFav" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58A735"/>
+      <stop offset="100%" stop-color="#2D6A4F"/>
+    </linearGradient>
+    <linearGradient id="handsGradFav" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B4332"/>
+      <stop offset="100%" stop-color="#0F281E"/>
+    </linearGradient>
+    <linearGradient id="boxGradFav" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2D6A4F"/>
+      <stop offset="100%" stop-color="#1B4332"/>
+    </linearGradient>
+    <linearGradient id="appleGradFav" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E63946"/>
+      <stop offset="100%" stop-color="#C1121F"/>
+    </linearGradient>
+    <linearGradient id="breadGradFav" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F4A261"/>
+      <stop offset="100%" stop-color="#E76F51"/>
+    </linearGradient>
+  </defs>
+  <circle cx="250" cy="250" r="238" fill="url(#bgGradFav)" stroke="#2D6A4F" stroke-width="8"/>
+  <path d="M250,175 C230,115 145,100 135,170 C125,230 195,290 250,335 C305,290 375,230 365,170 C355,100 270,115 250,175 Z" fill="none" stroke="url(#heartStemGradFav)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M345,185 C370,175 395,190 400,215 C375,225 350,210 345,185 Z" fill="url(#leafGradFav)" />
+  <g id="box-contents">
+    <path d="M185,175 C180,145 205,130 225,140 C235,145 240,165 235,185 Z" fill="url(#breadGradFav)"/>
+    <rect x="255" y="130" width="30" height="50" rx="6" fill="#EDF6F9" stroke="#CCD5D9" stroke-width="1.5"/>
+    <circle cx="245" cy="165" r="22" fill="url(#appleGradFav)"/>
+    <path d="M275,170 C285,140 315,145 320,165 C320,180 295,190 275,170 Z" fill="url(#leafGradFav)"/>
+  </g>
+  <g id="donation-box">
+    <polygon points="170,185 330,185 315,275 185,275" fill="url(#boxGradFav)" stroke="#1B4332" stroke-width="2"/>
+    <path d="M250,230 C242,218 226,218 222,230 C216,246 250,266 250,266 C250,266 284,246 278,230 C274,218 258,218 250,230 Z" fill="#FFFFFF"/>
+  </g>
+  <g id="hands" fill="url(#handsGradFav)">
+    <path d="M125,230 C130,215 145,225 150,240 C155,255 170,285 220,310 C240,320 250,335 250,335 C250,335 210,338 185,325 C155,308 135,280 125,255 C120,245 120,235 125,230 Z"/>
+    <path d="M375,230 C370,215 355,225 350,240 C345,255 330,285 280,310 C260,320 250,335 250,335 C250,335 290,338 315,325 C345,308 365,280 375,255 C380,245 380,235 375,230 Z"/>
+  </g>
+  <text x="236" y="385" font-family="'Inter', system-ui, sans-serif" font-size="44" font-weight="900" fill="#1B4332" text-anchor="middle">FoodRescue</text>
+  <text x="390" y="360" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" fill="#E76F51" text-anchor="start">AI</text>
+</svg>
