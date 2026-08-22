@@ -193,6 +193,149 @@ def clear_processed_message_cache() -> None:
     PROCESSED_MESSAGE_IDS.clear()
 
 
+async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: str, from_number: str) -> None:
+    """Send real-time WhatsApp cross-notifications to linked parties (Donor, Recipient, Volunteer)
+    during key lifecycle events: Task Accepted, Food Collected, Food Delivered, and Donation Matched.
+    """
+    clean_p = prompt_text.strip().lower()
+    
+    # 1. Volunteer Accepts Task ("Accept", "I'll take it", etc.)
+    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "claim"]) and "assigned" in reply_text.lower():
+        vol = database.get_volunteer_by_phone(from_number)
+        vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+        vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
+        vol_phone = from_number
+        
+        all_tasks = database.get_all_pickup_tasks()
+        assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
+        if assigned_tasks:
+            top_task = assigned_tasks[-1]
+            don_id = top_task.get("donation_id")
+            don = database.get_donation_record(don_id) if don_id else None
+            food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
+            
+            # Notify Donor
+            donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+            if donor_phone and donor_phone != from_number:
+                d_msg = (
+                    f"🚚 *Volunteer Courier Assigned!*\n\n"
+                    f"• 👤 *Courier*: {vol_name} ({vol_mode})\n"
+                    f"• 📞 *Contact*: {vol_phone}\n"
+                    f"• 🍱 *Food*: {food_info}\n"
+                    f"• 📍 *Status*: Courier is on the way to pick up the food from your location.\n\n"
+                    f"Please have the food packed and ready for pickup! 📦"
+                )
+                try:
+                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp donor assignment notification: {e}")
+                    
+            # Notify Recipient Organization
+            org_id = top_task.get("organization_id")
+            org = database.get_organization_record(org_id) if org_id else None
+            org_phone = org.get("phone") if org else None
+            if org_phone and org_phone != from_number:
+                o_msg = (
+                    f"🚚 *Courier Dispatched for Your Food Delivery!*\n\n"
+                    f"• 👤 *Courier*: {vol_name} ({vol_mode})\n"
+                    f"• 📞 *Contact*: {vol_phone}\n"
+                    f"• 🍱 *Food*: {food_info}\n"
+                    f"• 📍 *Status*: Courier is heading to the donor location to collect the meals."
+                )
+                try:
+                    await send_whatsapp_message(to_number=org_phone, text=o_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp organization assignment notification: {e}")
+
+    # 2. Volunteer Confirms Collection ("Collected", "Got the food")
+    elif any(m in clean_p for m in ["collected", "got the food", "food collected", "picked up", "pickup completed"]) and "collected" in reply_text.lower():
+        vol = database.get_volunteer_by_phone(from_number)
+        vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+        vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
+        
+        all_tasks = database.get_all_pickup_tasks()
+        collected_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
+        if collected_tasks:
+            top_task = collected_tasks[-1]
+            don_id = top_task.get("donation_id")
+            don = database.get_donation_record(don_id) if don_id else None
+            food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
+            
+            # Notify Donor
+            donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+            if donor_phone and donor_phone != from_number:
+                d_msg = (
+                    f"🍱 *Food Collected!*\n\n"
+                    f"Courier *{vol_name}* has successfully collected your food donation ({food_info}).\n\n"
+                    f"Thank you for saving food and feeding people in need! ❤️"
+                )
+                try:
+                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp donor collected notification: {e}")
+                    
+            # Notify Recipient Organization
+            org_id = top_task.get("organization_id")
+            org = database.get_organization_record(org_id) if org_id else None
+            org_phone = org.get("phone") if org else None
+            if org_phone and org_phone != from_number:
+                o_msg = (
+                    f"🚚 *Food is on the Way!*\n\n"
+                    f"Courier *{vol_name}* ({vol_mode}) has collected {food_info} and is now en route to your delivery location.\n\n"
+                    f"Please be ready to receive the delivery! 🍱"
+                )
+                try:
+                    await send_whatsapp_message(to_number=org_phone, text=o_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp organization in-transit notification: {e}")
+
+    # 3. Volunteer Confirms Delivery ("Delivered", "Food delivered", "Dropped off")
+    elif any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done"]) and "delivered" in reply_text.lower():
+        vol = database.get_volunteer_by_phone(from_number)
+        vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+        
+        all_tasks = database.get_all_pickup_tasks()
+        delivered_tasks = [t for t in all_tasks if t.get("status") in ["DELIVERED", "COMPLETED"]]
+        if delivered_tasks:
+            top_task = delivered_tasks[-1]
+            don_id = top_task.get("donation_id")
+            don = database.get_donation_record(don_id) if don_id else None
+            food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
+            
+            org_id = top_task.get("organization_id")
+            org = database.get_organization_record(org_id) if org_id else None
+            org_name = org.get("name", "Recipient Organization") if org else "the recipient organization"
+            org_phone = org.get("phone") if org else None
+            
+            # Notify Donor
+            donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+            if donor_phone and donor_phone != from_number:
+                d_msg = (
+                    f"🎉 *Delivery Completed!*\n\n"
+                    f"Your food donation ({food_info}) has been safely delivered to *{org_name}* by courier *{vol_name}*!\n\n"
+                    f"🌟 Together, we rescued food and fed lives. Thank you for your generosity!"
+                )
+                try:
+                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp donor delivered notification: {e}")
+                    
+            # Notify Recipient Organization
+            if org_phone and org_phone != from_number:
+                o_msg = (
+                    f"🎉 *Delivery Completed!*\n\n"
+                    f"Courier *{vol_name}* has delivered the food donation ({food_info}) to your organization.\n\n"
+                    f"Enjoy the fresh meals! 🍱"
+                )
+                try:
+                    await send_whatsapp_message(to_number=org_phone, text=o_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp organization delivery notification: {e}")
+
+
 async def process_incoming_whatsapp_message(
     message: Dict[str, Any],
     raw_value: Optional[Dict[str, Any]] = None
@@ -471,6 +614,13 @@ async def process_incoming_whatsapp_message(
             text=reply_text,
             reply_to_message_id=message_id
         )
+
+        # Dispatch real-time cross-notifications to linked parties if lifecycle event triggered
+        try:
+            await dispatch_lifecycle_cross_notifications(prompt_text=prompt_text, reply_text=reply_text, from_number=from_number)
+        except Exception as e:
+            logger.warning(f"Error during lifecycle cross-notification dispatch: {e}")
+
         return {"status": "processed", "reply": reply_text, "send_status": send_res, "is_voice": is_voice_message}
 
     # 3. Location message (Meta Cloud API location payload)
