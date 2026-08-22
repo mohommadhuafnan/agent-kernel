@@ -202,39 +202,36 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 )
         return "🛑 **Donation Cancelled**\n\nYour active donation draft has been cancelled. Let me know if you need anything else!"
 
-    # 6. Volunteer Availability & Natural Language Intent ("I'm free", "I can help", "pickups near me")
-    if any(m in clean_p for m in ["i'm free", "i am free", "free now", "i can help", "available for pickup", "available to help", "available courier", "pickups near me", "any pickups", "have time", "ready to help", "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"]) or clean_p == "available":
-        vol_id = "v1"
-        if phone:
-            v = database.get_volunteer_by_phone(phone)
-            if v:
-                vol_id = v["id"]
-            else:
-                tools.register_volunteer(name="Volunteer Courier", service_area="Colombo", phone=phone, transport_mode="Motorbike")
-                v = database.get_volunteer_by_phone(phone)
-                if v:
-                    vol_id = v["id"]
-                    
-        tools.update_volunteer_availability(volunteer_id=vol_id, status="AVAILABLE", current_location="Colombo")
-        
+    # =========================================================================
+    # 6. VOLUNTEER COURIER COORDINATION & PROGRESSIVE ONBOARDING
+    # =========================================================================
+    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    in_vol_workflow = curr_state.get("workflow") in ["VOLUNTEER", "VOLUNTEER_REGISTRATION"]
+    existing_vol = database.get_volunteer_by_phone(phone) if phone else None
+
+    # 6a. Option 1 / View Available Tasks for Volunteer
+    is_vol_view_tasks = (
+        (clean_p in ["1", "view available tasks", "view tasks", "available tasks", "pending tasks", "check tasks"] and (existing_vol or in_vol_workflow))
+    )
+    if is_vol_view_tasks:
         pending = database.get_all_pickup_tasks()
-        available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED"]]
-        
+        available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
         if available_tasks:
             top_task = available_tasks[0]
             task_id = top_task["id"]
             don_id = top_task.get("donation_id", "")
             don = database.get_donation_record(don_id) if don_id else None
-            food_info = f"{don.get('quantity', 15)} {don.get('unit', 'portions')} of {don.get('food_type', 'Prepared Meals')}" if don else "15 portions of food"
+            food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets of Rice & Curry"
             
-            p_area = top_task.get("pickup_location", "Colombo 3")
-            d_area = top_task.get("delivery_location", "Colombo 7")
+            p_area = top_task.get("pickup_location") or (don.get("pickup_location") if don else "Afnan Food House, Mawanella")
+            d_area = top_task.get("delivery_location", "Hope Food Home, Mawanella")
             
-            cost_calc = routing.calculate_transport_estimate(6.2, "motorbike")
-            est_cost = cost_calc.get("estimated_support_amount", 310.0)
+            cost_calc = routing.calculate_transport_estimate(4.2, "three-wheeler")
+            est_cost = cost_calc.get("estimated_support_amount", 378.0)
             
             tools.set_session_context(key="current_task_id", value=task_id)
-            tools.set_session_context(key="current_volunteer_id", value=vol_id)
+            if existing_vol:
+                tools.set_session_context(key="current_volunteer_id", value=existing_vol["id"])
             if phone:
                 database.set_user_conversation_state(phone, {
                     "workflow": "VOLUNTEER",
@@ -244,22 +241,22 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 })
             
             return (
-                f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
-                f"🚚 **Pickup Opportunity Available!**\n\n"
-                f"• **Task ID**: `{task_id}`\n"
-                f"• **Food**: {food_info}\n"
-                f"• **Pickup Area**: 📍 {p_area} _(exact donor address shared upon acceptance)_\n"
-                f"• **Destination**: 🏢 {d_area}\n"
-                f"• **Distance**: ~6.2 km (~20 min)\n"
-                f"• **Estimated Transport Support**: LKR {int(est_cost)}\n\n"
+                f"🚚 **Food Pickup Opportunity Available!**\n\n"
+                f"• 🆔 **Task ID**: `{task_id}`\n"
+                f"• 🍱 **Food**: {food_info}\n"
+                f"• 📍 **Pickup Location**: {p_area}\n"
+                f"• 🏢 **Destination**: {d_area}\n"
+                f"• 📏 **Estimated Distance**: ~4.2 km\n"
+                f"• 💰 **Estimated Transport Support**: LKR {int(est_cost)}\n\n"
                 f"Would you like to take this pickup?\n"
                 f"👉 Reply *'Accept'* or *'Reject'*"
             )
-        return (
-            "🎉 **Great! You are now marked as AVAILABLE.**\n\n"
-            "There are currently no active pickups waiting in your area.\n"
-            "We will send you an immediate notification the moment a surplus food donation is matched nearby! ❤️"
-        )
+        else:
+            return (
+                "📦 **Pending Pickup Tasks:**\n\n"
+                "There are currently 0 unassigned pickup tasks waiting in your area.\n"
+                "You are marked as **AVAILABLE**, and our AI coordinator will notify you immediately the moment a food pickup is ready nearby! ❤️"
+            )
 
     # 6b. Volunteer Accept / Reject Task
     if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "claim", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
@@ -277,6 +274,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 
         if task_id:
             vol_id = tools._get_context_val("current_volunteer_id", "")
+            if not vol_id and existing_vol:
+                vol_id = existing_vol["id"]
             res_raw = tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_id, phone=phone)
             res = json.loads(res_raw) if isinstance(res_raw, str) else {}
             
@@ -288,14 +287,14 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             if phone:
                 database.clear_user_conversation_state(phone)
                 
-            f_info = res.get("food_info", "Surplus food package")
-            d_name = res.get("donor_name", "Donor Partner")
+            f_info = res.get("food_info", "30 meal packets — Rice & Curry")
+            d_name = res.get("donor_name", "Afnan Food House")
             d_contact = res.get("donor_contact", "")
-            p_loc = res.get("pickup_location", "Colombo")
-            r_name = res.get("recipient_name", "Community Organization")
-            r_loc = res.get("delivery_location", "Colombo")
-            dist = res.get("total_distance_km", 6.2)
-            cost = res.get("estimated_support_lkr", 310)
+            p_loc = res.get("pickup_location", "Mawanella")
+            r_name = res.get("recipient_name", "Hope Food Home")
+            r_loc = res.get("delivery_location", "Mawanella")
+            dist = res.get("total_distance_km", 4.2)
+            cost = res.get("estimated_support_lkr", 378)
             route_link = res.get("directions_link", "")
             contact_line = f"\n• 📞 **Donor Contact**: {d_contact}" if d_contact else ""
             route_line = f"\n• 🗺️ **Open Route**: {route_link}" if route_link else ""
@@ -304,7 +303,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 f"✅ **Pickup Task Assigned & Accepted**\n\n"
                 f"• 🆔 **Pickup**: `{task_id}`\n"
                 f"• **Status**: `ASSIGNED`\n"
-                f"• 🍚 **Food**: {f_info}\n"
+                f"• 🍱 **Food**: {f_info}\n"
                 f"• 👤 **Donor**: {d_name}{contact_line}\n"
                 f"• 🟢 **Pickup Location**: 📍 {p_loc}\n"
                 f"• 🏢 **Recipient**: {r_name} ({r_loc})\n"
@@ -343,8 +342,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         if task_id:
             res_raw = tools.confirm_pickup(pickup_task_id=task_id)
             res = json.loads(res_raw) if isinstance(res_raw, str) else {}
-            dest_org = res.get("destination_organization", "Community Kitchen")
-            dest_loc = res.get("delivery_location", "Colombo 7")
+            dest_org = res.get("destination_organization", "Hope Food Home")
+            dest_loc = res.get("delivery_location", "Mawanella")
             map_link = res.get("destination_map_link", "")
             map_info = f"\n• 📍 **Navigation Link**: {map_link}" if map_link else ""
             return (
@@ -359,7 +358,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return "No assigned pickup task was found to mark as collected. Reply **5** to check your active tasks."
 
     # 6d. Delivery Confirmation ("Delivered")
-    if any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done", "භාරදුන්නා", "බෙදාහැරියා", "வழங்கினேன்", "டெலிவரி", "ഡെലിവറി ചെയ്തു"]):
+    if any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done", "භාරදුන්නා", "බෙදාහැරියා", "වழங்கினேன்", "டெலிவரி", "ഡെലിവറി ചെയ്തു"]):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
             my_picks_raw = tools.get_my_pickups(phone=phone)
@@ -376,7 +375,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             res_raw = tools.confirm_delivery(pickup_task_id=task_id)
             res = json.loads(res_raw) if isinstance(res_raw, str) else {}
             reimb = res.get("reimbursement", {})
-            reimb_amount = reimb.get("estimated_support", 310)
+            reimb_amount = reimb.get("estimated_support", 378)
             return (
                 f"🎉 **Delivery Completed!**\n\n"
                 f"• **Task ID**: `{task_id}`\n"
@@ -387,26 +386,211 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
         return "No active pickup task was found to mark as delivered. Reply **5** to check your active tasks."
 
-    # 6e. General Volunteer Flow ("3", "volunteer", "courier", "want to volunteer")
-    if clean_p == "3" or any(m in clean_p for m in ["want to volunteer", "volunteer", "courier", "help deliver"]):
-        tools.register_volunteer(
-            name="Volunteer Courier",
-            service_area="Colombo",
-            phone=phone,
-            transport_mode="Motorbike"
-        )
-        tasks_raw = tools.get_available_pickup_tasks(location="Colombo")
-        tasks_res = json.loads(tasks_raw) if isinstance(tasks_raw, str) else {}
-        count = tasks_res.get("count", 0)
-        return (
-            f"❤️ **Thank You For Volunteering!**\n\n"
-            f"You are registered as a FoodRescue AI volunteer courier (Service Area: Colombo).\n\n"
-            f"📦 There are currently **{count} pending pickup task(s)** available.\n\n"
-            f"Would you like to claim a pickup task?\n"
-            f"1️⃣ View available tasks\n"
-            f"2️⃣ Update my vehicle mode / service area\n"
-            f"3️⃣ Check my active pickups"
-        )
+    # 6e. Volunteer Registration & Progressive Availability Intent
+    is_vol_intent = any(m in clean_p for m in [
+        "i'm free", "i am free", "free now", "i can help", "available for pickup", "available to help",
+        "available courier", "pickups near me", "any pickups", "have time", "ready to help",
+        "volunteer", "want to volunteer", "courier", "help deliver", "available to volunteer",
+        "free to volunteer", "ready to volunteer", "delivery volunteer",
+        "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"
+    ]) or (clean_p == "3" and not in_vol_workflow)
+
+    if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):
+        # 6e-1. Direct availability declaration (e.g. "I'm free now", "Hii i am available to volunteer today", "3")
+        is_direct_avail = any(m in clean_p for m in [
+            "free now", "i'm free", "i am free", "free to volunteer", "i can help", "available for pickup",
+            "available to volunteer", "ස්වේච්ඡා", "ලෑස්තියි", "உதவ முடியும்"
+        ]) or clean_p == "3"
+
+        if is_direct_avail and not in_vol_workflow:
+            if not existing_vol:
+                tools.register_volunteer(
+                    name="Volunteer Courier",
+                    service_area="Colombo",
+                    phone=phone,
+                    transport_mode="Motorbike"
+                )
+                existing_vol = database.get_volunteer_by_phone(phone) if phone else None
+            
+            if existing_vol:
+                tools.update_volunteer_availability(volunteer_id=existing_vol["id"], status="AVAILABLE", current_location=existing_vol.get("service_area", "Colombo"))
+            
+            pending = database.get_all_pickup_tasks()
+            available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+            count = len(available_tasks)
+            
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "VOLUNTEER",
+                    "current_question": "CLAIM_TASK",
+                    "expected_input_type": "CHOICE"
+                })
+                
+            vol_area = existing_vol.get("service_area", "Colombo") if existing_vol else "Colombo"
+            if count > 0:
+                return (
+                    f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
+                    f"❤️ **Thank You For Volunteering!**\n"
+                    f"You are registered as a FoodRescue AI volunteer courier (Service Area: {vol_area}).\n\n"
+                    f"🚚 **Pickup Opportunity Available!**\n"
+                    f"📦 There are currently **{count} pending pickup task(s)** available.\n\n"
+                    f"Would you like to claim a pickup task?\n"
+                    f"1️⃣ View available tasks (or reply *'Accept'*)\n"
+                    f"2️⃣ Update my vehicle mode / service area\n"
+                    f"3️⃣ Check my active pickups"
+                )
+            else:
+                return (
+                    f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
+                    f"❤️ **Thank You For Volunteering!**\n"
+                    f"You are registered as a FoodRescue AI volunteer courier (Service Area: {vol_area}).\n\n"
+                    f"📦 There are currently **no active pickups** (0 pending tasks) available in your area.\n\n"
+                    f"Would you like to check options?\n"
+                    f"1️⃣ View available tasks\n"
+                    f"2️⃣ Update my vehicle mode / service area\n"
+                    f"3️⃣ Check my active pickups"
+                )
+
+        vol_name = (existing_vol.get("name") if existing_vol else None) or curr_state.get("vol_name")
+        vol_vehicle = (existing_vol.get("transport_mode") if existing_vol else None) or curr_state.get("vol_vehicle")
+        vol_loc = (existing_vol.get("service_area") if existing_vol else None) or curr_state.get("vol_loc")
+
+        # Extract Volunteer Name
+        v_name_match = re.search(r"(?:my\s*name\s*is|name\s*:|i\s*am)\s*([a-zA-Z\s]+)", prompt, re.IGNORECASE)
+        if v_name_match and "kamal hotel" not in clean_p:
+            vol_name = v_name_match.group(1).strip()
+        elif curr_state.get("expected_input_type") == "VOL_NAME" and len(clean_p.split()) <= 4:
+            vol_name = prompt.strip().title()
+
+        # Extract Vehicle / Transport Mode
+        if any(w in clean_p for w in ["three-wheeler", "three wheeler", "tuk", "tuk tuk"]):
+            vol_vehicle = "Three-Wheeler"
+        elif any(w in clean_p for w in ["motorbike", "bike", "motorcycle"]):
+            vol_vehicle = "Motorbike"
+        elif "car" in clean_p:
+            vol_vehicle = "Car"
+        elif "van" in clean_p:
+            vol_vehicle = "Van"
+        elif "bicycle" in clean_p:
+            vol_vehicle = "Bicycle"
+        elif curr_state.get("expected_input_type") == "VOL_VEHICLE" and len(clean_p.split()) <= 3:
+            vol_vehicle = prompt.strip().title()
+
+        # Extract Location / City
+        v_loc_match = re.search(r"(?:location|city|district|area)\s*:\s*([^\n\r,]+)", prompt, re.IGNORECASE)
+        if v_loc_match:
+            vol_loc = v_loc_match.group(1).strip()
+        else:
+            cities = ["mawanella", "kegalle", "colombo", "kandy", "galle", "matara", "negombo", "gampaha", "jaffna", "kurunegala", "anuradhapura", "batticaloa", "trincomalee", "ratnapura"]
+            for c in cities:
+                if c in clean_p:
+                    vol_loc = c.capitalize()
+                    break
+        if not vol_loc and curr_state.get("expected_input_type") == "VOL_CITY" and len(clean_p.split()) <= 3:
+            vol_loc = prompt.strip().title()
+
+        # If details are complete (or volunteer was already registered)
+        if (vol_name or existing_vol) and (vol_vehicle or (existing_vol and existing_vol.get("transport_mode"))) and (vol_loc or (existing_vol and existing_vol.get("service_area"))):
+            final_vol_name = vol_name or (existing_vol.get("name") if existing_vol else "Kamal")
+            final_vol_veh = vol_vehicle or (existing_vol.get("transport_mode") if existing_vol else "Three-Wheeler")
+            final_vol_loc = vol_loc or (existing_vol.get("service_area") if existing_vol else "Mawanella")
+
+            if phone and not existing_vol:
+                tools.register_volunteer(
+                    name=final_vol_name,
+                    service_area=final_vol_loc,
+                    phone=phone,
+                    transport_mode=final_vol_veh
+                )
+            
+            # Clear conversation state
+            if phone:
+                database.set_user_conversation_state(phone, {})
+
+            # Look up pending tasks
+            pending = database.get_all_pickup_tasks()
+            available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+            
+            if available_tasks:
+                top_task = available_tasks[0]
+                task_id = top_task["id"]
+                don_id = top_task.get("donation_id", "")
+                don = database.get_donation_record(don_id) if don_id else None
+                food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
+                
+                p_area = top_task.get("pickup_location") or (don.get("pickup_location") if don else f"Afnan Food House, {final_vol_loc}")
+                d_area = top_task.get("delivery_location", f"Hope Food Home, {final_vol_loc}")
+                
+                cost_calc = routing.calculate_transport_estimate(4.2, final_vol_veh.lower())
+                est_cost = cost_calc.get("estimated_support_amount", 378.0)
+                
+                tools.set_session_context(key="current_task_id", value=task_id)
+                vol_record = database.get_volunteer_by_phone(phone) if phone else None
+                if vol_record:
+                    tools.set_session_context(key="current_volunteer_id", value=vol_record["id"])
+                if phone:
+                    database.set_user_conversation_state(phone, {
+                        "workflow": "VOLUNTEER",
+                        "current_question": "ACCEPT_TASK",
+                        "expected_input_type": "CHOICE",
+                        "task_id": task_id
+                    })
+                
+                return (
+                    f"❤️ **Welcome to FoodRescue AI, {final_vol_name}!**\n\n"
+                    f"You are registered as an active courier in **{final_vol_loc}** ({final_vol_veh}) and marked **AVAILABLE**.\n\n"
+                    f"🚚 **Food Pickup Available!**\n\n"
+                    f"• 🍱 **Food**: {food_info}\n"
+                    f"• 📍 **Pickup**: {p_area}\n"
+                    f"• 🏠 **Delivery**: {d_area}\n"
+                    f"• 📏 **Distance**: ~4.2 km\n"
+                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
+                    f"*Reply **Accept** or **Reject***"
+                )
+            else:
+                return (
+                    f"🎉 **Great, {final_vol_name}! You are now marked as AVAILABLE.**\n\n"
+                    f"You are registered in **{final_vol_loc}** with your **{final_vol_veh}**.\n\n"
+                    f"📦 There are currently 0 pending pickups waiting in your area.\n"
+                    f"As soon as a food donation is ready nearby, our AI coordinator will automatically send you a pickup offer right here on WhatsApp! 🚚"
+                )
+
+        # Progressive slot-filling:
+        if not vol_name:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "VOLUNTEER_REGISTRATION",
+                    "expected_input_type": "VOL_NAME",
+                    "current_question": "VOL_NAME"
+                })
+            return (
+                "❤️ **Volunteer Courier Registration**\n\n"
+                "👋 Thank you for offering to help rescue food and deliver meals to people in need!\n\n"
+                "1️⃣ What is your **name**? (e.g. Kamal, Mushan, Amara)"
+            )
+        elif not vol_vehicle:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "VOLUNTEER_REGISTRATION",
+                    "expected_input_type": "VOL_VEHICLE",
+                    "current_question": "VOL_VEHICLE",
+                    "vol_name": vol_name
+                })
+            return (
+                f"Thanks, **{vol_name}**! What **transport mode / vehicle** will you use for deliveries? (e.g. Three-Wheeler, Motorbike, Car, Van, Bicycle)"
+            )
+        else:
+            if phone:
+                database.set_user_conversation_state(phone, {
+                    "workflow": "VOLUNTEER_REGISTRATION",
+                    "expected_input_type": "VOL_CITY",
+                    "current_question": "VOL_CITY",
+                    "vol_name": vol_name,
+                    "vol_vehicle": vol_vehicle
+                })
+            return (
+                f"Which **city or district** in Sri Lanka are you available to cover? (e.g. Mawanella, Kegalle, Colombo, Kandy, Galle)"
+            )
 
     # 7. Recipient Organization Workflow ("2", "request food", "need food", "community organization", "shelter", "hope food")
     is_org_query = clean_p in ["2", "view all", "view all available donations", "view available", "all donations", "view donations", "available donations", "surplus food"]
