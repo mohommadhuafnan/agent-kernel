@@ -810,7 +810,39 @@ async def run_resilient_chat(
     session_id: str,
     preferred_agent: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Execute chat request through foodrescue_coordinator with dynamic model fallback."""
+    """Execute chat request through stateful coordinator engine and resilient LLM model pool."""
+    phone = session_id.split("whatsapp:", 1)[1] if "whatsapp:" in session_id else ""
+    clean_p = prompt.strip().lower()
+
+    # Check if there is an active workflow, draft, or domain intent
+    active_draft = database.get_draft_donation(phone) if phone else None
+    conv_state = database.get_user_conversation_state(phone) if phone else {}
+    has_active_state = bool(
+        (active_draft and active_draft.get("food_type")) or
+        conv_state.get("workflow") in ["DONATION", "VOLUNTEER", "RECIPIENT", "LANGUAGE"]
+    )
+
+    is_domain_intent = any(w in clean_p for w in [
+        "donate", "food", "packet", "meals", "rice", "curry", "bread", "biryani",
+        "volunteer", "courier", "free now", "i can help", "accept", "reject", "collected", "delivered",
+        "need food", "request food", "organization", "shelter", "community",
+        "confirm", "cancel", "status", "pickup", "where is", "track",
+        "language", "භාෂාව", "மொழி", "english", "sinhala", "tamil", "සිංහල", "தமிழ்",
+        "actually", "change", "before", "until", "pm", "am", "mawanella", "colombo", "kandy", "galle",
+        "name is", "my name", "hope food", "kamal", "three-wheeler", "three wheeler", "three wheeler", "motorbike", "car"
+    ]) or clean_p in ["1", "2", "3", "4", "5", "6", "yes", "no", "ok", "confirm", "accept", "reject", "collected", "delivered"] or len(clean_p.split()) <= 4
+
+    if has_active_state or is_domain_intent:
+        logger.info(f"[Stateful Engine] Executing stateful coordinator for session '{session_id}' with prompt: '{prompt[:60]}'")
+        fallback_result = await execute_deterministic_fallback(prompt, session_id)
+        return {
+            "status": "success",
+            "result": fallback_result,
+            "agent_used": "foodrescue_coordinator",
+            "model_used": "stateful_coordinator_engine",
+            "session_id": session_id,
+        }
+
     chat_service = ChatService(rest_api_mode=True)
     agent_name = "foodrescue_coordinator"
 
