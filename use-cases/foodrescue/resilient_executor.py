@@ -300,7 +300,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
 
     # 6b. Volunteer Accept / Reject Task
-    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "claim", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "സ്വീകരിക്കുക", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
+    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "take pickup", "claim", "භාරගන්නවා", "ඔව්", "ஏற்கிறேன்", "ஆம்", "ஏற்றுக்கொள்கிறேன்", "பணியை ஏற்கிறேன்"]):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
             st = database.get_user_conversation_state(phone)
@@ -357,7 +357,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
         return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
 
-    if clean_p in ["reject", "can't do it", "cant do it", "no", "decline", "බැහැ", "නැහැ", "மறுக்கிறேன்", "இல்லை", "ഇല്ല"]:
+    if clean_p in ["reject", "can't do it", "cant do it", "no", "decline", "බැහැ", "නැහැ", "மறுக்கிறேன்", "இல்லை"]:
         task_id = tools._get_context_val("current_task_id", "")
         if task_id:
             tools.reject_pickup_task(pickup_task_id=task_id)
@@ -367,7 +367,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return "No active pickup offer was found. Reply **menu** to see options."
 
     # 6c. Collection Confirmation ("Collected")
-    if any(m in clean_p for m in ["collected", "got the food", "food collected", "picked up", "pickup completed", "ආහාර ලබාගත්තා", "ලබාගත්තා", "உணவு சேகரித்தேன்", "சேகரித்தேன்", "ഭക്ഷണം ശേഖരിച്ചു"]):
+    if any(m in clean_p for m in ["collected", "got the food", "food collected", "picked up", "pickup completed", "ආහාර ලබාගත්තා", "ලබාගත්තා", "உணவு சேகரித்தேன்", "சேகரித்தேன்"]):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
             my_picks_raw = tools.get_my_pickups(phone=phone)
@@ -399,7 +399,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return "No assigned pickup task was found to mark as collected. Reply **5** to check your active tasks."
 
     # 6d. Delivery Confirmation ("Delivered")
-    if any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done", "භාරදුන්නා", "බෙදාහැරියා", "වழங்கினேன்", "டெலிவரி", "ഡെലിവറി ചെയ്തു"]):
+    if any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done", "භාරදුන්නා", "බෙදාහැරියා", "வழங்கினேன்", "டெலிவரி"]):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
             my_picks_raw = tools.get_my_pickups(phone=phone)
@@ -433,7 +433,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         "available courier", "pickups near me", "any pickups", "have time", "ready to help",
         "volunteer", "want to volunteer", "courier", "help deliver", "available to volunteer",
         "free to volunteer", "ready to volunteer", "delivery volunteer",
-        "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்", "സന്നദ്ധ"
+        "ස්වේච්ඡා", "උදව් කරන්න පුළුවන්", "ලෑස්තියි", "உதவ முடியும்", "தன்னார்வலர்", "இலவசம்"
     ]) or (clean_p == "3" and not in_vol_workflow)
 
     if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):

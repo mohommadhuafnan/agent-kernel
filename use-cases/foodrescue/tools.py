@@ -2010,9 +2010,16 @@ def get_delivery_route(pickup_task_id: Optional[str] = None) -> str:
 def reject_pickup_task(
     pickup_task_id: Optional[str] = None,
     volunteer_id: Optional[str] = None,
-    reason: Optional[str] = None
+    reason: Optional[str] = None,
+    phone: Optional[str] = None,
+    **kwargs
 ) -> str:
     """Record volunteer rejection of a pickup offer and advance to next available volunteer."""
+    if not volunteer_id and phone:
+        norm_phone = "".join(c for c in phone if c.isdigit())
+        vol = database.get_volunteer_by_phone(norm_phone)
+        if vol:
+            volunteer_id = vol.get("id")
     target_task_id = str(pickup_task_id).strip() if pickup_task_id and str(pickup_task_id).strip() else _get_context_val("current_task_id", "")
     target_vol_id = str(volunteer_id).strip() if volunteer_id and str(volunteer_id).strip() else _get_context_val("current_volunteer_id", "v1")
     
