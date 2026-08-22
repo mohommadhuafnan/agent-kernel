@@ -279,7 +279,7 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     donor_name = None
     name_patterns = [
         r'(?:my name is|i am|i\'m|this is|donor name is|from)\s+([A-Z][a-zA-Z\s]{1,30})',
-        r'\b([A-Z][a-zA-Z\s]+(?:Hotel|Bakery|Kitchen|Restaurant|Catering|Grand Hotel|Inn))\b',
+        r'\b([A-Z][a-zA-Z\s]+(?:Hotel|Bakery|Kitchen|Restaurant|Catering|Grand Hotel|Inn|Food House|Cafe|Caterers|Lodge|Banquets|Foods))\b',
     ]
     for pat in name_patterns:
         m = re.search(pat, text, re.IGNORECASE)

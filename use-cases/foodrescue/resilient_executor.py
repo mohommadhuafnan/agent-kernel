@@ -453,12 +453,18 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     user = database.get_user_by_phone(phone) if phone else None
 
     # 9a. Handle Confirmation Stage ("Confirm" / 1 -> commit donation)
-    is_confirm_intent = clean_p in [
+    is_confirm_word = clean_p in [
         "1", "confirm", "yes", "y", "ok", "okay", "correct", "create", "confirm donation",
         "තහවුරුයි", "ඔව්", "உறுதி", "ஆம்"
     ] or clean_p == "confirm" or "confirm" in clean_p
-    
-    if (curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION" or (is_confirm_intent and existing_draft.get("food_type"))):
+    is_confirm_intent = is_confirm_word
+
+    has_required_to_confirm = bool(
+        existing_draft.get("food_type") and
+        (existing_draft.get("city") or existing_draft.get("location"))
+    )
+
+    if (curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION" or (is_confirm_intent and has_required_to_confirm)):
         if is_confirm_intent:
             # Commit donation from persistent draft
             qty = float(existing_draft.get("quantity") or 20.0)
@@ -561,15 +567,27 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 draft_update["business_name"] = "Donor Partner"
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
-        elif cand_name and cand_name.lower() not in ["hi", "hello", "1", "2", "3"]:
-            draft_update = {"donor_name": cand_name, "business_name": cand_name}
+        else:
+            is_name_candidate = (
+                cand_name and
+                cand_name.lower() not in ["hi", "hello", "1", "2", "3"] and
+                not any(w in cand_name.lower() for w in ["actually", "have", "packet", "meals", "change", "curry", "rice", "bread"]) and
+                not re.search(r'\d', cand_name)
+            )
+            if is_name_candidate:
+                draft_update = {"donor_name": cand_name, "business_name": cand_name}
+                if phone:
+                    existing_draft = database.save_draft_donation(phone, draft_update)
+                    database.create_or_update_user(phone=phone, display_name=cand_name)
+
+    elif curr_q == "CITY" or expected_type == "CITY":
+        extracted_city = _extract_location(prompt) or voice_service.extract_donation_entities(prompt).get("city")
+        if extracted_city:
+            draft_update = {"city": extracted_city, "location": extracted_city}
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
-                database.create_or_update_user(phone=phone, display_name=cand_name)
-
-    elif curr_q == "CITY" or expected_type == "CITY" or curr_q == "LOCATION" or expected_type == "LOCATION":
-        cand_city = prompt.strip()
-        if cand_city:
+        elif len(prompt.strip().split()) <= 4 and not any(w in prompt.lower() for w in ["rice", "meal", "packet", "food", "have", "curry", "bread"]) and not re.search(r'\d', prompt):
+            cand_city = prompt.strip()
             draft_update = {"city": cand_city, "location": cand_city}
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
@@ -630,18 +648,20 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     if curr_q not in ["LANGUAGE_MENU"] and not prompt.strip().isdigit() and prompt.strip() not in ["1", "2", "3", "4", "5", "6"]:
         entities = voice_service.extract_donation_entities(prompt)
         draft_patch = {}
-        if entities.get("food_type") and (not existing_draft.get("food_type") or "actually" in clean_p or "change" in clean_p):
+        is_correction = any(w in clean_p for w in ["actually", "change", "instead", "not", "correct", "update", "rather"])
+
+        if entities.get("food_type") and (not existing_draft.get("food_type") or is_correction):
             draft_patch["food_type"] = entities["food_type"]
-        if entities.get("quantity") is not None and (not existing_draft.get("quantity") or "actually" in clean_p or "change" in clean_p):
+        if entities.get("quantity") is not None and (not existing_draft.get("quantity") or is_correction or "have" in clean_p):
             draft_patch["quantity"] = entities["quantity"]
             if entities.get("unit"):
                 draft_patch["unit"] = entities["unit"]
-        if entities.get("city") and (not existing_draft.get("city") or "actually" in clean_p or "change" in clean_p or "city" in clean_p or "location" in clean_p):
+        if entities.get("city") and (not existing_draft.get("city") or is_correction or "city" in clean_p or "location" in clean_p or "pickup" in clean_p or "in " in clean_p or "at " in clean_p):
             draft_patch["city"] = entities["city"]
             draft_patch["location"] = entities["city"]
-        if entities.get("pickup_deadline") and (not existing_draft.get("pickup_deadline") or "actually" in clean_p or "change" in clean_p or "time" in clean_p):
+        if entities.get("pickup_deadline") and (not existing_draft.get("pickup_deadline") or is_correction or "time" in clean_p or "deadline" in clean_p or "before" in clean_p or "until" in clean_p):
             draft_patch["pickup_deadline"] = entities["pickup_deadline"]
-        if entities.get("donor_name") and (not existing_draft.get("donor_name") or "actually" in clean_p or "name is" in clean_p):
+        if entities.get("donor_name") and (not existing_draft.get("donor_name") or is_correction or "name is" in clean_p):
             draft_patch["donor_name"] = entities["donor_name"]
             draft_patch["business_name"] = entities["donor_name"]
         if entities.get("dietary_info") and entities["dietary_info"] != "Standard":

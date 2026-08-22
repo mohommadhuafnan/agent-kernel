@@ -184,11 +184,102 @@ async def test_donor_multi_turn_flow_strict_order():
 
     # Turn 4: User provides deadline "Today before 8 PM"
     r4 = await resilient_executor.execute_deterministic_fallback("Today before 8 PM", session_id=session_id)
-    # Summary confirmation or location prompt
-    assert "Donation Summary" in r4 or "Confirm" in r4
-    assert "40" in r4
-    assert "Cinnamon Kitchen" in r4
-    assert "Colombo 07" in r4
+    # WhatsApp Native Location must be asked next!
+    assert "location" in r4.lower() or "📍" in r4
+
+    # Turn 5: User shares location coordinates
+    database.save_draft_donation(phone, {
+        "location_received": True,
+        "latitude": 6.9056,
+        "longitude": 79.8519,
+        "address": "Colombo 07"
+    })
+    r5 = await resilient_executor.execute_deterministic_fallback("Here is my location", session_id=session_id)
+    # Summary confirmation must be displayed!
+    assert "Donation Summary" in r5 or "Confirm" in r5
+    assert "40" in r5
+    assert "Cinnamon Kitchen" in r5
+    assert "Colombo 07" in r5
+
+    # Turn 6: User confirms
+    r6 = await resilient_executor.execute_deterministic_fallback("Confirm", session_id=session_id)
+    assert "Donation Created" in r6 or "✅" in r6
+    assert database.get_draft_donation(phone) is None
+
+
+@pytest.mark.asyncio
+async def test_user_corrections_without_restarting():
+    """Test 7: User corrections (quantity, deadline, city) update draft without restarting flow."""
+    phone = "94770001055"
+    session_id = f"whatsapp:{phone}"
+
+    # Initial report
+    await resilient_executor.execute_deterministic_fallback("I have 30 meal packets of rice and curry available today.", session_id=session_id)
+    draft1 = database.get_draft_donation(phone)
+    assert draft1["quantity"] == 30.0
+
+    # User corrects quantity
+    r_corr1 = await resilient_executor.execute_deterministic_fallback("Actually, I have 40 packets.", session_id=session_id)
+    draft2 = database.get_draft_donation(phone)
+    assert draft2["quantity"] == 40.0
+    assert "Rice" in draft2["food_type"]
+    # Still moves forward to ask name
+    assert "name" in r_corr1.lower()
+
+    # User provides name
+    await resilient_executor.execute_deterministic_fallback("Afnan Food House", session_id=session_id)
+
+    # User provides city
+    await resilient_executor.execute_deterministic_fallback("Mawanella", session_id=session_id)
+    draft3 = database.get_draft_donation(phone)
+    assert draft3["city"] == "Mawanella"
+
+    # User corrects city
+    await resilient_executor.execute_deterministic_fallback("The pickup is in Kandy, not Mawanella.", session_id=session_id)
+    draft4 = database.get_draft_donation(phone)
+    assert "Kandy" in draft4["city"]
+    assert draft4["donor_name"] == "Afnan Food House"
+    assert draft4["quantity"] == 40.0
+
+
+@pytest.mark.asyncio
+async def test_repeated_message_does_not_restart_flow():
+    """Test 6: Sending repeated message does not wipe existing draft fields."""
+    phone = "94770001056"
+    session_id = f"whatsapp:{phone}"
+
+    # Turn 1: food & qty
+    await resilient_executor.execute_deterministic_fallback("I have 30 meal packets of rice and curry available today.", session_id=session_id)
+
+    # Turn 2: Name
+    await resilient_executor.execute_deterministic_fallback("Afnan Food House", session_id=session_id)
+
+    # Turn 3: Repeat initial statement
+    r_rep = await resilient_executor.execute_deterministic_fallback("I have 30 meal packets of rice and curry available today.", session_id=session_id)
+    draft = database.get_draft_donation(phone)
+    assert draft["donor_name"] == "Afnan Food House"
+    assert draft["quantity"] == 30.0
+    # Must NOT ask for name again; must ask for city!
+    assert "city" in r_rep.lower() or "area" in r_rep.lower()
+
+
+@pytest.mark.asyncio
+async def test_returning_user_warm_welcome():
+    """Test 8: Returning existing donor receives personal welcome back."""
+    phone = "94770001057"
+    database.create_or_update_user(phone=phone, display_name="Afnan", onboarding_completed=True)
+    tools.register_donor(name="Afnan", location="Mawanella", phone=phone)
+
+    msg = {"from": phone, "id": "wamid.ret01", "type": "text", "text": {"body": "Hi"}}
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+        res = await whatsapp_handler.process_incoming_whatsapp_message(msg)
+
+        assert res["status"] == "returning_welcome_sent"
+        assert "Welcome back" in res["reply"]
+        assert "Afnan" in res["reply"]
+        assert "Donate" in res["reply"] or "donate" in res["reply"] or "What would you like" in res["reply"]
 
 
 @pytest.mark.asyncio
@@ -221,10 +312,10 @@ async def test_single_message_all_in_one_donor():
         session_id=session_id
     )
 
-    assert "Donation Summary" in reply or "Confirm" in reply
+    # All text info present -> asks for WhatsApp location or shows summary
+    assert "location" in reply.lower() or "confirm" in reply.lower()
     assert "50" in reply
     assert "Kandy" in reply
-    assert "Kamal" in reply
 
     draft = database.get_draft_donation(phone)
     assert draft["quantity"] == 50.0

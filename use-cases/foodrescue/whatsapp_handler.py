@@ -398,7 +398,7 @@ async def process_incoming_whatsapp_message(
         # Check First-Time User Onboarding
         if is_new_user and not is_voice_message:
             # Check if this is a general greeting or first contact
-            is_initial_greeting = clean_lower in ["hi", "hello", "hey", "start", "join", "help", "menu", "info", ""] or len(clean_lower) <= 4
+            is_initial_greeting = clean_lower in ["hi", "hello", "hey", "start", "join", "help", "menu", "info", "ආයුබෝවන්", "வணக்கம்", ""]
             if is_initial_greeting:
                 database.set_onboarding_completed(from_number, True)
                 reply_text = translation_service.get_localized_message("onboarding_welcome", lang=preferred_language)
@@ -413,18 +413,25 @@ async def process_incoming_whatsapp_message(
                 database.set_onboarding_completed(from_number, True)
 
         # Returning user explicit menu request
-        if not is_new_user and clean_lower in ["hi", "hello", "hey", "menu", "start"] and not is_voice_message:
+        if not is_new_user and clean_lower in ["hi", "hello", "hey", "menu", "start", "ආයුබෝවන්", "வணக்கம்"] and not is_voice_message:
             donor = database.get_donor_by_phone(from_number)
-            if donor:
-                reply_text = translation_service.get_localized_message("returning_donor_welcome", lang=preferred_language, name=donor.get("name", ""))
-            else:
+            active_draft = database.get_draft_donation(from_number)
+            if donor and not (active_draft and active_draft.get("food_type")):
+                reply_text = translation_service.get_localized_message("returning_donor_welcome", lang=preferred_language, name=donor.get("name", "Friend"))
+                try:
+                    database.record_message(phone=from_number, sender="agent", text=reply_text)
+                except Exception:
+                    pass
+                send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
+                return {"status": "returning_welcome_sent", "reply": reply_text, "send_status": send_res}
+            elif not (active_draft and active_draft.get("food_type")):
                 reply_text = translation_service.get_localized_message("returning_welcome", lang=preferred_language)
-            try:
-                database.record_message(phone=from_number, sender="agent", text=reply_text)
-            except Exception:
-                pass
-            send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
-            return {"status": "returning_welcome_sent", "reply": reply_text, "send_status": send_res}
+                try:
+                    database.record_message(phone=from_number, sender="agent", text=reply_text)
+                except Exception:
+                    pass
+                send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
+                return {"status": "returning_welcome_sent", "reply": reply_text, "send_status": send_res}
 
         # Invoke resilient multi-agent execution engine with session continuity
         from resilient_executor import run_resilient_chat
@@ -667,7 +674,7 @@ async def process_incoming_whatsapp_message(
                     f"Thank you! Your pickup location has been securely recorded.\n"
                     f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
                     f"• Map: {map_link}\n\n"
-                    "Your assigned volunteer courier has been provided navigation directions and will arrive soon! 🚚"
+                    "We're now looking for a suitable recipient organization and volunteer courier. 🚚"
                 )
             
             # Also notify assigned volunteer if task exists

@@ -221,6 +221,24 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         )
     },
 
+    "returning_donor_welcome": {
+        "en": (
+            "👋 Welcome back, {name}! 🌱\n\n"
+            "What would you like to donate today?\n"
+            "You can simply tell me what food you have (e.g. *'I have 30 meal packets of rice and curry'*)."
+        ),
+        "si": (
+            "👋 නැවතත් සාදරයෙන් පිළිගනිමු, {name}! 🌱\n\n"
+            "අද ඔබ පරිත්‍යාග කිරීමට බලාපොරොත්තු වන්නේ කුමක්ද?\n"
+            "ඔබ සතුව ඇති ආහාර පිළිබඳව කෙලින්ම පැවසිය හැක (උදා: *'මා ළඟ බත් පාර්සල් 30ක් ඇත'*)."
+        ),
+        "ta": (
+            "👋 மீண்டும் நல்வரவு, {name}! 🌱\n\n"
+            "இன்று நீங்கள் என்ன தானம் செய்ய விரும்புகிறீர்கள்?\n"
+            "உங்களிடம் உள்ள உணவை நேரடியாகக் கூறலாம் (எ.கா. *'என்னிடம் 30 பொதி சோறு உள்ளது'*)."
+        )
+    },
+
     # 3. Language Selection Confirmation
     "language_selected": {
         "en": "English language selected. I will respond to your messages in English from now on.",
