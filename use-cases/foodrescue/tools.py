@@ -371,15 +371,19 @@ def create_pickup_task(
     
     org = database.get_organization_record(clean_org_id)
     if not org:
-        database.create_organization_record(
-            org_id=clean_org_id,
-            name="Community Organization",
-            location=delivery_location or "Colombo",
-            service_area="Colombo",
-            accepted_food_types="all",
-            phone="94770000000"
-        )
-        org = database.get_organization_record(clean_org_id)
+        all_orgs = database.get_all_organizations()
+        if all_orgs:
+            org = all_orgs[0]
+            clean_org_id = org["id"]
+        else:
+            org = database.create_organization_record(
+                org_id=clean_org_id,
+                name="Hope Food Bank",
+                location=delivery_location or "Mawanella",
+                service_area="Mawanella",
+                accepted_food_types="all",
+                phone="94729660756"
+            )
     
     clean_delivery_loc = str(delivery_location).strip() if delivery_location and str(delivery_location).strip() else (org.get("location") if org else "Organization HQ")
     
@@ -540,18 +544,31 @@ def accept_pickup_task_atomic(
     donor_phone = donor.get("phone", "") if donor else ""
     
     org = database.get_organization_record(task.get("organization_id", ""))
-    org_name = org.get("name", "Community Kitchen") if org else "Community Kitchen"
-    org_loc = org.get("location", "Colombo 7") if org else "Colombo 7"
+    org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+    org_loc = org.get("location", "Colombo") if org else "Colombo"
     
-    p_loc = task.get("pickup_location", "Colombo 3")
-    dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 6.2)
+    p_loc = task.get("pickup_location") or (don.get("pickup_location") if don else "Colombo")
     mode = vol.get("transport_mode", "Motorbike") if vol else "Motorbike"
+    vol_loc = vol.get("current_location") or vol.get("location") or vol.get("service_area") if vol else None
+
+    p_coords = routing.geocode_location(p_loc)
+    d_coords = routing.geocode_location(org_loc)
+    v_coords = routing.geocode_location(vol_loc) if vol_loc else None
+
+    if p_coords and d_coords:
+        if v_coords:
+            leg1 = routing.calculate_haversine_distance(v_coords[0], v_coords[1], p_coords[0], p_coords[1]) * 1.25
+            leg2 = routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25
+            dist = round(max(0.5, leg1 + leg2), 1)
+        else:
+            dist = round(max(0.5, routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
+    else:
+        dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 5.0)
+
     cost_calc = routing.calculate_transport_estimate(dist, mode)
-    est_cost = cost_calc.get("estimated_support_amount", 310.0)
+    est_cost = float(cost_calc.get("estimated_support_amount") or (dist * routing.get_transport_rate(mode)))
     
-    p_coords = routing.geocode_location(p_loc) or (6.9056, 79.8519)
-    d_coords = routing.geocode_location(org_loc) or (6.9069, 79.8708)
-    directions_link = routing.generate_directions_link(p_coords[0], p_coords[1], d_coords[0], d_coords[1])
+    directions_link = routing.generate_directions_link(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) if p_coords and d_coords else ""
     
     # Audit log
     now = database.get_repository()._now() if hasattr(database.get_repository(), "_now") else ""
@@ -1883,7 +1900,14 @@ def confirm_delivery(
         database.update_volunteer_availability(vol_id, "AVAILABLE")
         
     # Auto-create travel reimbursement ledger entry
-    dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 6.0)
+    dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 0.0)
+    if dist <= 0.0:
+        p_coords = routing.geocode_location(task.get("pickup_location", ""))
+        d_coords = routing.geocode_location(task.get("delivery_location", ""))
+        if p_coords and d_coords:
+            dist = round(max(0.5, routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
+        else:
+            dist = 5.0
     vol = database.get_volunteer_record(vol_id) if vol_id else None
     mode = vol.get("transport_mode", "motorbike") if vol else "motorbike"
     rate = routing.get_transport_rate(mode)

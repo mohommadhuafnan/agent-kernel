@@ -5,7 +5,7 @@ session state diagnostics, and web UI asset delivery mounted on Agent Kernel RES
 """
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -486,6 +486,7 @@ class SettingsUpdateRequest(BaseModel):
     base_fare: Optional[float] = Field(None, ge=0)
     cost_per_km: Optional[float] = Field(None, ge=0)
     currency: Optional[str] = Field("LKR", max_length=10)
+    rates_by_vehicle: Optional[Dict[str, float]] = Field(None)
     vehicle_multipliers: Optional[dict] = Field(None)
 
 
@@ -499,6 +500,8 @@ async def update_settings_endpoint(body: SettingsUpdateRequest):
         current["cost_per_km"] = body.cost_per_km
     if body.currency:
         current["currency"] = body.currency
+    if body.rates_by_vehicle:
+        current["rates_by_vehicle"] = body.rates_by_vehicle
     if body.vehicle_multipliers:
         current["vehicle_multipliers"] = body.vehicle_multipliers
 

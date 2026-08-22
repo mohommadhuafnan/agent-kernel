@@ -10,7 +10,7 @@ import json
 import uuid
 import asyncio
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from agentkernel.core import ChatService
 from agentkernel.core.model import BaseChatRequest
 import tools
@@ -81,6 +81,50 @@ def _extract_food_type(text: str) -> str:
     if "rice" in text_clean.lower() or "curry" in text_clean.lower():
         return "Rice & Curry Packages"
     return "Surplus Food Packages"
+
+
+def _calculate_dynamic_task_metrics(task: Dict[str, Any], vol_record: Optional[Dict[str, Any]] = None) -> Tuple[float, float, str, str, str, str, str]:
+    """Calculate real road distance, transport cost, donor, and recipient info dynamically."""
+    don_id = task.get("donation_id", "")
+    don = database.get_donation_record(don_id) if don_id else None
+    
+    donor_id = don.get("donor_id", "") if don else ""
+    donor = database.get_donor_record(donor_id) if donor_id else None
+    donor_name = donor.get("name") if donor else (don.get("donor_name") if don else "Donor Partner")
+    donor_contact = donor.get("phone") if donor else (don.get("donor_phone") if don else "")
+    
+    org_id = task.get("organization_id", "")
+    org = database.get_organization_record(org_id) if org_id else None
+    recipient_name = org.get("name") if org else "Recipient Organization"
+    
+    p_loc = task.get("pickup_location") or (don.get("pickup_location") if don else "Pickup Location")
+    d_loc = task.get("delivery_location") or (org.get("location") if org else "Delivery Location")
+    
+    vol_mode = vol_record.get("transport_mode", "Motorbike") if vol_record else "Motorbike"
+    vol_loc = vol_record.get("current_location") or vol_record.get("location") or vol_record.get("service_area") if vol_record else None
+    
+    p_coords = routing.geocode_location(p_loc)
+    d_coords = routing.geocode_location(d_loc)
+    v_coords = routing.geocode_location(vol_loc) if vol_loc else None
+    
+    if p_coords and d_coords:
+        if v_coords:
+            leg1 = routing.calculate_haversine_distance(v_coords[0], v_coords[1], p_coords[0], p_coords[1]) * 1.25
+            leg2 = routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25
+            total_dist = round(max(0.5, leg1 + leg2), 1)
+        else:
+            total_dist = round(max(0.5, routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
+    else:
+        total_dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 5.0)
+        
+    cost_calc = routing.calculate_transport_estimate(total_dist, vol_mode.lower())
+    est_cost = float(cost_calc.get("estimated_support_amount") or (total_dist * routing.get_transport_rate(vol_mode.lower())))
+    
+    directions_link = ""
+    if p_coords and d_coords:
+        directions_link = routing.generate_directions_link(p_coords[0], p_coords[1], d_coords[0], d_coords[1])
+        
+    return total_dist, est_cost, donor_name, donor_contact, recipient_name, p_loc, d_loc
 
 
 async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
@@ -223,11 +267,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             don = database.get_donation_record(don_id) if don_id else None
             food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets of Rice & Curry"
             
-            p_area = top_task.get("pickup_location") or (don.get("pickup_location") if don else "Afnan Food House, Mawanella")
-            d_area = top_task.get("delivery_location", "Hope Food Home, Mawanella")
-            
-            cost_calc = routing.calculate_transport_estimate(4.2, "three-wheeler")
-            est_cost = cost_calc.get("estimated_support_amount", 378.0)
+            vol_rec = existing_vol or (database.get_volunteer_by_phone(phone) if phone else None)
+            total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
             
             tools.set_session_context(key="current_task_id", value=task_id)
             if existing_vol:
@@ -245,8 +286,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 f"• 🆔 **Task ID**: `{task_id}`\n"
                 f"• 🍱 **Food**: {food_info}\n"
                 f"• 📍 **Pickup Location**: {p_area}\n"
-                f"• 🏢 **Destination**: {d_area}\n"
-                f"• 📏 **Estimated Distance**: ~4.2 km\n"
+                f"• 🏢 **Destination**: {r_name} ({d_area})\n"
+                f"• 📏 **Estimated Distance**: ~{total_dist} km\n"
                 f"• 💰 **Estimated Transport Support**: LKR {int(est_cost)}\n\n"
                 f"Would you like to take this pickup?\n"
                 f"👉 Reply *'Accept'* or *'Reject'*"
@@ -287,14 +328,14 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             if phone:
                 database.clear_user_conversation_state(phone)
                 
-            f_info = res.get("food_info", "30 meal packets — Rice & Curry")
-            d_name = res.get("donor_name", "Afnan Food House")
+            f_info = res.get("food_info", "Food Donation")
+            d_name = res.get("donor_name", "Donor Partner")
             d_contact = res.get("donor_contact", "")
-            p_loc = res.get("pickup_location", "Mawanella")
-            r_name = res.get("recipient_name", "Hope Food Home")
-            r_loc = res.get("delivery_location", "Mawanella")
-            dist = res.get("total_distance_km", 4.2)
-            cost = res.get("estimated_support_lkr", 378)
+            p_loc = res.get("pickup_location", "Pickup Location")
+            r_name = res.get("recipient_name", "Recipient Organization")
+            r_loc = res.get("delivery_location", "Delivery Location")
+            dist = res.get("total_distance_km", 5.0)
+            cost = res.get("estimated_support_lkr", 250)
             route_link = res.get("directions_link", "")
             contact_line = f"\n• 📞 **Donor Contact**: {d_contact}" if d_contact else ""
             route_line = f"\n• 🗺️ **Open Route**: {route_link}" if route_link else ""
@@ -396,11 +437,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     ]) or (clean_p == "3" and not in_vol_workflow)
 
     if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):
-        # 6e-1. Direct availability declaration (e.g. "I'm free now", "Hii i am available to volunteer today", "3")
+        # 6e-1. Direct availability declaration (e.g. "I'm free now", "Hii i am available to volunteer today", "I'm free to volunteer now")
         is_direct_avail = any(m in clean_p for m in [
-            "free now", "i'm free", "i am free", "free to volunteer", "i can help", "available for pickup",
-            "available to volunteer", "ස්වේච්ඡා", "ලෑස්තියි", "உதவ முடியும்"
-        ]) or clean_p == "3"
+            "free now", "i'm free", "i am free", "free to volunteer", "available for pickup",
+            "available to volunteer", "available to help", "ready to help", "ස්වේච්ඡා", "ලෑස්තියි", "උදව් කරන්න පුළුවන්"
+        ])
 
         if is_direct_avail and not in_vol_workflow:
             if not existing_vol:
@@ -518,14 +559,10 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 don = database.get_donation_record(don_id) if don_id else None
                 food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
                 
-                p_area = top_task.get("pickup_location") or (don.get("pickup_location") if don else f"Afnan Food House, {final_vol_loc}")
-                d_area = top_task.get("delivery_location", f"Hope Food Home, {final_vol_loc}")
-                
-                cost_calc = routing.calculate_transport_estimate(4.2, final_vol_veh.lower())
-                est_cost = cost_calc.get("estimated_support_amount", 378.0)
+                vol_record = database.get_volunteer_by_phone(phone) if phone else None
+                total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_record or {"transport_mode": final_vol_veh, "service_area": final_vol_loc})
                 
                 tools.set_session_context(key="current_task_id", value=task_id)
-                vol_record = database.get_volunteer_by_phone(phone) if phone else None
                 if vol_record:
                     tools.set_session_context(key="current_volunteer_id", value=vol_record["id"])
                 if phone:
@@ -542,8 +579,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     f"🚚 **Food Pickup Available!**\n\n"
                     f"• 🍱 **Food**: {food_info}\n"
                     f"• 📍 **Pickup**: {p_area}\n"
-                    f"• 🏠 **Delivery**: {d_area}\n"
-                    f"• 📏 **Distance**: ~4.2 km\n"
+                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
+                    f"• 📏 **Distance**: ~{total_dist} km\n"
                     f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
                     f"*Reply **Accept** or **Reject***"
                 )

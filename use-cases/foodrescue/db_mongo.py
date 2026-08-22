@@ -176,9 +176,17 @@ class MongoRepository(BaseRepository):
                 self.system_settings_col.insert_one({
                     "setting_key": "transport_cost",
                     "setting_value": {
-                        "base_fare": 150.0,
+                        "base_fare": 100.0,
                         "cost_per_km": 80.0,
                         "currency": "LKR",
+                        "rates_by_vehicle": {
+                            "Motorbike": 50.0,
+                            "Three-Wheeler": 90.0,
+                            "Car": 80.0,
+                            "Van": 120.0,
+                            "Bicycle": 25.0,
+                            "Electric Bike": 25.0
+                        },
                         "vehicle_multipliers": {
                             "Motorbike": 1.0,
                             "Bicycle": 0.6,
@@ -1261,9 +1269,17 @@ class MongoRepository(BaseRepository):
             except Exception:
                 pass
         return {
-            "base_fare": 150.0,
+            "base_fare": 100.0,
             "cost_per_km": 80.0,
             "currency": "LKR",
+            "rates_by_vehicle": {
+                "Motorbike": 50.0,
+                "Three-Wheeler": 90.0,
+                "Car": 80.0,
+                "Van": 120.0,
+                "Bicycle": 25.0,
+                "Electric Bike": 25.0
+            },
             "vehicle_multipliers": {
                 "Motorbike": 1.0,
                 "Bicycle": 0.6,

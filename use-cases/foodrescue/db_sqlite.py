@@ -292,15 +292,26 @@ class SQLiteRepository(BaseRepository):
                 except sqlite3.OperationalError:
                     pass
 
+            # Purge any legacy placeholder organizations
+            cursor.execute("DELETE FROM organizations WHERE phone = '94770000000' OR name = 'Community Organization'")
+
             # Seed default system settings if not present
             cursor.execute("SELECT COUNT(*) FROM system_settings WHERE setting_key = 'transport_cost'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
                     "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)",
                     ("transport_cost", json.dumps({
-                        "base_fare": 150.0,
+                        "base_fare": 100.0,
                         "cost_per_km": 80.0,
                         "currency": "LKR",
+                        "rates_by_vehicle": {
+                            "Motorbike": 50.0,
+                            "Three-Wheeler": 90.0,
+                            "Car": 80.0,
+                            "Van": 120.0,
+                            "Bicycle": 25.0,
+                            "Electric Bike": 25.0
+                        },
                         "vehicle_multipliers": {
                             "Motorbike": 1.0,
                             "Bicycle": 0.6,
@@ -493,9 +504,9 @@ class SQLiteRepository(BaseRepository):
         with conn:
             cursor = conn.cursor()
             cursor.execute('''
-            INSERT INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (volunteer_id, name, phone, service_area, availability, current_status, loc, now))
+            INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, location, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (volunteer_id, name, phone, service_area, transport_mode, availability, current_status, loc, now))
         
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM volunteers WHERE id = ?", (volunteer_id,))
@@ -917,6 +928,34 @@ class SQLiteRepository(BaseRepository):
                     cursor.execute(f"DELETE FROM {tbl}")
                 except sqlite3.OperationalError:
                     pass
+            try:
+                default_settings = json.dumps({
+                    "base_fare": 100.0,
+                    "cost_per_km": 80.0,
+                    "currency": "LKR",
+                    "rates_by_vehicle": {
+                        "Motorbike": 50.0,
+                        "Three-Wheeler": 90.0,
+                        "Car": 80.0,
+                        "Van": 120.0,
+                        "Bicycle": 25.0,
+                        "Electric Bike": 25.0
+                    },
+                    "vehicle_multipliers": {
+                        "Motorbike": 1.0,
+                        "Bicycle": 0.6,
+                        "Car": 1.5,
+                        "Van": 2.0,
+                        "Three-Wheeler": 1.2
+                    }
+                })
+                cursor.execute(
+                    "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('transport_cost', ?, ?) "
+                    "ON CONFLICT(setting_key) DO UPDATE SET setting_value = ?, updated_at = ?",
+                    (default_settings, self._now(), default_settings, self._now())
+                )
+            except Exception:
+                pass
         conn.close()
 
     # Reimbursements (Accounting Ledger)
@@ -1676,13 +1715,31 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         if row and row["setting_value"]:
             try:
-                return json.loads(row["setting_value"])
+                data = json.loads(row["setting_value"])
+                if "rates_by_vehicle" not in data:
+                    data["rates_by_vehicle"] = {
+                        "Motorbike": 50.0,
+                        "Three-Wheeler": 90.0,
+                        "Car": 80.0,
+                        "Van": 120.0,
+                        "Bicycle": 25.0,
+                        "Electric Bike": 25.0
+                    }
+                return data
             except Exception:
                 pass
         return {
-            "base_fare": 150.0,
+            "base_fare": 100.0,
             "cost_per_km": 80.0,
             "currency": "LKR",
+            "rates_by_vehicle": {
+                "Motorbike": 50.0,
+                "Three-Wheeler": 90.0,
+                "Car": 80.0,
+                "Van": 120.0,
+                "Bicycle": 25.0,
+                "Electric Bike": 25.0
+            },
             "vehicle_multipliers": {
                 "Motorbike": 1.0,
                 "Bicycle": 0.6,

@@ -398,8 +398,9 @@ const App = (function () {
     setText('kpi-active-pickups', s.active_pickups || 0);
     setText('kpi-completed-rescues', s.completed_deliveries || 0);
     setText('kpi-avail-vols', s.available_volunteers || 0);
-    setText('kpi-total-orgs', s.registered_organizations || state.organizations.length || 0);
-    setText('kpi-active-users', s.active_users || state.users.length || 1);
+    setText('kpi-total-orgs', s.registered_organizations || (state.organizations ? state.organizations.length : 0));
+    const userCount = (s.active_users !== undefined && s.active_users !== null) ? s.active_users : ((state.users || []).length);
+    setText('kpi-active-users', userCount);
     setText('kpi-co2-saved', `${s.co2_saved_kg || 0} kg`);
 
     // Render Active Rescue Pulse List
@@ -996,29 +997,135 @@ const App = (function () {
     }
   }
 
-  // 13. Render Settings View
+  // 13. Render Settings View (Dynamic Vehicle Reimbursement Rate Manager)
+  let localRatesByVehicle = {
+    'Motorbike': 50.0,
+    'Three-Wheeler': 90.0,
+    'Car': 120.0,
+    'Van': 150.0,
+    'Bicycle': 25.0,
+    'Electric Bike': 25.0
+  };
+
+  const VEHICLE_ICONS = {
+    'Motorbike': '🛵',
+    'Three-Wheeler': '🛺',
+    'Car': '🚗',
+    'Van': '🚐',
+    'Bicycle': '🚲',
+    'Electric Bike': '⚡',
+    'Truck': '🚚'
+  };
+
   function renderSettings() {
     const cfg = (state.settings || {}).transport_cost || {};
-    if (cfg.base_fare !== undefined) document.getElementById('setting-base-fare').value = cfg.base_fare;
-    if (cfg.cost_per_km !== undefined) document.getElementById('setting-cost-per-km').value = cfg.cost_per_km;
-    if (cfg.currency) document.getElementById('setting-currency').value = cfg.currency;
+    if (cfg.base_fare !== undefined && document.getElementById('setting-base-fare')) {
+      document.getElementById('setting-base-fare').value = cfg.base_fare;
+    }
+    if (cfg.cost_per_km !== undefined && document.getElementById('setting-cost-per-km')) {
+      document.getElementById('setting-cost-per-km').value = cfg.cost_per_km;
+    }
+    if (cfg.currency && document.getElementById('setting-currency')) {
+      document.getElementById('setting-currency').value = cfg.currency;
+    }
+
+    if (cfg.rates_by_vehicle && typeof cfg.rates_by_vehicle === 'object') {
+      localRatesByVehicle = Object.assign({}, localRatesByVehicle, cfg.rates_by_vehicle);
+    }
+
+    handleVehicleSelectChange();
+    renderVehicleRatesTable();
+  }
+
+  function handleVehicleSelectChange() {
+    const selElem = document.getElementById('setting-vehicle-select');
+    const inputElem = document.getElementById('setting-vehicle-rate-input');
+    if (!selElem || !inputElem) return;
+    const selectedMode = selElem.value;
+    const currentRate = localRatesByVehicle[selectedMode] !== undefined ? localRatesByVehicle[selectedMode] : (selectedMode === 'Car' ? 120 : (selectedMode === 'Motorbike' ? 50 : 80));
+    inputElem.value = currentRate;
+  }
+
+  function handleApplyVehicleRate() {
+    const selElem = document.getElementById('setting-vehicle-select');
+    const inputElem = document.getElementById('setting-vehicle-rate-input');
+    if (!selElem || !inputElem) return;
+    const selectedMode = selElem.value;
+    const rateVal = parseFloat(inputElem.value);
+    if (isNaN(rateVal) || rateVal < 0) {
+      alert('Please enter a valid rate per kilometer.');
+      return;
+    }
+    localRatesByVehicle[selectedMode] = rateVal;
+    renderVehicleRatesTable();
+  }
+
+  function handleRemoveVehicleRate(mode) {
+    if (localRatesByVehicle[mode] !== undefined) {
+      delete localRatesByVehicle[mode];
+      renderVehicleRatesTable();
+    }
+  }
+
+  function renderVehicleRatesTable() {
+    const tableElem = document.getElementById('settings-rates-table');
+    if (!tableElem) return;
+
+    const entries = Object.entries(localRatesByVehicle);
+    if (entries.length === 0) {
+      tableElem.innerHTML = '<div style="font-size: 0.85rem; color: var(--text-muted);">No vehicle rates defined. Default cost per km will apply.</div>';
+      return;
+    }
+
+    tableElem.innerHTML = entries.map(([mode, rate]) => {
+      const icon = VEHICLE_ICONS[mode] || '🚗';
+      return `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.6rem; background: var(--bg-surface, #ffffff); border-radius: 6px; border: 1px solid var(--border-color, #e2e8f0);">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 1.1rem;">${icon}</span>
+            <strong style="font-size: 0.88rem;">${escapeHtml(mode)}</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="badge badge-assigned" style="font-size: 0.85rem; font-family: monospace;">Rs. ${rate} / km</span>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="App.handleEditVehicleRate('${escapeHtml(mode)}')" style="padding: 2px 6px; font-size: 0.75rem;">Edit</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function handleEditVehicleRate(mode) {
+    const selElem = document.getElementById('setting-vehicle-select');
+    const inputElem = document.getElementById('setting-vehicle-rate-input');
+    if (selElem && inputElem && localRatesByVehicle[mode] !== undefined) {
+      selElem.value = mode;
+      inputElem.value = localRatesByVehicle[mode];
+      inputElem.focus();
+    }
   }
 
   async function handleSaveTransportSettings(e) {
     e.preventDefault();
-    const baseFare = parseFloat(document.getElementById('setting-base-fare').value);
-    const costPerKm = parseFloat(document.getElementById('setting-cost-per-km').value);
+    const baseFare = parseFloat(document.getElementById('setting-base-fare')?.value || 100);
+    const costPerKm = parseFloat(document.getElementById('setting-cost-per-km')?.value || 80);
 
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_fare: baseFare, cost_per_km: costPerKm })
+        body: JSON.stringify({
+          base_fare: baseFare,
+          cost_per_km: costPerKm,
+          currency: 'LKR',
+          rates_by_vehicle: localRatesByVehicle
+        })
       }).then(r => r.json());
 
       if (res.status === 'success') {
-        alert('Transport reimbursement configuration saved.');
+        alert('Dynamic transport settings and vehicle reimbursement rates saved successfully!');
         await fetchAllData();
+      } else {
+        alert(res.message || 'Failed to update transport configuration.');
       }
     } catch (err) {
       alert('Failed to update transport configuration.');
@@ -1235,6 +1342,10 @@ const App = (function () {
     openUserConversation,
     handleSendSimulatorMessage,
     handleSaveTransportSettings,
+    handleVehicleSelectChange,
+    handleApplyVehicleRate,
+    handleEditVehicleRate,
+    handleRemoveVehicleRate,
     handleCreateDonation,
     handleCreateVolunteer,
     handleTriggerSimulateModal,

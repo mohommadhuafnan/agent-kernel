@@ -700,19 +700,53 @@
               </div>
               <div class="panel-body">
                 <form id="form-settings-transport" onsubmit="App.handleSaveTransportSettings(event)">
-                  <div class="form-group">
-                    <label class="form-label">Base Fare (LKR)</label>
-                    <input type="number" step="10" class="form-input" id="setting-base-fare" value="150" required>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label">Base Pickup Fare (LKR)</label>
+                      <input type="number" step="5" class="form-input" id="setting-base-fare" placeholder="100" required>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Default Rate Per Km (LKR / km)</label>
+                      <input type="number" step="5" class="form-input" id="setting-cost-per-km" placeholder="80" required>
+                    </div>
                   </div>
+
+                  <!-- Dynamic Vehicle Rate Manager -->
                   <div class="form-group">
-                    <label class="form-label">Rate Per Kilometer (LKR / km)</label>
-                    <input type="number" step="5" class="form-input" id="setting-cost-per-km" value="80" required>
+                    <label class="form-label font-semibold">Dynamic Vehicle Rate Configuration</label>
+                    <div class="form-row" style="align-items: flex-end; margin-bottom: 0.75rem;">
+                      <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 0.8rem;">Select Vehicle Mode</label>
+                        <select class="form-select" id="setting-vehicle-select" onchange="App.handleVehicleSelectChange()">
+                          <option value="Motorbike">🛵 Motorbike</option>
+                          <option value="Three-Wheeler">🛺 Three-Wheeler (Tuk-Tuk)</option>
+                          <option value="Car">🚗 Car</option>
+                          <option value="Van">🚐 Van</option>
+                          <option value="Bicycle">🚲 Bicycle</option>
+                          <option value="Electric Bike">⚡ Electric Bike</option>
+                        </select>
+                      </div>
+                      <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 0.8rem;">Rate Per Km (LKR / km)</label>
+                        <input type="number" step="1" min="0" class="form-input" id="setting-vehicle-rate-input" placeholder="e.g. 120">
+                      </div>
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="App.handleApplyVehicleRate()" style="height: 38px;">Apply Rate</button>
+                    </div>
                   </div>
+
+                  <!-- Active Configured Vehicle Rates Table -->
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.8rem; color: var(--text-muted);">Active Rates by Vehicle</label>
+                    <div id="settings-rates-table" style="background: var(--bg-surface-elevated, #f8fafc); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                      <!-- Populated dynamically by app.js -->
+                    </div>
+                  </div>
+
                   <div class="form-group">
                     <label class="form-label">Currency</label>
                     <input type="text" class="form-input" id="setting-currency" value="LKR" readonly>
                   </div>
-                  <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
+                  <button type="submit" class="btn btn-primary btn-sm">Save All Settings</button>
                 </form>
               </div>
             </div>
@@ -831,17 +865,17 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Donor Name</label>
-              <input type="text" class="form-input" id="modal-don-donor-name" placeholder="Grand Hotel" value="Grand Hotel">
+              <label class="form-label">Donor Name / Business</label>
+              <input type="text" class="form-input" id="modal-don-donor-name" placeholder="e.g. Grand Hotel or Kamal" required>
             </div>
             <div class="form-group">
               <label class="form-label">Donor Phone</label>
-              <input type="text" class="form-input" id="modal-don-donor-phone" placeholder="+94770001001" value="+94770001001">
+              <input type="text" class="form-input" id="modal-don-donor-phone" placeholder="e.g. +94770001001" required>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Available Until</label>
-            <input type="text" class="form-input" id="modal-don-deadline" placeholder="Before 8 PM" value="Before 8 PM">
+            <input type="text" class="form-input" id="modal-don-deadline" placeholder="e.g. Before 8 PM or Today 7:30 PM" required>
           </div>
         </div>
         <div class="modal-footer">

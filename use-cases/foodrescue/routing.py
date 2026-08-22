@@ -133,6 +133,17 @@ def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
 def get_transport_rate(mode: str) -> float:
     """Retrieve the configured per-km reimbursement rate for a transport mode."""
     norm_mode = str(mode).strip().lower() if mode else "motorbike"
+    try:
+        import database
+        cfg = database.get_transport_settings()
+        rates = cfg.get("rates_by_vehicle") or {}
+        for k, v in rates.items():
+            if k.lower() == norm_mode:
+                return float(v)
+            if k.lower() in ["three-wheeler", "tuk", "tuk-tuk"] and norm_mode in ["three-wheeler", "tuk", "tuk-tuk"]:
+                return float(v)
+    except Exception:
+        pass
     return DEFAULT_TRANSPORT_RATES.get(norm_mode, DEFAULT_TRANSPORT_RATES.get("motorbike", 50.0))
 
 

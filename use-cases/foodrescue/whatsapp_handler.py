@@ -200,17 +200,27 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
     clean_p = prompt_text.strip().lower()
     
     # 1. Volunteer Accepts Task ("Accept", "I'll take it", etc.)
-    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "claim"]) and "assigned" in reply_text.lower():
+    if any(m in clean_p for m in ["accept", "i'll take it", "ill take it", "take it", "i can do it", "accept task", "claim"]) and any(w in reply_text.lower() for w in ["assigned", "accepted", "claimed"]):
         vol = database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
         vol_phone = from_number
         
-        all_tasks = database.get_all_pickup_tasks()
-        assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
-        if assigned_tasks:
-            top_task = assigned_tasks[-1]
-            don_id = top_task.get("donation_id")
+        target_task = None
+        if vol:
+            v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
+            assigned_v_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
+            if assigned_v_tasks:
+                target_task = assigned_v_tasks[-1]
+                
+        if not target_task:
+            all_tasks = database.get_all_pickup_tasks()
+            assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
+            if assigned_tasks:
+                target_task = assigned_tasks[-1]
+
+        if target_task:
+            don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
             food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
             
@@ -232,7 +242,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     logger.warning(f"Failed to send WhatsApp donor assignment notification: {e}")
                     
             # Notify Recipient Organization
-            org_id = top_task.get("organization_id")
+            org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
             org_phone = org.get("phone") if org else None
             if org_phone and org_phone != from_number:
@@ -249,16 +259,26 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     logger.warning(f"Failed to send WhatsApp organization assignment notification: {e}")
 
     # 2. Volunteer Confirms Collection ("Collected", "Got the food")
-    elif any(m in clean_p for m in ["collected", "got the food", "food collected", "picked up", "pickup completed"]) and "collected" in reply_text.lower():
+    elif any(m in clean_p for m in ["collected", "got the food", "food collected", "picked up", "pickup completed", "ආහාර ලබාගත්තා", "ලබාගත්තා", "உணவு சேகரித்தேன்", "சேகரித்தேன்"]) and any(w in reply_text.lower() for w in ["collected", "in transit", "picked_up"]):
         vol = database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
         
-        all_tasks = database.get_all_pickup_tasks()
-        collected_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
-        if collected_tasks:
-            top_task = collected_tasks[-1]
-            don_id = top_task.get("donation_id")
+        target_task = None
+        if vol:
+            v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
+            col_v_tasks = [t for t in v_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
+            if col_v_tasks:
+                target_task = col_v_tasks[-1]
+                
+        if not target_task:
+            all_tasks = database.get_all_pickup_tasks()
+            collected_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
+            if collected_tasks:
+                target_task = collected_tasks[-1]
+
+        if target_task:
+            don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
             food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
             
@@ -277,7 +297,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     logger.warning(f"Failed to send WhatsApp donor collected notification: {e}")
                     
             # Notify Recipient Organization
-            org_id = top_task.get("organization_id")
+            org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
             org_phone = org.get("phone") if org else None
             if org_phone and org_phone != from_number:
@@ -292,19 +312,29 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     logger.warning(f"Failed to send WhatsApp organization in-transit notification: {e}")
 
     # 3. Volunteer Confirms Delivery ("Delivered", "Food delivered", "Dropped off")
-    elif any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done"]) and "delivered" in reply_text.lower():
+    elif any(m in clean_p for m in ["delivered", "food delivered", "dropped off", "delivery completed", "delivery done", "භාරදුන්නා", "බෙදාහැරියා", "වழங்கினேன்", "டெலிவரி"]) and any(w in reply_text.lower() for w in ["delivered", "completed", "distributed"]):
         vol = database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
         
-        all_tasks = database.get_all_pickup_tasks()
-        delivered_tasks = [t for t in all_tasks if t.get("status") in ["DELIVERED", "COMPLETED"]]
-        if delivered_tasks:
-            top_task = delivered_tasks[-1]
-            don_id = top_task.get("donation_id")
+        target_task = None
+        if vol:
+            v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
+            del_v_tasks = [t for t in v_tasks if t.get("status") in ["DELIVERED", "COMPLETED"]]
+            if del_v_tasks:
+                target_task = del_v_tasks[-1]
+                
+        if not target_task:
+            all_tasks = database.get_all_pickup_tasks()
+            delivered_tasks = [t for t in all_tasks if t.get("status") in ["DELIVERED", "COMPLETED"]]
+            if delivered_tasks:
+                target_task = delivered_tasks[-1]
+
+        if target_task:
+            don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
             food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets — Rice & Curry"
             
-            org_id = top_task.get("organization_id")
+            org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
             org_name = org.get("name", "Recipient Organization") if org else "the recipient organization"
             org_phone = org.get("phone") if org else None
