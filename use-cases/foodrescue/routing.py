@@ -18,7 +18,7 @@ import httpx
 logger = logging.getLogger("foodrescue.routing")
 
 # Supported transport modes
-SUPPORTED_TRANSPORT_MODES = {"walking", "bicycle", "electric bike", "motorbike", "tuk", "tuk-tuk", "car", "van"}
+SUPPORTED_TRANSPORT_MODES = {"walking", "bicycle", "electric bike", "motorbike", "tuk", "tuk-tuk", "three-wheeler", "car", "van"}
 
 # Default Transport Reimbursement Rates (LKR per km) - Sri Lanka Market Demo Configuration
 DEFAULT_TRANSPORT_RATES = {
@@ -28,6 +28,7 @@ DEFAULT_TRANSPORT_RATES = {
     "motorbike": float(os.environ.get("TRANSPORT_RATE_MOTORBIKE", 50.0)),
     "tuk": float(os.environ.get("TRANSPORT_RATE_TUK", 90.0)),
     "tuk-tuk": float(os.environ.get("TRANSPORT_RATE_TUKTUK", 90.0)),
+    "three-wheeler": float(os.environ.get("TRANSPORT_RATE_TUK", 90.0)),
     "car": float(os.environ.get("TRANSPORT_RATE_CAR", 80.0)),
     "van": float(os.environ.get("TRANSPORT_RATE_VAN", 120.0)),
 }
@@ -40,6 +41,7 @@ DEFAULT_BASE_FARES = {
     "motorbike": float(os.environ.get("BASE_FARE_MOTORBIKE", 50.0)),
     "tuk": float(os.environ.get("BASE_FARE_TUK", 100.0)),
     "tuk-tuk": float(os.environ.get("BASE_FARE_TUKTUK", 100.0)),
+    "three-wheeler": float(os.environ.get("BASE_FARE_TUK", 100.0)),
     "car": float(os.environ.get("BASE_FARE_CAR", 150.0)),
     "van": float(os.environ.get("BASE_FARE_VAN", 250.0)),
 }
@@ -52,6 +54,7 @@ VEHICLE_MEAL_CAPACITY = {
     "motorbike": 25,
     "tuk": 60,
     "tuk-tuk": 60,
+    "three-wheeler": 60,
     "car": 150,
     "van": 500,
 }
@@ -64,6 +67,7 @@ TRANSPORT_SPEEDS_KMH = {
     "motorbike": 30.0,
     "tuk": 25.0,
     "tuk-tuk": 25.0,
+    "three-wheeler": 25.0,
     "car": 25.0,
     "van": 22.0,
 }
@@ -111,6 +115,14 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "galigamuwa": "Kegalle",
     "aranayaka": "Kegalle",
     "bulathkohupitiya": "Kegalle",
+    "kitulgala": "Kegalle",
+    "aluthnuwara": "Kegalle",
+    "ambepussa": "Kegalle",
+    "kotiyakumbura": "Kegalle",
+    "undugoda": "Kegalle",
+    "hettimulla": "Kegalle",
+    "pinnawala": "Kegalle",
+    "nelundeniya": "Kegalle",
     # Kandy District
     "kandy": "Kandy",
     "peradeniya": "Kandy",
@@ -123,6 +135,9 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "wattegama": "Kandy",
     "gelioya": "Kandy",
     "kadugannawa": "Kandy",
+    "pilimathalawa": "Kandy",
+    "menikhinna": "Kandy",
+    "teldeniya": "Kandy",
     # Colombo District
     "colombo": "Colombo",
     "colombo 1": "Colombo",
@@ -180,6 +195,8 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "ragama": "Gampaha",
     "kandana": "Gampaha",
     "seeduwa": "Gampaha",
+    "delgoda": "Gampaha",
+    "biyagama": "Gampaha",
     # Kalutara District
     "kalutara": "Kalutara",
     "panadura": "Kalutara",
@@ -189,6 +206,7 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "wadduwa": "Kalutara",
     "bandaragama": "Kalutara",
     "aluthgama": "Kalutara",
+    "ingiriya": "Kalutara",
     # Galle District
     "galle": "Galle",
     "hikkaduwa": "Galle",
@@ -198,6 +216,119 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "elpitiya": "Galle",
     "baddegama": "Galle",
     "ahungalla": "Galle",
+    "unawatuna": "Galle",
+    # Matara District
+    "matara": "Matara",
+    "weligama": "Matara",
+    "dikwella": "Matara",
+    "akuressa": "Matara",
+    "mirissa": "Matara",
+    "deniyaya": "Matara",
+    # Kurunegala District
+    "kurunegala": "Kurunegala",
+    "kuliyapitiya": "Kurunegala",
+    "narammala": "Kurunegala",
+    "wariyapola": "Kurunegala",
+    "pannala": "Kurunegala",
+    "polgahawela": "Kurunegala",
+    "alawwa": "Kurunegala",
+    "maho": "Kurunegala",
+    "giriulla": "Kurunegala",
+    "ibbagamuwa": "Kurunegala",
+    # Matale District
+    "matale": "Matale",
+    "dambulla": "Matale",
+    "sigiriya": "Matale",
+    "galewela": "Matale",
+    "naula": "Matale",
+    # Nuwara Eliya District
+    "nuwara eliya": "Nuwara Eliya",
+    "hatton": "Nuwara Eliya",
+    "talawakele": "Nuwara Eliya",
+    "ragala": "Nuwara Eliya",
+    "gampola": "Kandy",
+    # Ratnapura District
+    "ratnapura": "Ratnapura",
+    "embilipitiya": "Ratnapura",
+    "balangoda": "Ratnapura",
+    "pelmadulla": "Ratnapura",
+    "kuruwita": "Ratnapura",
+    "eheliyagoda": "Ratnapura",
+    # Badulla District
+    "badulla": "Badulla",
+    "bandarawela": "Badulla",
+    "haputale": "Badulla",
+    "ella": "Badulla",
+    "w強limada": "Badulla",
+    "welimada": "Badulla",
+    "mahiyanganaya": "Badulla",
+    # Anuradhapura District
+    "anuradhapura": "Anuradhapura",
+    "kekirawa": "Anuradhapura",
+    "tambuttegama": "Anuradhapura",
+    "medawachchiya": "Anuradhapura",
+    "eppawala": "Anuradhapura",
+    "habarana": "Anuradhapura",
+    # Polonnaruwa District
+    "polonnaruwa": "Polonnaruwa",
+    "kaduruwela": "Polonnaruwa",
+    "hingurakgoda": "Polonnaruwa",
+    "medirigiriya": "Polonnaruwa",
+    # Jaffna District
+    "jaffna": "Jaffna",
+    "nallur": "Jaffna",
+    "chavakachcheri": "Jaffna",
+    "point pedro": "Jaffna",
+    "chunnakam": "Jaffna",
+    "karainagar": "Jaffna",
+    # Batticaloa District
+    "batticaloa": "Batticaloa",
+    "kattankudy": "Batticaloa",
+    "eravur": "Batticaloa",
+    "valachchenai": "Batticaloa",
+    # Trincomalee District
+    "trincomalee": "Trincomalee",
+    "kinniya": "Trincomalee",
+    "mutur": "Trincomalee",
+    "kantale": "Trincomalee",
+    # Ampara District
+    "ampara": "Ampara",
+    "kalmunai": "Ampara",
+    "sainthamaruthu": "Ampara",
+    "sammanthurai": "Ampara",
+    "akkaraipattu": "Ampara",
+    # Puttalam District
+    "puttalam": "Puttalam",
+    "chilaw": "Puttalam",
+    "marawila": "Puttalam",
+    "dankotuwa": "Puttalam",
+    "wennappuwa": "Puttalam",
+    "an無いamaduwa": "Puttalam",
+    "anamaduwa": "Puttalam",
+    # Hambantota District
+    "hambantota": "Hambantota",
+    "tangalle": "Hambantota",
+    "beliatta": "Hambantota",
+    "ambalantota": "Hambantota",
+    "tissamaharama": "Hambantota",
+    # Monaragala District
+    "monaragala": "Monaragala",
+    "wellawaya": "Monaragala",
+    "buttala": "Monaragala",
+    "bibile": "Monaragala",
+    "kataragama": "Monaragala",
+    # Mannar District
+    "mannar": "Mannar",
+    "nanattan": "Mannar",
+    # Vavuniya District
+    "vavuniya": "Vavuniya",
+    "cheddekulam": "Vavuniya",
+    # Kilinochchi District
+    "kilinochchi": "Kilinochchi",
+    "pallai": "Kilinochchi",
+    # Mullaitivu District
+    "mullaitivu": "Mullaitivu",
+    "pudukuduirippu": "Mullaitivu",
     # Matara District
     "matara": "Matara",
     "weligama": "Matara",
@@ -407,6 +538,42 @@ def resolve_task_district(task: Dict[str, Any]) -> Optional[str]:
 
 # Known Landmark Coordinates (Sri Lanka)
 KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
+    # Kegalle District Localities & Towns
+    "kegalle": (7.2520, 80.3464),
+    "mawanella": (7.2513, 80.4432),
+    "rambukkana": (7.3197, 80.3953),
+    "ruwanwella": (7.0422, 80.2528),
+    "warakapola": (7.2244, 80.1983),
+    "yatiyantota": (6.9833, 80.3167),
+    "dehiowita": (6.9667, 80.2667),
+    "deraniyagala": (6.9250, 80.3417),
+    "galigamuwa": (7.2286, 80.2864),
+    "aranayaka": (7.1472, 80.4861),
+    "bulathkohupitiya": (7.1167, 80.3833),
+    "kitulgala": (6.9944, 80.4167),
+    "aluthnuwara": (7.2217, 80.4828),
+    "ambepussa": (7.2500, 80.2000),
+    "kotiyakumbura": (7.1500, 80.3167),
+    "undugoda": (7.1833, 80.4000),
+    "hettimulla": (7.2167, 80.3667),
+    "pinnawala": (7.3014, 80.3853),
+    "nelundeniya": (7.2167, 80.2167),
+    # Kandy District
+    "kandy": (7.2906, 80.6337),
+    "peradeniya": (7.2660, 80.5970),
+    "katugastota": (7.3167, 80.6167),
+    "gampola": (7.1647, 80.5750),
+    "nawalapitiya": (7.0500, 80.5333),
+    "kundasale": (7.2833, 80.6833),
+    "digana": (7.3000, 80.7333),
+    "akurana": (7.3667, 80.6167),
+    "wattegama": (7.3500, 80.6833),
+    "gelioya": (7.2167, 80.5833),
+    "kadugannawa": (7.2547, 80.5211),
+    "pilimathalawa": (7.2667, 80.5500),
+    "menikhinna": (7.3000, 80.6833),
+    "teldeniya": (7.3167, 80.7667),
+    # Colombo District
     "colombo 1": (6.9344, 79.8428),
     "colombo": (6.9344, 79.8428),
     "colombo 2": (6.9236, 79.8553),
@@ -422,47 +589,108 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "cinnamon gardens": (6.9069, 79.8708),
     "colombo 8": (6.9167, 79.8833),
     "borella": (6.9167, 79.8833),
+    "colombo 9": (6.9333, 79.8833),
+    "colombo 10": (6.9250, 79.8700),
+    "colombo 11": (6.9400, 79.8500),
+    "colombo 12": (6.9400, 79.8600),
+    "colombo 13": (6.9500, 79.8600),
+    "colombo 14": (6.9550, 79.8700),
+    "colombo 15": (6.9700, 79.8750),
     "dehiwala": (6.8389, 79.8736),
     "mount lavinia": (6.8333, 79.8667),
     "nugegoda": (6.8649, 79.8997),
     "kotte": (6.8872, 79.9186),
     "rajagiriya": (6.9083, 79.8917),
+    "battaramulla": (6.8996, 79.9197),
+    "malabe": (6.9042, 79.9542),
+    "kaduwela": (6.9333, 79.9833),
+    "maharagama": (6.8481, 79.9267),
+    "homagama": (6.8417, 80.0000),
+    "kolonnawa": (6.9333, 79.8833),
+    "moratuwa": (6.7730, 79.8816),
+    "ratmalana": (6.8219, 79.8789),
+    "piliyandala": (6.8000, 79.9167),
+    "kesbewa": (6.7833, 79.9500),
+    "boralesgamuwa": (6.8433, 79.9017),
+    "fort": (6.9344, 79.8428),
+    # Gampaha District
+    "gampaha": (7.0917, 79.9997),
     "negombo": (7.2083, 79.8358),
-    "kandy": (7.2906, 80.6337),
-    "peradeniya": (7.2660, 80.5970),
+    "katunayake": (7.1695, 79.8906),
+    "wattala": (6.9895, 79.8913),
+    "kelaniya": (6.9553, 79.9194),
+    "ja-ela": (7.0750, 79.8917),
+    "ja ela": (7.0750, 79.8917),
+    "kiribathgoda": (6.9806, 79.9319),
+    "kadawatha": (7.0000, 79.9500),
+    "minuwangoda": (7.1667, 79.9500),
+    "divulapitiya": (7.2167, 80.0167),
+    "mirigama": (7.2417, 80.1333),
+    "veyangoda": (7.1500, 80.0583),
+    "ragama": (7.0250, 79.9167),
+    "kandana": (7.0472, 79.8972),
+    "seeduwa": (7.1250, 79.8750),
+    # Kalutara District
+    "kalutara": (6.5854, 79.9607),
+    "panadura": (6.7132, 79.9074),
+    "horana": (6.7167, 80.0667),
+    "beruwala": (6.4781, 79.9828),
+    "matugama": (6.5222, 80.1167),
+    "wadduwa": (6.6667, 79.9333),
+    "bandaragama": (6.7167, 79.9833),
+    "aluthgama": (6.4333, 80.0000),
+    # Galle & Matara & Southern District
+    "galle": (6.0535, 80.2210),
+    "hikkaduwa": (6.1394, 80.1064),
+    "karapitiya": (6.0667, 80.2333),
+    "ambalangoda": (6.2356, 80.0539),
+    "bentota": (6.4256, 79.9972),
+    "elpitiya": (6.2583, 80.1417),
+    "matara": (5.9549, 80.5550),
+    "weligama": (5.9750, 80.4250),
+    "dikwella": (5.9667, 80.7000),
+    "akuressa": (6.1000, 80.4667),
+    "mirissa": (5.9481, 80.4578),
+    "hambantota": (6.1429, 81.1212),
+    "tangalle": (6.0244, 80.7942),
+    "tissamaharama": (6.2794, 81.2881),
+    # Kurunegala & North Western District
+    "kurunegala": (7.4863, 80.3623),
+    "kuliyapitiya": (7.4689, 80.0406),
+    "narammala": (7.4333, 80.2167),
+    "wariyapola": (7.6167, 80.2667),
+    "pannala": (7.3333, 79.9833),
+    "polgahawela": (7.3333, 80.3000),
+    "alawwa": (7.3000, 80.2500),
+    "puttalam": (8.0362, 79.8283),
+    "chilaw": (7.5758, 79.7953),
+    "marawila": (7.4167, 79.8167),
+    # Central & Uva & Sabaragamuwa District
     "matale": (7.4675, 80.6234),
     "dambulla": (7.8731, 80.6517),
-    "galle": (6.0535, 80.2210),
-    "matara": (5.9549, 80.5550),
-    "mawanella": (7.2513, 80.4432),
-    "kegalle": (7.2520, 80.3464),
-    "kurunegala": (7.4863, 80.3623),
+    "nuwara eliya": (6.9497, 80.7891),
+    "hatton": (6.8833, 80.6000),
+    "badulla": (6.9934, 81.0550),
+    "bandarawela": (6.8333, 80.9833),
+    "haputale": (6.7667, 80.9500),
+    "ella": (6.8667, 81.0467),
+    "welimada": (6.9000, 80.9000),
+    "monaragala": (6.8728, 81.3507),
+    "ratnapura": (6.6828, 80.4037),
+    "embilipitiya": (6.3400, 80.8500),
+    "balangoda": (6.6500, 80.7000),
+    # North & Eastern Districts
+    "anuradhapura": (8.3114, 80.4037),
+    "polonnaruwa": (7.9403, 81.0188),
     "jaffna": (9.6615, 80.0255),
     "kilinochchi": (9.3803, 80.3770),
     "vavuniya": (8.7542, 80.4982),
     "mannar": (8.9810, 79.9044),
     "mullaitivu": (9.2671, 80.8142),
-    "anuradhapura": (8.3114, 80.4037),
-    "polonnaruwa": (7.9403, 81.0188),
     "trincomalee": (8.5874, 81.2152),
     "batticaloa": (7.7310, 81.6747),
     "ampara": (7.2912, 81.6724),
-    "badulla": (6.9934, 81.0550),
-    "bandarawela": (6.8333, 80.9833),
-    "monaragala": (6.8728, 81.3507),
-    "nuwara eliya": (6.9497, 80.7891),
-    "ratnapura": (6.6828, 80.4037),
-    "hambantota": (6.1429, 81.1212),
-    "puttalam": (8.0362, 79.8283),
-    "chilaw": (7.5758, 79.7953),
-    "katunayake": (7.1695, 79.8906),
-    "gampaha": (7.0917, 79.9997),
-    "wattala": (6.9895, 79.8913),
-    "kelaniya": (6.9553, 79.9194),
-    "battaramulla": (6.8996, 79.9197),
-    "moratuwa": (6.7730, 79.8816),
-    "panadura": (6.7132, 79.9074),
-    "kalutara": (6.5854, 79.9607),
+    "kalmunai": (7.4167, 81.8333),
 }
 
 
@@ -532,11 +760,6 @@ def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
     if loc_clean in KNOWN_COORDINATES:
         return KNOWN_COORDINATES[loc_clean]
 
-    # Check partial match
-    for name, coords in KNOWN_COORDINATES.items():
-        if name in loc_clean or loc_clean in name:
-            return coords
-
     # Check if raw coordinate format "lat, lng"
     if "," in loc_clean:
         parts = loc_clean.split(",")
@@ -548,6 +771,33 @@ def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
                     return (lat, lng)
             except ValueError:
                 pass
+
+    # Check individual words or comma-separated segments exact match first (e.g. "Galigamuwa, Kegalle" -> "galigamuwa")
+    import re
+    segments = [s.strip() for s in re.split(r"[,/|\-]+", loc_clean) if s.strip()]
+    for seg in segments:
+        if seg in KNOWN_COORDINATES:
+            return KNOWN_COORDINATES[seg]
+
+    # Check partial match on segments
+    for seg in segments:
+        for name, coords in KNOWN_COORDINATES.items():
+            if name == seg or name in seg or seg in name:
+                return coords
+        if seg in TOWN_TO_DISTRICT_MAP:
+            dist = TOWN_TO_DISTRICT_MAP[seg].lower()
+            if dist in KNOWN_COORDINATES:
+                return KNOWN_COORDINATES[dist]
+
+    # Check partial match on full string
+    for name, coords in KNOWN_COORDINATES.items():
+        if name == loc_clean or name in loc_clean or loc_clean in name:
+            return coords
+
+    # Check district resolution fallback
+    dist_resolved = resolve_district(location_text)
+    if dist_resolved and dist_resolved.lower() in KNOWN_COORDINATES:
+        return KNOWN_COORDINATES[dist_resolved.lower()]
 
     return None
 

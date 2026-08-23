@@ -118,10 +118,67 @@ def _get_task_extended_metrics(
     vol_mode = vol_record.get("transport_mode", "Motorbike") if vol_record else "Motorbike"
     vol_loc = vol_record.get("current_location") or vol_record.get("location") or vol_record.get("service_area") if vol_record else None
 
-    p_coords = routing.geocode_location(p_loc)
-    d_coords = routing.geocode_location(d_loc)
-    v_coords = routing.geocode_location(vol_loc) if vol_loc else None
+    # 1. Lookup Pickup Coordinates (Check stored database GPS location first)
+    p_coords = None
+    if don_id:
+        try:
+            don_locs = database.get_locations_for_donation(don_id)
+            if don_locs:
+                p_coords = (float(don_locs[0]["latitude"]), float(don_locs[0]["longitude"]))
+        except Exception:
+            pass
+    if not p_coords and don:
+        if don.get("latitude") and don.get("longitude"):
+            try:
+                p_coords = (float(don["latitude"]), float(don["longitude"]))
+            except (ValueError, TypeError):
+                pass
+        elif don.get("location_pin"):
+            p_coords = routing.extract_coordinates_from_text(str(don["location_pin"]))
+    if not p_coords:
+        p_coords = routing.geocode_location(p_loc)
 
+    # 2. Lookup Delivery Coordinates (Check stored database GPS location first)
+    d_coords = None
+    if org_id:
+        try:
+            org_locs = database.get_locations_for_organization(org_id)
+            if org_locs:
+                d_coords = (float(org_locs[0]["latitude"]), float(org_locs[0]["longitude"]))
+        except Exception:
+            pass
+    if not d_coords and org:
+        if org.get("latitude") and org.get("longitude"):
+            try:
+                d_coords = (float(org["latitude"]), float(org["longitude"]))
+            except (ValueError, TypeError):
+                pass
+        elif org.get("location_pin"):
+            d_coords = routing.extract_coordinates_from_text(str(org["location_pin"]))
+    if not d_coords:
+        d_coords = routing.geocode_location(d_loc)
+
+    # 3. Lookup Volunteer Coordinates
+    v_coords = None
+    if vol_record:
+        vol_id = vol_record.get("id") or vol_record.get("volunteer_id")
+        if vol_id:
+            try:
+                vol_locs = database.get_locations_for_volunteer(vol_id)
+                if vol_locs:
+                    v_coords = (float(vol_locs[0]["latitude"]), float(vol_locs[0]["longitude"]))
+            except Exception:
+                pass
+        if not v_coords:
+            if vol_record.get("latitude") and vol_record.get("longitude"):
+                try:
+                    v_coords = (float(vol_record["latitude"]), float(vol_record["longitude"]))
+                except (ValueError, TypeError):
+                    pass
+    if not v_coords and vol_loc:
+        v_coords = routing.geocode_location(vol_loc)
+
+    # 4. Dynamic Distance Calculation
     if p_coords and d_coords:
         if v_coords:
             leg1 = routing.calculate_haversine_distance(v_coords[0], v_coords[1], p_coords[0], p_coords[1]) * 1.25
@@ -303,13 +360,84 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     curr_state = database.get_user_conversation_state(phone) if phone else {}
     in_active_workflow = bool(curr_state.get("workflow"))
     is_greeting_word = translation_service.is_greeting_message(clean_p)
+    vol_rec = database.get_volunteer_by_phone(phone) if phone else None
+    org_rec = database.get_organization_by_phone(phone) if phone else None
+    donor_rec = database.get_donor_by_phone(phone) if phone else None
+
+    # Handle volunteer availability declaration ("I am free", "available", "ready")
+    if any(w in clean_p for w in ["i am free", "i'm free", "im free", "available now", "ready to deliver", "ready for pickups"]) and not in_active_workflow:
+        if vol_rec:
+            s_area = vol_rec.get("service_area", "your district")
+            pending = database.get_all_pickup_tasks()
+            available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+            # Filter by district if possible
+            dist_tasks = [t for t in available_tasks if routing.resolve_district(str(t.get("pickup_location", ""))) == s_area]
+            candidate_tasks = dist_tasks or available_tasks
+            if candidate_tasks:
+                top_task = candidate_tasks[0]
+                task_id = top_task["id"]
+                don_id = top_task.get("donation_id", "")
+                don = database.get_donation_record(don_id) if don_id else None
+                food_info = f"{don.get('quantity', 30)} {don.get('unit', 'portions')} of {don.get('food_type', 'Prepared Meals')}" if don else "Food Donation"
+                total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
+                if phone:
+                    database.set_user_conversation_state(
+                        phone, {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id}
+                    )
+                return (
+                    f"🚚 **Food Pickup Opportunity in {s_area}!**\n\n"
+                    f"• 🆔 **Task ID**: `{task_id}`\n"
+                    f"• 🍱 **Food**: {food_info}\n"
+                    f"• 📍 **Pickup**: {p_area}\n"
+                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
+                    f"• 📏 **Distance**: ~{total_dist} km\n"
+                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
+                    f"*Reply **Accept** or **Reject***"
+                )
+            else:
+                return (
+                    f"📍 *Status: ACTIVE & AVAILABLE in {s_area}*\n\n"
+                    f"There are currently 0 active donations waiting in {s_area}.\n"
+                    f"Please wait — our AI coordinator will automatically send you a WhatsApp task offer the moment a donor registers surplus food in {s_area}! 🚚"
+                )
+
     if is_greeting_word and not in_active_workflow:
-        if user and user.get("onboarding_completed"):
-            donor_rec = database.get_donor_by_phone(phone) if phone else None
-            vol_rec = database.get_volunteer_by_phone(phone) if phone else None
-            org_rec = database.get_organization_by_phone(phone) if phone else None
-            if donor_rec:
-                return translation_service.get_localized_message("returning_donor_welcome", lang=lang, name=donor_rec.get("name", ""))
+        if vol_rec or (user and user.get("user_role") == "volunteer"):
+            name = vol_rec.get("name", "Volunteer") if vol_rec else "Volunteer"
+            s_area = vol_rec.get("service_area", "Sri Lanka") if vol_rec else "Sri Lanka"
+            return (
+                f"🚚 *Welcome back, {name}!* (Volunteer Courier — {s_area})\n\n"
+                f"Reply with:\n"
+                f"1️⃣ Search active pickups in {s_area}\n"
+                f"2️⃣ Check my active delivery status\n"
+                f"3️⃣ Mark myself as free / update location\n"
+                f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                f"*Or ask any question about your volunteer tasks!*"
+            )
+        elif org_rec or (user and user.get("user_role") == "organization"):
+            name = org_rec.get("name", "Organization") if org_rec else "Organization"
+            area = org_rec.get("location", org_rec.get("city", "Sri Lanka")) if org_rec else "Sri Lanka"
+            return (
+                f"🏢 *Welcome back, {name}!* (Recipient Organization — {area})\n\n"
+                f"Reply with:\n"
+                f"1️⃣ Request surplus food donation\n"
+                f"2️⃣ Track incoming food deliveries\n"
+                f"3️⃣ Update daily portion capacity\n"
+                f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                f"*Or ask any question about available food donations!*"
+            )
+        elif donor_rec or (user and user.get("user_role") == "donor"):
+            name = donor_rec.get("name", "Donor") if donor_rec else "Donor"
+            return (
+                f"🍲 *Welcome back, {name}!* (Food Donor Partner)\n\n"
+                f"Reply with:\n"
+                f"1️⃣ Donate surplus food\n"
+                f"2️⃣ Track my active donation\n"
+                f"3️⃣ View past donations & meals rescued\n"
+                f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                f"*Or tell me what food you have available to donate!*"
+            )
+        elif user and user.get("onboarding_completed"):
             return translation_service.get_localized_message("returning_welcome", lang=lang)
         return translation_service.get_localized_message("onboarding_welcome", lang=lang)
 
@@ -1526,14 +1654,35 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             chosen_food = "Rice & Bread"
         elif clean_p in opt_map:
             chosen_food = opt_map[clean_p]
+        elif any(
+            b in clean_p
+            for b in [
+                "chicken biryani",
+                "mutton biryani",
+                "beef biryani",
+                "veg biryani",
+                "vegetable biryani",
+                "egg biryani",
+                "fish biryani",
+                "dum biryani",
+            ]
+        ):
+            m_b = re.search(r"\b((?:chicken|mutton|beef|veg|vegetable|egg|fish|dum)?\s*biryani)\b", clean_p, re.IGNORECASE)
+            chosen_food = m_b.group(1).strip().title() if m_b else "Biryani"
+        elif "biryani" in clean_p or "briyani" in clean_p or "biriyani" in clean_p:
+            chosen_food = "Biryani"
+        elif "fried rice" in clean_p:
+            chosen_food = "Fried Rice"
+        elif "kottu" in clean_p or "koththu" in clean_p or "kothu" in clean_p:
+            chosen_food = "Kottu Roti"
+        elif "noodles" in clean_p or "pasta" in clean_p:
+            chosen_food = "Noodles & Pasta"
         elif "rice" in clean_p and "curry" in clean_p:
             chosen_food = "Rice & Curry"
         elif "rice" in clean_p:
             chosen_food = "Rice & Curry"
         elif "bread" in clean_p or "bakery" in clean_p:
             chosen_food = "Bread & Bakery"
-        elif "biryani" in clean_p:
-            chosen_food = "Biryani"
         else:
             chosen_food = prompt.strip().title()
 
@@ -1548,10 +1697,22 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             qty_val = float(m_num.group(1))
             draft_update = {"quantity": qty_val}
             m_unit = re.search(
-                r"\b(packets?|meals?|boxes?|portions?|kg|plates?|servings?|පාර්සල්|පැකට්|பொதிகள்|பாக்கெட்டுகள்)\b", prompt, re.IGNORECASE
+                r"\b(packets?|meals?|boxes?|portions?|kg|kilograms?|plates?|servings?|trays?|containers?|bags?|parcels?|පාර්සල්|පැකට්|පැකට්ටු|කොටස්|பொதிகள்|பாக்கெட்டுகள்|பங்குகள்)\b",
+                prompt,
+                re.IGNORECASE,
             )
             if m_unit:
                 draft_update["unit"] = m_unit.group(1).lower()
+            elif "portion" in clean_p or "plate" in clean_p or "serving" in clean_p:
+                draft_update["unit"] = "portions"
+            elif "box" in clean_p or "tray" in clean_p:
+                draft_update["unit"] = "boxes"
+            elif "meal" in clean_p:
+                draft_update["unit"] = "meals"
+            elif "kg" in clean_p:
+                draft_update["unit"] = "kg"
+            else:
+                draft_update["unit"] = existing_draft.get("unit") or "portions"
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
 

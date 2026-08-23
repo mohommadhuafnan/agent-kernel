@@ -499,46 +499,64 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     except Exception as e:
                         logger.warning(f"Failed to send volunteer task offer: {e}")
 
-    # 5. Organization Connects to Donation / Donation Matched
-    elif any(w in reply_text.lower() for w in ["found an available food match", "connected to", "food match in", "surplus donation in"]) and (
-        "organization" in reply_text.lower() or "recipient" in reply_text.lower() or "delivery" in reply_text.lower()
-    ):
-        org = database.get_organization_by_phone(from_number)
-        org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
-        org_dist = (org.get("service_area") or org.get("location") or "Kegalle") if org else "Kegalle"
-        import routing
-
-        clean_dist = routing.resolve_district(org_dist) or "Kegalle"
-
-        all_dons = database.get_all_donations()
-        active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_ASSIGNED", "PICKUP_PENDING"]]
-        district_dons = [
-            d for d in active_dons
-            if routing.resolve_district(d.get("pickup_location") or d.get("location") or "") == clean_dist
-        ]
-        if not district_dons:
-            district_dons = active_dons
-
-        if district_dons:
-            top_don = district_dons[-1]
-            donor = database.get_donor_record(top_don.get("donor_id", "")) if top_don else None
-            donor_phone = donor.get("phone") if donor else (top_don.get("donor_phone") if top_don else None)
-            if not donor_phone and top_don.get("donor_id"):
-                donor_user = database.get_user_by_phone(top_don.get("donor_id"))
-                if donor_user:
-                    donor_phone = donor_user.get("phone")
-
-            if donor_phone and donor_phone != from_number:
-                donor_user = database.get_user_by_phone(donor_phone)
-                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
-                food_info = f"{top_don.get('quantity', 30)} {top_don.get('unit', 'meal packets')} — {top_don.get('food_type', 'Rice & Curry')}"
-                d_msg = translation_service.get_localized_message(
-                    "donation_connected_donor", lang=d_lang, org_name=org_name, district=clean_dist, food_info=food_info
+    # 5. Organization Match Proposed to Donor or Matched
+    elif any(w in reply_text.lower() for w in ["matched an organization", "connected to", "we found a recipient organization", "found an available food match"]):
+        curr_state = database.get_user_conversation_state(from_number)
+        match_org_id = curr_state.get("matched_org_id")
+        if match_org_id:
+            org = database.get_organization_record(match_org_id)
+            org_phone = org.get("phone") if org else None
+            org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+            if org_phone and org_phone != from_number:
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+                o_msg = (
+                    f"🏢 *Food Match Pending Approval in your district!*\n\n"
+                    f"A local donor partner has registered surplus food in your area.\n"
+                    f"We have presented your organization profile ({org_name}) to the donor for pickup confirmation.\n"
+                    f"Our coordinator will message you immediately once confirmed and a courier is assigned! 🍲"
                 )
                 try:
-                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                    await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
-                    logger.warning(f"Failed to send WhatsApp donor matched notification: {e}")
+                    logger.warning(f"Failed to send waiting organization match notification: {e}")
+        else:
+            org = database.get_organization_by_phone(from_number)
+            org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+            org_dist = (org.get("service_area") or org.get("location") or "Kegalle") if org else "Kegalle"
+            import routing
+
+            clean_dist = routing.resolve_district(org_dist) or "Kegalle"
+
+            all_dons = database.get_all_donations()
+            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_ASSIGNED", "PICKUP_PENDING"]]
+            district_dons = [
+                d for d in active_dons
+                if routing.resolve_district(d.get("pickup_location") or d.get("location") or "") == clean_dist
+            ]
+            if not district_dons:
+                district_dons = active_dons
+
+            if district_dons:
+                top_don = district_dons[-1]
+                donor = database.get_donor_record(top_don.get("donor_id", "")) if top_don else None
+                donor_phone = donor.get("phone") if donor else (top_don.get("donor_phone") if top_don else None)
+                if not donor_phone and top_don.get("donor_id"):
+                    donor_user = database.get_user_by_phone(top_don.get("donor_id"))
+                    if donor_user:
+                        donor_phone = donor_user.get("phone")
+
+                if donor_phone and donor_phone != from_number:
+                    donor_user = database.get_user_by_phone(donor_phone)
+                    d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                    food_info = f"{top_don.get('quantity', 30)} {top_don.get('unit', 'portions')} — {top_don.get('food_type', 'Prepared Meals')}"
+                    d_msg = translation_service.get_localized_message(
+                        "donation_connected_donor", lang=d_lang, org_name=org_name, district=clean_dist, food_info=food_info
+                    )
+                    try:
+                        await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                    except Exception as e:
+                        logger.warning(f"Failed to send WhatsApp donor matched notification: {e}")
 
 
 async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

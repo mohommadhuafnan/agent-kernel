@@ -253,3 +253,84 @@ async def test_donor_rejection_keeps_donation_active():
     assert "active" in reply.lower() or "another organization" in reply.lower()
     # State cleared so user can receive other matches
     assert database.get_user_conversation_state(donor_phone) == {}
+
+
+@pytest.mark.asyncio
+async def test_any_food_type_and_arbitrary_portions_extraction():
+    """Verify entity extraction handles ANY food types (Biryani, Fried Rice, Kottu, Bakery, Produce) and portion units."""
+    import voice_service
+
+    cases = [
+        ("I have 25 portions of Biryani", "Biryani", 25.0, "portions"),
+        ("I have 12 portions of Chicken Biryani", "Chicken Biryani", 12.0, "portions"),
+        ("I have 50 boxes of bakery items", "Bakery & Bread", 50.0, "boxes"),
+        ("40 plates of fried rice", "Fried Rice", 40.0, "portions"),
+        ("30 portions of kottu roti", "Kottu Roti", 30.0, "portions"),
+        ("100 kg of fresh vegetables", "Vegetarian Meals", 100.0, "kg"),
+        ("My name is Chef Kamal and I have 20 portions of soup", "Soup", 20.0, "portions"),
+    ]
+
+    for text, exp_food, exp_qty, exp_unit in cases:
+        res = voice_service.extract_donation_entities(text)
+        assert res["food_type"] == exp_food, f"Failed food_type for '{text}': got {res['food_type']}"
+        assert res["quantity"] == exp_qty, f"Failed quantity for '{text}': got {res['quantity']}"
+        assert res["unit"] == exp_unit, f"Failed unit for '{text}': got {res['unit']}"
+
+
+@pytest.mark.asyncio
+async def test_kegalle_geocoding_and_dynamic_distance_calculation():
+    """Verify accurate geocoding and dynamic distance calculations across Kegalle localities."""
+    kegalle_towns = [
+        ("mawanella", (7.2513, 80.4432)),
+        ("rambukkana", (7.3197, 80.3953)),
+        ("galigamuwa", (7.2286, 80.2864)),
+        ("aranayaka", (7.1472, 80.4861)),
+        ("ruwanwella", (7.0422, 80.2528)),
+        ("warakapola", (7.2244, 80.1983)),
+        ("kegalle", (7.2520, 80.3464)),
+    ]
+
+    for town, expected_coords in kegalle_towns:
+        coords = routing.geocode_location(town)
+        assert coords is not None, f"Geocoding failed for {town}"
+        assert abs(coords[0] - expected_coords[0]) < 0.05
+        assert abs(coords[1] - expected_coords[1]) < 0.05
+
+    # Check dynamic distance calculation between Mawanella and Rambukkana
+    dist = routing.calculate_haversine_distance(7.2513, 80.4432, 7.3197, 80.3953)
+    assert 8.0 < dist < 12.0, f"Distance between Mawanella and Rambukkana unexpected: {dist} km"
+
+    # Check vehicle transport reimbursement calculation
+    calc = routing.calculate_transport_estimate(dist, "three-wheeler")
+    assert calc["estimated_support_amount"] > 0
+    assert calc["distance_km"] == dist
+
+
+@pytest.mark.asyncio
+async def test_role_aware_greeting_and_availability_coordination():
+    """Verify system greets and answers registered volunteers and organizations tailored to their role."""
+    vol_phone = "94778889901"
+    org_phone = "94778889902"
+
+    # 1. Register Volunteer in Kegalle
+    tools.register_volunteer(name="Nuwan Silva", transport_mode="Motorbike", service_area="Kegalle", phone=vol_phone)
+    database.update_user_profile(phone=vol_phone, display_name="Nuwan Silva", user_role="volunteer", default_location="Kegalle")
+
+    # Volunteer sends "Hi" -> Receives Volunteer Courier Dashboard
+    v_reply = await resilient_executor.execute_deterministic_fallback("Hi", session_id=f"whatsapp:{vol_phone}")
+    assert "Volunteer Courier" in v_reply
+    assert "Kegalle" in v_reply
+
+    # Volunteer says "I am free" when 0 tasks exist in Kegalle
+    v_free = await resilient_executor.execute_deterministic_fallback("I am free", session_id=f"whatsapp:{vol_phone}")
+    assert "ACTIVE & AVAILABLE" in v_free
+    assert "Kegalle" in v_free
+
+    # 2. Register Organization in Kegalle
+    tools.register_organization(name="Kegalle Community Care", location="Kegalle Town", service_area="Kegalle", accepted_food_types="Cooked meals", phone=org_phone)
+    database.update_user_profile(phone=org_phone, display_name="Kegalle Community Care", user_role="organization", default_location="Kegalle")
+
+    # Organization sends "Hello" -> Receives Recipient Organization Dashboard
+    o_reply = await resilient_executor.execute_deterministic_fallback("Hello", session_id=f"whatsapp:{org_phone}")
+    assert "Recipient Organization" in o_reply
+
