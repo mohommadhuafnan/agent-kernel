@@ -70,11 +70,31 @@ TRANSPORT_SPEEDS_KMH = {
 
 # 25 Administrative Districts of Sri Lanka
 SRI_LANKA_DISTRICTS = [
-    "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya",
-    "Galle", "Matara", "Hambantota", "Jaffna", "Kilinochchi", "Mannar",
-    "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee",
-    "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla",
-    "Monaragala", "Ratnapura", "Kegalle"
+    "Colombo",
+    "Gampaha",
+    "Kalutara",
+    "Kandy",
+    "Matale",
+    "Nuwara Eliya",
+    "Galle",
+    "Matara",
+    "Hambantota",
+    "Jaffna",
+    "Kilinochchi",
+    "Mannar",
+    "Vavuniya",
+    "Mullaitivu",
+    "Batticaloa",
+    "Ampara",
+    "Trincomalee",
+    "Kurunegala",
+    "Puttalam",
+    "Anuradhapura",
+    "Polonnaruwa",
+    "Badulla",
+    "Monaragala",
+    "Ratnapura",
+    "Kegalle",
 ]
 
 # Mapping Sri Lankan towns/suburbs to their primary district
@@ -91,7 +111,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "galigamuwa": "Kegalle",
     "aranayaka": "Kegalle",
     "bulathkohupitiya": "Kegalle",
-
     # Kandy District
     "kandy": "Kandy",
     "peradeniya": "Kandy",
@@ -104,13 +123,23 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "wattegama": "Kandy",
     "gelioya": "Kandy",
     "kadugannawa": "Kandy",
-
     # Colombo District
     "colombo": "Colombo",
-    "colombo 1": "Colombo", "colombo 2": "Colombo", "colombo 3": "Colombo", "colombo 4": "Colombo",
-    "colombo 5": "Colombo", "colombo 6": "Colombo", "colombo 7": "Colombo", "colombo 8": "Colombo",
-    "colombo 9": "Colombo", "colombo 10": "Colombo", "colombo 11": "Colombo", "colombo 12": "Colombo",
-    "colombo 13": "Colombo", "colombo 14": "Colombo", "colombo 15": "Colombo",
+    "colombo 1": "Colombo",
+    "colombo 2": "Colombo",
+    "colombo 3": "Colombo",
+    "colombo 4": "Colombo",
+    "colombo 5": "Colombo",
+    "colombo 6": "Colombo",
+    "colombo 7": "Colombo",
+    "colombo 8": "Colombo",
+    "colombo 9": "Colombo",
+    "colombo 10": "Colombo",
+    "colombo 11": "Colombo",
+    "colombo 12": "Colombo",
+    "colombo 13": "Colombo",
+    "colombo 14": "Colombo",
+    "colombo 15": "Colombo",
     "kollupitiya": "Colombo",
     "bambalapitiya": "Colombo",
     "wellawatte": "Colombo",
@@ -134,7 +163,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "boralesgamuwa": "Colombo",
     "ratmalana": "Colombo",
     "fort": "Colombo",
-
     # Gampaha District
     "gampaha": "Gampaha",
     "negombo": "Gampaha",
@@ -152,7 +180,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "ragama": "Gampaha",
     "kandana": "Gampaha",
     "seeduwa": "Gampaha",
-
     # Kalutara District
     "kalutara": "Kalutara",
     "panadura": "Kalutara",
@@ -162,7 +189,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "wadduwa": "Kalutara",
     "bandaragama": "Kalutara",
     "aluthgama": "Kalutara",
-
     # Galle District
     "galle": "Galle",
     "hikkaduwa": "Galle",
@@ -172,7 +198,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "elpitiya": "Galle",
     "baddegama": "Galle",
     "ahungalla": "Galle",
-
     # Matara District
     "matara": "Matara",
     "weligama": "Matara",
@@ -181,7 +206,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "hakmana": "Matara",
     "kamburupitiya": "Matara",
     "deniyaya": "Matara",
-
     # Hambantota District
     "hambantota": "Hambantota",
     "tangalle": "Hambantota",
@@ -189,7 +213,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "tissamaharama": "Hambantota",
     "ambalantota": "Hambantota",
     "kataragama": "Hambantota",
-
     # Kurunegala District
     "kurunegala": "Kurunegala",
     "kuliyapitiya": "Kurunegala",
@@ -201,7 +224,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "alawwa": "Kurunegala",
     "ibbagamuwa": "Kurunegala",
     "nikaweratiya": "Kurunegala",
-
     # Puttalam District
     "puttalam": "Puttalam",
     "chilaw": "Puttalam",
@@ -210,7 +232,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "dankotuwa": "Puttalam",
     "anamaduwa": "Puttalam",
     "nattandiya": "Puttalam",
-
     # Jaffna District
     "jaffna": "Jaffna",
     "chavakachcheri": "Jaffna",
@@ -218,13 +239,11 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "nallur": "Jaffna",
     "chunnakam": "Jaffna",
     "valvettithurai": "Jaffna",
-
     # Kilinochchi, Mannar, Vavuniya, Mullaitivu
     "kilinochchi": "Kilinochchi",
     "mannar": "Mannar",
     "vavuniya": "Vavuniya",
     "mullaitivu": "Mullaitivu",
-
     # Anuradhapura District
     "anuradhapura": "Anuradhapura",
     "kekirawa": "Anuradhapura",
@@ -232,13 +251,11 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "tambuttegama": "Anuradhapura",
     "eppawala": "Anuradhapura",
     "habarana": "Anuradhapura",
-
     # Polonnaruwa District
     "polonnaruwa": "Polonnaruwa",
     "kaduruwela": "Polonnaruwa",
     "hingurakgoda": "Polonnaruwa",
     "medirigiriya": "Polonnaruwa",
-
     # Badulla District
     "badulla": "Badulla",
     "bandarawela": "Badulla",
@@ -247,13 +264,11 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "haputale": "Badulla",
     "mahiyanganaya": "Badulla",
     "hali-ela": "Badulla",
-
     # Monaragala District
     "monaragala": "Monaragala",
     "wellawaya": "Monaragala",
     "buttala": "Monaragala",
     "bibile": "Monaragala",
-
     # Ratnapura District
     "ratnapura": "Ratnapura",
     "embilipitiya": "Ratnapura",
@@ -261,14 +276,12 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "pelmadulla": "Ratnapura",
     "kuruwita": "Ratnapura",
     "eheliyagoda": "Ratnapura",
-
     # Matale District
     "matale": "Matale",
     "dambulla": "Matale",
     "sigiriya": "Matale",
     "ukuwela": "Matale",
     "rattota": "Matale",
-
     # Nuwara Eliya District
     "nuwara eliya": "Nuwara Eliya",
     "hatton": "Nuwara Eliya",
@@ -276,20 +289,17 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "maskeliya": "Nuwara Eliya",
     "ginigathena": "Nuwara Eliya",
     "kotagala": "Nuwara Eliya",
-
     # Trincomalee District
     "trincomalee": "Trincomalee",
     "kinniya": "Trincomalee",
     "mutur": "Trincomalee",
     "kantale": "Trincomalee",
-
     # Batticaloa District
     "batticaloa": "Batticaloa",
     "eravur": "Batticaloa",
     "kattankudy": "Batticaloa",
     "valachchenai": "Batticaloa",
     "kaluwanchikudy": "Batticaloa",
-
     # Ampara District
     "ampara": "Ampara",
     "kalmunai": "Ampara",
@@ -315,7 +325,7 @@ def resolve_district(location_or_town_text: Optional[str], fallback_to_raw: bool
     if not raw:
         return None
     clean = raw.lower()
-    
+
     # Check direct district match
     for dist in SRI_LANKA_DISTRICTS:
         if dist.lower() == clean or dist.lower() in clean.split() or f"{dist.lower()} district" in clean:
@@ -326,17 +336,72 @@ def resolve_district(location_or_town_text: Optional[str], fallback_to_raw: bool
         return TOWN_TO_DISTRICT_MAP[clean]
 
     import re
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', clean)
+
+    words = re.findall(r"\b[a-zA-Z]{3,}\b", clean)
     for w in words:
         if w in TOWN_TO_DISTRICT_MAP:
             return TOWN_TO_DISTRICT_MAP[w]
 
     for town, dist in TOWN_TO_DISTRICT_MAP.items():
-        if len(town) >= 4 and re.search(r'\b' + re.escape(town) + r'\b', clean):
+        if len(town) >= 4 and re.search(r"\b" + re.escape(town) + r"\b", clean):
             return dist
+
+    # Check if text contains coordinates or map URL (e.g. 7.222, 80.474 -> Kegalle)
+    coords = extract_coordinates_from_text(raw)
+    if coords:
+        lat, lng = coords
+        # Find nearest known landmark in KNOWN_COORDINATES
+        best_dist = float("inf")
+        best_name = None
+        for name, (k_lat, k_lng) in KNOWN_COORDINATES.items():
+            dist_sq = (lat - k_lat) ** 2 + (lng - k_lng) ** 2
+            if dist_sq < best_dist:
+                best_dist = dist_sq
+                best_name = name
+        if best_name:
+            for dist in SRI_LANKA_DISTRICTS:
+                if dist.lower() == best_name.lower() or dist.lower() in best_name.split():
+                    return dist
+            if best_name in TOWN_TO_DISTRICT_MAP:
+                return TOWN_TO_DISTRICT_MAP[best_name]
 
     if fallback_to_raw:
         return raw.title()
+    return None
+
+
+def resolve_task_district(task: Dict[str, Any]) -> Optional[str]:
+    """Resolve the canonical Sri Lanka District for a pickup task from its metadata or donation record."""
+    if not task or not isinstance(task, dict):
+        return None
+    # 1. Direct task district
+    if task.get("district"):
+        res = resolve_district(task["district"])
+        if res:
+            return res
+    # 2. Check task donation
+    don_id = task.get("donation_id")
+    if don_id:
+        try:
+            import database
+
+            don = database.get_donation_record(don_id)
+            if don:
+                res = resolve_district(don.get("district") or don.get("pickup_location") or don.get("location"))
+                if res:
+                    return res
+        except Exception:
+            pass
+    # 3. Check pickup_location
+    if task.get("pickup_location"):
+        res = resolve_district(task["pickup_location"])
+        if res:
+            return res
+    # 4. Check delivery_location
+    if task.get("delivery_location"):
+        res = resolve_district(task["delivery_location"])
+        if res:
+            return res
     return None
 
 
@@ -401,21 +466,77 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
 }
 
 
+def extract_coordinates_from_text(text: str) -> Optional[Tuple[float, float]]:
+    """Extract latitude and longitude from Google Maps URLs, query strings, or raw coordinate text.
+    Examples:
+        'https://maps.google.com/maps?q=7.2222819328308105%2C80.47478485107422&z=17&hl=en' -> (7.22228, 80.47478)
+        'https://maps.google.com/maps/search/Mawanella/@7.221711158752441,80.4827651977539,17z?hl=en' -> (7.22171, 80.48277)
+        '7.2221811, 80.4749281' -> (7.22218, 80.47493)
+    """
+    if not text or not isinstance(text, str):
+        return None
+    import re
+    import urllib.parse
+
+    decoded = urllib.parse.unquote(text)
+
+    # 1. Check Google Maps @lat,lng pattern (e.g. @7.2217111,80.4827652)
+    at_match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", decoded)
+    if at_match:
+        try:
+            lat = float(at_match.group(1))
+            lng = float(at_match.group(2))
+            if -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0:
+                return (lat, lng)
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Check q=lat,lng or query=lat,lng or ll=lat,lng pattern
+    q_match = re.search(r"(?:q|query|ll)=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)", decoded)
+    if q_match:
+        try:
+            lat = float(q_match.group(1))
+            lng = float(q_match.group(2))
+            if -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0:
+                return (lat, lng)
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Check raw lat, lng coordinates in text (e.g. 7.2221811, 80.4749281)
+    coord_match = re.search(r"(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})", decoded)
+    if coord_match:
+        try:
+            lat = float(coord_match.group(1))
+            lng = float(coord_match.group(2))
+            if -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0:
+                return (lat, lng)
+        except (ValueError, TypeError):
+            pass
+
+    return None
+
+
 def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
     """Resolve landmark name, address string, or 'lat, lng' format to (latitude, longitude)."""
     if not location_text:
         return None
+
+    # Check URL or raw coordinate extraction first
+    extracted = extract_coordinates_from_text(location_text)
+    if extracted:
+        return extracted
+
     loc_clean = str(location_text).strip().lower()
-    
+
     # Check exact match
     if loc_clean in KNOWN_COORDINATES:
         return KNOWN_COORDINATES[loc_clean]
-    
+
     # Check partial match
     for name, coords in KNOWN_COORDINATES.items():
         if name in loc_clean or loc_clean in name:
             return coords
-            
+
     # Check if raw coordinate format "lat, lng"
     if "," in loc_clean:
         parts = loc_clean.split(",")
@@ -427,7 +548,7 @@ def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
                     return (lat, lng)
             except ValueError:
                 pass
-                
+
     return None
 
 
@@ -436,6 +557,7 @@ def get_transport_rate(mode: str) -> float:
     norm_mode = str(mode).strip().lower() if mode else "motorbike"
     try:
         import database
+
         cfg = database.get_transport_settings()
         rates = cfg.get("rates_by_vehicle") or {}
         for k, v in rates.items():
@@ -471,10 +593,7 @@ def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: fl
     R = 6371.0  # Earth's radius in km
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
-    )
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return round(R * c, 2)
 
@@ -486,33 +605,27 @@ def generate_map_link(latitude: float, longitude: float, label: Optional[str] = 
 
 def calculate_transport_cost(distance_km: float, transport_mode: str = "motorbike") -> Dict[str, Any]:
     """Calculate estimated volunteer travel reimbursement for a given distance and vehicle mode.
-    
+
     Returns structured estimate with currency LKR and calculation details.
     """
     try:
         dist = float(distance_km)
     except (ValueError, TypeError):
-        return {
-            "status": "error",
-            "message": "distance_km must be a valid non-negative number."
-        }
-        
+        return {"status": "error", "message": "distance_km must be a valid non-negative number."}
+
     if dist < 0:
-        return {
-            "status": "error",
-            "message": "distance_km cannot be negative."
-        }
-        
+        return {"status": "error", "message": "distance_km cannot be negative."}
+
     norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
     if norm_mode not in SUPPORTED_TRANSPORT_MODES:
         return {
             "status": "error",
-            "message": f"Unsupported transport_mode '{transport_mode}'. Supported modes: {sorted(list(SUPPORTED_TRANSPORT_MODES))}"
+            "message": f"Unsupported transport_mode '{transport_mode}'. Supported modes: {sorted(list(SUPPORTED_TRANSPORT_MODES))}",
         }
-        
+
     rate_per_km = get_transport_rate(norm_mode)
     estimated_cost = round(dist * rate_per_km, 2)
-    
+
     return {
         "status": "success",
         "distance_km": round(dist, 2),
@@ -521,7 +634,7 @@ def calculate_transport_cost(distance_km: float, transport_mode: str = "motorbik
         "minimum_charge": 0.0,
         "estimated_cost": estimated_cost,
         "currency": "LKR",
-        "notice": "Estimated volunteer travel reimbursement — accounting ledger estimate only, no monetary payment processed."
+        "notice": "Estimated volunteer travel reimbursement — accounting ledger estimate only, no monetary payment processed.",
     }
 
 
@@ -531,10 +644,10 @@ def calculate_transport_estimate(
     base_fare: Optional[float] = None,
     reimbursement_pct: float = 1.0,
     waiting_charge: float = 0.0,
-    tolls: float = 0.0
+    tolls: float = 0.0,
 ) -> Dict[str, Any]:
     """Calculate transparent multi-factor estimated volunteer travel support.
-    
+
     Formula: base_fare + (distance_km * rate_per_km) + waiting_charge + tolls
     Applied with reimbursement_percentage (default 100%).
     """
@@ -542,25 +655,25 @@ def calculate_transport_estimate(
         dist = float(distance_km)
     except (ValueError, TypeError):
         return {"status": "error", "message": "distance_km must be a valid non-negative number."}
-        
+
     if dist < 0:
         return {"status": "error", "message": "distance_km cannot be negative."}
-        
+
     norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
     if norm_mode not in SUPPORTED_TRANSPORT_MODES:
         return {
             "status": "error",
-            "message": f"Unsupported transport_mode '{transport_mode}'. Supported modes: {sorted(list(SUPPORTED_TRANSPORT_MODES))}"
+            "message": f"Unsupported transport_mode '{transport_mode}'. Supported modes: {sorted(list(SUPPORTED_TRANSPORT_MODES))}",
         }
-        
+
     rate_per_km = get_transport_rate(norm_mode)
     actual_base = float(base_fare) if base_fare is not None else get_base_fare(norm_mode)
-    
+
     distance_cost = dist * rate_per_km
     gross_cost = actual_base + distance_cost + float(waiting_charge) + float(tolls)
     pct = max(0.0, min(1.0, float(reimbursement_pct)))
     reimbursement_amount = round(gross_cost * pct, 2)
-    
+
     return {
         "status": "success",
         "distance_km": round(dist, 2),
@@ -575,7 +688,7 @@ def calculate_transport_estimate(
         "estimated_support_amount": reimbursement_amount,
         "currency": "LKR",
         "display_text": f"Estimated transport support: LKR {int(reimbursement_amount)}",
-        "notice": "Estimated volunteer travel reimbursement support (accounting ledger estimate only)."
+        "notice": "Estimated volunteer travel reimbursement support (accounting ledger estimate only).",
     }
 
 
@@ -583,12 +696,7 @@ class RouteProvider(ABC):
     """Abstract Base Class for route computation providers."""
 
     @abstractmethod
-    async def compute_route(
-        self,
-        origin: str,
-        destination: str,
-        transport_mode: str = "motorbike"
-    ) -> Dict[str, Any]:
+    async def compute_route(self, origin: str, destination: str, transport_mode: str = "motorbike") -> Dict[str, Any]:
         """Compute distance, duration, and geometry between origin and destination."""
         pass
 
@@ -601,19 +709,11 @@ class HaversineRouteProvider(RouteProvider):
         R = 6371.0  # Earth's radius in km
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
-        a = (
-            math.sin(dlat / 2) ** 2
-            + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
-        )
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return R * c
 
-    async def compute_route(
-        self,
-        origin: str,
-        destination: str,
-        transport_mode: str = "motorbike"
-    ) -> Dict[str, Any]:
+    async def compute_route(self, origin: str, destination: str, transport_mode: str = "motorbike") -> Dict[str, Any]:
         origin_coords = geocode_location(origin)
         dest_coords = geocode_location(destination)
         norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
@@ -624,21 +724,18 @@ class HaversineRouteProvider(RouteProvider):
                 "message": f"Route distance cannot be calculated because coordinates for '{origin}' or '{destination}' are unavailable.",
                 "origin": origin,
                 "destination": destination,
-                "provider": "haversine_fallback"
+                "provider": "haversine_fallback",
             }
 
         # Straight-line distance with a 1.25x road-curvature correction factor
-        straight_km = self._haversine_distance(
-            origin_coords[0], origin_coords[1],
-            dest_coords[0], dest_coords[1]
-        )
+        straight_km = self._haversine_distance(origin_coords[0], origin_coords[1], dest_coords[0], dest_coords[1])
         road_km = round(max(0.5, straight_km * 1.25), 2)
-        
+
         speed = TRANSPORT_SPEEDS_KMH.get(norm_mode, 30.0)
         duration_hours = road_km / speed
         duration_seconds = int(duration_hours * 3600)
         duration_minutes = max(1, round(duration_seconds / 60))
-        
+
         cost_calc = calculate_transport_cost(road_km, norm_mode)
 
         return {
@@ -655,7 +752,7 @@ class HaversineRouteProvider(RouteProvider):
             "currency": "LKR",
             "geometry": None,  # No fake polyline; straight-line coordinates given
             "provider": "haversine_fallback",
-            "is_road_exact": False
+            "is_road_exact": False,
         }
 
 
@@ -665,13 +762,9 @@ class GraphHopperRouteProvider(RouteProvider):
     def __init__(self, api_key: Optional[str] = None):
         self._api_key = api_key or os.environ.get("GRAPHHOPPER_API_KEY", "").strip() or os.environ.get("GRAPH_HOPPER_API_KEY", "").strip()
 
-    async def compute_route(
-        self,
-        origin: str,
-        destination: str,
-        transport_mode: str = "motorbike"
-    ) -> Dict[str, Any]:
+    async def compute_route(self, origin: str, destination: str, transport_mode: str = "motorbike") -> Dict[str, Any]:
         import routing_service
+
         res = await routing_service.calculate_route(origin, destination, transport_mode, api_key=self._api_key)
         if res.get("success"):
             dist_km = res.get("distance_km", 0.0) or 0.0
@@ -679,7 +772,7 @@ class GraphHopperRouteProvider(RouteProvider):
             res["estimated_cost"] = cost_calc.get("estimated_cost", 0.0)
             res["currency"] = "LKR"
             return res
-        
+
         fallback = HaversineRouteProvider()
         return await fallback.compute_route(origin, destination, transport_mode)
 
@@ -693,32 +786,26 @@ def get_route_provider() -> RouteProvider:
     return HaversineRouteProvider()
 
 
-async def calculate_route(
-    origin: str,
-    destination: str,
-    transport_mode: str = "motorbike"
-) -> Dict[str, Any]:
+async def calculate_route(origin: str, destination: str, transport_mode: str = "motorbike") -> Dict[str, Any]:
     """Calculate road route distance, duration, and cost estimation."""
     provider = get_route_provider()
     return await provider.compute_route(origin, destination, transport_mode)
 
 
 async def compute_two_leg_route(
-    volunteer_location: Optional[str],
-    pickup_location: str,
-    delivery_location: str,
-    transport_mode: str = "motorbike"
+    volunteer_location: Optional[str], pickup_location: str, delivery_location: str, transport_mode: str = "motorbike"
 ) -> Dict[str, Any]:
     """Compute two-leg logistics metrics:
     Leg 1: Volunteer / Origin -> Donor Pickup Location
     Leg 2: Donor Pickup Location -> Recipient Destination
     """
     import routing_service
+
     norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
     v_loc = volunteer_location if volunteer_location and str(volunteer_location).strip() else pickup_location
 
     pickup_res = await routing_service.calculate_pickup_route(v_loc, pickup_location, delivery_location, norm_mode)
-    
+
     total_dist = pickup_res.get("total_distance_km", 0.0) or 0.0
     total_dur_min = pickup_res.get("total_duration_minutes", 0) or 0
     leg1 = pickup_res.get("volunteer_to_donation", {})
@@ -734,14 +821,14 @@ async def compute_two_leg_route(
             "destination": pickup_location,
             "distance_km": leg1.get("distance_km", 0.0),
             "duration_minutes": leg1.get("duration_minutes", 5),
-            "route_status": "success"
+            "route_status": "success",
         },
         "leg2_delivery": {
             "origin": pickup_location,
             "destination": delivery_location,
             "distance_km": leg2.get("distance_km", 0.0),
             "duration_minutes": leg2.get("duration_minutes", 10),
-            "route_status": "success"
+            "route_status": "success",
         },
         "total_distance_km": total_dist,
         "total_duration_minutes": total_dur_min,
@@ -751,7 +838,7 @@ async def compute_two_leg_route(
         "route_geometry": pickup_res.get("route_geometry"),
         "coordinates": pickup_res.get("coordinates"),
         "provider": pickup_res.get("provider", "graphhopper"),
-        "display_text": f"Leg 1: {leg1.get('distance_km', 0.0)} km | Leg 2: {leg2.get('distance_km', 0.0)} km | Total: {total_dist} km (~{total_dur_min} min) | Support: LKR {int(cost_est.get('estimated_support_amount', 0.0))}"
+        "display_text": f"Leg 1: {leg1.get('distance_km', 0.0)} km | Leg 2: {leg2.get('distance_km', 0.0)} km | Total: {total_dist} km (~{total_dur_min} min) | Support: LKR {int(cost_est.get('estimated_support_amount', 0.0))}",
     }
 
 
@@ -764,11 +851,6 @@ def generate_map_link(latitude: float, longitude: float) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"
 
 
-def generate_directions_link(
-    origin_lat: float,
-    origin_lng: float,
-    dest_lat: float,
-    dest_lng: float
-) -> str:
+def generate_directions_link(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> str:
     """Generate a turn-by-turn directions URL between two coordinates."""
     return f"https://www.google.com/maps/dir/?api=1&origin={origin_lat:.6f},{origin_lng:.6f}&destination={dest_lat:.6f},{dest_lng:.6f}"
