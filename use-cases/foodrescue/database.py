@@ -90,11 +90,33 @@ def create_organization_record(
     phone: str,
     service_area: str,
     accepted_food_types: str,
-    capacity: Optional[str] = "100 meals",
+    capacity: Optional[str] = None,
     availability: Optional[str] = "daytime",
     location: Optional[str] = None
 ) -> Dict[str, Any]:
     return get_repository().create_organization_record(
+        org_id=org_id,
+        name=name,
+        phone=phone,
+        service_area=service_area,
+        accepted_food_types=accepted_food_types,
+        capacity=capacity,
+        availability=availability,
+        location=location
+    )
+
+
+def update_organization_record(
+    org_id: str,
+    name: Optional[str] = None,
+    phone: Optional[str] = None,
+    service_area: Optional[str] = None,
+    accepted_food_types: Optional[str] = None,
+    capacity: Optional[str] = None,
+    availability: Optional[str] = None,
+    location: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    return get_repository().update_organization_record(
         org_id=org_id,
         name=name,
         phone=phone,
@@ -112,6 +134,28 @@ def get_volunteer_record(volunteer_id: str) -> Optional[Dict[str, Any]]:
 
 def get_volunteer_by_phone(phone: str) -> Optional[Dict[str, Any]]:
     return get_repository().get_volunteer_by_phone(phone)
+
+
+def update_volunteer_record(
+    volunteer_id: str,
+    name: Optional[str] = None,
+    phone: Optional[str] = None,
+    service_area: Optional[str] = None,
+    transport_mode: Optional[str] = None,
+    availability: Optional[str] = None,
+    current_status: Optional[str] = None,
+    location: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    return get_repository().update_volunteer_record(
+        volunteer_id=volunteer_id,
+        name=name,
+        phone=phone,
+        service_area=service_area,
+        transport_mode=transport_mode,
+        availability=availability,
+        current_status=current_status,
+        location=location,
+    )
 
 
 def create_donation_record(

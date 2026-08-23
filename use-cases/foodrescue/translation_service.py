@@ -405,9 +405,9 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "ta": "நன்றி, {name}! 📍 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚\n\nஉணவு தற்போது இலங்கையின் எந்த **மாவட்டத்தில்** உள்ளது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, குருநாகல், காலி)",
     },
     "donor_ask_deadline": {
-        "en": "Got it. 📍 Pickup location: {city}\n\nWhat time will the food donation be available until for collection / pickup? (e.g. 'Before 8 PM', 'By 6:30 PM')",
-        "si": "තේරුම් ගත්තා. 📍 ලබාගැනීමේ ස්ථානය: {city}\n\nආහාර පරිත්‍යාගය එකතු කරගත හැකි අවසන් වේලාව කවදාද? (උදා. 'රාත්‍රී 8 ට පෙර')",
-        "ta": "புரிந்தது. 📍 சேகரிக்கும் இடம்: {city}\n\nஉணவு தானத்தை எத்தனை மணிக்குள் சேகரிக்க முடியும்? (எ.கா. 'இரவு 8 மணிக்கு முன்')",
+        "en": "Got it. 📍 Pickup location: {city}\n\n⏰ What time will the food donation be available until for collection / pickup? (e.g. 'Before 8 PM', 'By 6:30 PM')\n*(Please reply with your pickup deadline to confirm your Donation Summary)*",
+        "si": "තේරුම් ගත්තා. 📍 ලබාගැනීමේ ස්ථානය: {city}\n\n⏰ ආහාර පරිත්‍යාගය එකතු කරගත හැකි අවසන් වේලාව කවදාද? (උදා. 'රාත්‍රී 8 ට පෙර')\n*(තහවුරු කිරීමට අවසන් වේලාව සඳහන් කරන්න)*",
+        "ta": "புரிந்தது. 📍 சேகரிக்கும் இடம்: {city}\n\n⏰ உணவு தானத்தை எத்தனை மணிக்குள் சேகரிக்க முடியும்? (எ.கா. 'இரவு 8 மணிக்கு முன்')\n*(உறுதிப்படுத்த சேகரிக்கும் நேரத்தை பதிலளிக்கவும்)*",
     },
     "donor_ask_location_native": {
         "en": (
@@ -696,6 +696,184 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "si": ("සමාවන්න, එම ඉල්ලීම සැකසීමේදී සුළු ගැටලුවක් ඇති විය.\n\n" "කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න. 🙏"),
         "ta": ("மன்னிக்கவும், அந்த கோரிக்கையை செயலாக்குவதில் சிக்கல் ஏற்பட்டது.\n\n" "தயவுசெய்து சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும். 🙏"),
     },
+    "org_ask_capacity": {
+        "en": (
+            "Got it, **{org_name}**! 3️⃣ What type of food and **how many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)"
+        ),
+        "si": (
+            "ස්තූතියි, **{org_name}**! 3️⃣ ඔබේ සංවිධානයට **දිනකට අවශ්‍ය ආහාර ප්‍රමාණය / ධාරිතාව (Daily Capacity)** කොපමණද? (උදා: *ආහාර පැකට් 50*, *පැකට් 100*, *250 meals/day*)"
+        ),
+        "ta": (
+            "நன்றி, **{org_name}**! 3️⃣ உங்கள் அமைப்பிற்கு **தினசரி தேவைப்படும் உணவு அளவு / கொள்ளளவு (Daily Capacity)** எவ்வளவு? (எ.கா: *50 பொதிகள்*, *100 பொதிகள்*, *250 meals/day*)"
+        ),
+    },
+    "org_matched_notify_donor": {
+        "en": (
+            "✅ **Donation Created & Confirmed! (ID: {donation_id} | Status: PICKUP_ASSIGNED)**\n\n"
+            "🏢 **Recipient Organization Match Found in {district}!**\n\n"
+            "• 🏢 **Organization**: {org_name}\n"
+            "• 📍 **Location**: {org_location}\n"
+            "• 📦 **Daily Capacity**: {org_capacity}\n"
+            "• 🍲 **Accepted Food**: {org_accepted_food}\n"
+            "• 📞 **Contact**: {org_phone}\n"
+            "• 🍱 **Your Donation**: {food_info}\n\n"
+            "Would you like to connect and have your donation connected to **{org_name}**?\n"
+            "👉 Reply **Accept** (or **1**) to confirm this organization, or **Reject**."
+        ),
+        "si": (
+            "✅ **පරිත්‍යාගය සාර්ථකව ලියාපදිංචි කරන ලදී! (අංකය: {donation_id})**\n\n"
+            "🏢 **{district} දිස්ත්‍රික්කයෙන් ආහාර ලබාගන්නා සංවිධානයක් සම්බන්ධ කර ඇත!**\n\n"
+            "• 🏢 **සංවිධානය**: {org_name}\n"
+            "• 📍 **ස්ථානය**: {org_location}\n"
+            "• 📦 **දෛනික ධාරිතාව**: {org_capacity}\n"
+            "• 🍲 **භාරගන්නා ආහාර**: {org_accepted_food}\n"
+            "• 📞 **දුරකථන**: {org_phone}\n"
+            "• 🍱 **ඔබගේ පරිත්‍යාගය**: {food_info}\n\n"
+            "මෙම සංවිධානයට ඔබගේ ආහාර පරිත්‍යාගය සම්බන්ධ කිරීමට කැමතිද?\n"
+            "👉 තහවුරු කිරීමට **Accept** (හෝ **1**) එවන්න, නැතහොත් **Reject** එවන්න."
+        ),
+        "ta": (
+            "✅ **நன்கொடை வெற்றிகரமாக பதிவு செய்யப்பட்டது! (எண்: {donation_id})**\n\n"
+            "🏢 **{district} மாவட்டத்தில் உணவு பெறும் அமைப்பு இணைக்கப்பட்டுள்ளது!**\n\n"
+            "• 🏢 **அமைப்பு**: {org_name}\n"
+            "• 📍 **இடம்**: {org_location}\n"
+            "• 📦 **தினசரி கொள்ளளவு**: {org_capacity}\n"
+            "• 🍲 **ஏற்கும் உணவு வகைகள்**: {org_accepted_food}\n"
+            "• 📞 **தொடர்பு**: {org_phone}\n"
+            "• 🍱 **உங்கள் நன்கொடை**: {food_info}\n\n"
+            "உங்கள் உணவை **{org_name}** அமைப்பிற்கு அனுப்ப விரும்புகிறீர்களா?\n"
+            "👉 உறுதிப்படுத்த **Accept** (அல்லது **1**) என பதிலளிக்கவும், அல்லது **Reject** என அனுப்பவும்."
+        ),
+    },
+    "donor_accepted_notify_org": {
+        "en": (
+            "🎉 **Donor Approved Your Food Request!**\n\n"
+            "Donor **{donor_name}** has accepted to provide surplus food to **{org_name}** in {district}.\n\n"
+            "• 👤 **Donor Name**: {donor_name}\n"
+            "• 📞 **Donor Phone**: {donor_phone}\n"
+            "• 📍 **Pickup Location**: {donor_location}\n"
+            "• 🍱 **Food Details**: {food_info}\n"
+            "• ⏰ **Collection Deadline**: {deadline}\n\n"
+            "🚚 We are dispatching available volunteer couriers in {district} to pick up and deliver the food to your location!"
+        ),
+        "si": (
+            "🎉 **පරිත්‍යාගශීලියා ඔබගේ ඉල්ලීම තහවුරු කරන ලදී!**\n\n"
+            "**{donor_name}** විසින් **{org_name}** වෙත ආහාර ලබාදීම පිළිගෙන ඇත.\n\n"
+            "• 👤 **පරිත්‍යාගශීලියා**: {donor_name}\n"
+            "• 📞 **දුරකථන**: {donor_phone}\n"
+            "• 📍 **ලබාගන්නා ස්ථානය**: {donor_location}\n"
+            "• 🍱 **ආහාර විස්තර**: {food_info}\n"
+            "• ⏰ **වේලාව**: {deadline}\n\n"
+            "🚚 {district} හි ස්වේච්ඡා ප්‍රවාහකයෙකු සම්බන්ධ කර ආහාර ඔබ වෙත ලබාදීමට කටයුතු කරමින් සිටිමු!"
+        ),
+        "ta": (
+            "🎉 **நன்கொடையாளர் உங்கள் உணவு கோரிக்கையை ஏற்றுக்கொண்டார்!**\n\n"
+            "**{donor_name}** உங்கள் அமைப்பான **{org_name}** இற்கு உணவை வழங்க ஒப்புக்கொண்டுள்ளார்.\n\n"
+            "• 👤 **நன்கொடையாளர்**: {donor_name}\n"
+            "• 📞 **தொலைபேசி**: {donor_phone}\n"
+            "• 📍 **சேகரிக்கும் இடம்**: {donor_location}\n"
+            "• 🍱 **உணவு விபரம்**: {food_info}\n"
+            "• ⏰ **காலக்கெடு**: {deadline}\n\n"
+            "🚚 {district} மாவட்டத்தில் தன்னார்வலரை நியமித்து உணவை உங்கள் அமைப்பிற்கு டெலிவரி செய்ய ஏற்பாடு செய்கிறோம்!"
+        ),
+    },
+    "volunteer_task_opportunity_district": {
+        "en": (
+            "🚚 **New Food Delivery Opportunity in {district}!**\n\n"
+            "• 🍱 **Food**: {food_info}\n"
+            "• 📍 **Pickup Area**: {pickup_area}\n"
+            "• 🏢 **Delivery Area**: {delivery_area}\n"
+            "• 📏 **Total Distance**: ~{total_dist} km\n"
+            "• 💰 **Dynamic Transport Support**: LKR {est_cost}\n"
+            "• 🗺️ **Route Preview**: {map_link}\n\n"
+            "👉 Reply **Accept** to take this delivery task, or **Reject**."
+        ),
+        "si": (
+            "🚚 **{district} හි නව ආහාර බෙදාහැරීමේ අවස්ථාවක්!**\n\n"
+            "• 🍱 **ආහාර**: {food_info}\n"
+            "• 📍 **ලබාගැනීම**: {pickup_area}\n"
+            "• 🏢 **භාරදීම**: {delivery_area}\n"
+            "• 📏 **මුළු දුර**: ~{total_dist} km\n"
+            "• 💰 **ප්‍රවාහන සහාය මුදල**: LKR {est_cost}\n"
+            "• 🗺️ **මාර්ග සිතියම**: {map_link}\n\n"
+            "👉 මෙම කාර්යය භාරගැනීමට **Accept** හෝ **Reject** එවන්න."
+        ),
+        "ta": (
+            "🚚 **{district} இல் புதிய உணவு டெலிவரி பணி!**\n\n"
+            "• 🍱 **உணவு**: {food_info}\n"
+            "• 📍 **சேகரிக்கும் இடம்**: {pickup_area}\n"
+            "• 🏢 **டெலிவரி இடம்**: {delivery_area}\n"
+            "• 📏 **மொத்த தூரம்**: ~{total_dist} கி.மீ\n"
+            "• 💰 **போக்குவரத்து ஆதரவுத் தொகை**: LKR {est_cost}\n"
+            "• 🗺️ **பாதை முன்னோட்டம்**: {map_link}\n\n"
+            "👉 இப்பணியை ஏற்க **Accept** அல்லது **Reject** என பதிலளிக்கவும்."
+        ),
+    },
+    "volunteer_task_assigned_full_details": {
+        "en": (
+            "✅ **Pickup Task Assigned & Accepted!**\n\n"
+            "• 🆔 **Task ID**: `{task_id}`\n\n"
+            "🍱 **DONATION DETAILS:**\n"
+            "• 👤 **Donor**: {donor_name}\n"
+            "• 📞 **Donor Contact**: {donor_phone}\n"
+            "• 📍 **Pickup Location**: {pickup_location}\n"
+            "• 🍱 **Food**: {food_info}\n"
+            "• ⏰ **Pickup Deadline**: {deadline}\n"
+            "• 🗺️ **Pickup Map**: {donor_map_link}\n\n"
+            "🏢 **ORGANIZATION DETAILS:**\n"
+            "• 🏢 **Recipient**: {org_name}\n"
+            "• 📞 **Org Contact**: {org_phone}\n"
+            "• 📍 **Delivery Location**: {delivery_location}\n"
+            "• 📦 **Daily Capacity**: {org_capacity}\n"
+            "• 🗺️ **Delivery Map**: {org_map_link}\n\n"
+            "📏 **Total Route**: ~{total_dist} km\n"
+            "💰 **Estimated Transport Support**: LKR {est_cost}\n"
+            "🗺️ **Complete Route Navigation**: {directions_link}\n\n"
+            "📍 Please proceed to collect the food from the donor. Once collected, reply *'Collected'*."
+        ),
+        "si": (
+            "✅ **ආහාර බෙදාහැරීමේ කාර්යය භාරගන්නා ලදී (Assigned)!**\n\n"
+            "• 🆔 **කාර්ය අංකය**: `{task_id}`\n\n"
+            "🍱 **පරිත්‍යාගයේ විස්තර:**\n"
+            "• 👤 **පරිත්‍යාගශීලියා**: {donor_name}\n"
+            "• 📞 **දුරකථන**: {donor_phone}\n"
+            "• 📍 **ලබාගන්නා ස්ථානය**: {pickup_location}\n"
+            "• 🍱 **ආහාර**: {food_info}\n"
+            "• ⏰ **අවසාන වේලාව**: {deadline}\n"
+            "• 🗺️ **ලබාගන්නා සිතියම**: {donor_map_link}\n\n"
+            "🏢 **සංවිධානයේ විස්තර:**\n"
+            "• 🏢 **භාරගන්නා සංවිධානය**: {org_name}\n"
+            "• 📞 **සංවිධාන දුරකථන**: {org_phone}\n"
+            "• 📍 **බෙදාහරින ස්ථානය**: {delivery_location}\n"
+            "• 📦 **දෛනික ධාරිතාව**: {org_capacity}\n"
+            "• 🗺️ **බෙදාහරින සිතියම**: {org_map_link}\n\n"
+            "📏 **මුළු දුර**: ~{total_dist} km\n"
+            "💰 **ප්‍රවාහන සහාය මුදල**: LKR {est_cost}\n"
+            "🗺️ **සම්පූර්ණ මාර්ග සිතියම**: {directions_link}\n\n"
+            "📍 කරුණාකර ආහාර ලබාගැනීමට ගමන් කරන්න. ලබාගත් පසු *'Collected'* ලෙස එවන්න."
+        ),
+        "ta": (
+            "✅ **டெலிவரி பணி ஒதுக்கப்பட்டது மற்றும் உறுதிப்படுத்தப்பட்டது (Assigned)!**\n\n"
+            "• 🆔 **பணி எண்**: `{task_id}`\n\n"
+            "🍱 **நன்கொடை விபரங்கள்:**\n"
+            "• 👤 **நன்கொடையாளர்**: {donor_name}\n"
+            "• 📞 **தொலைபேசி**: {donor_phone}\n"
+            "• 📍 **சேகரிக்கும் இடம்**: {pickup_location}\n"
+            "• 🍱 **உணவு**: {food_info}\n"
+            "• ⏰ **காலக்கெடு**: {deadline}\n"
+            "• 🗺️ **சேகரிக்கும் வரைபடம்**: {donor_map_link}\n\n"
+            "🏢 **அமைப்பின் விபரங்கள்:**\n"
+            "• 🏢 **பெறும் அமைப்பு**: {org_name}\n"
+            "• 📞 **அமைப்பு தொடர்பு**: {org_phone}\n"
+            "• 📍 **டெலிவரி இடம்**: {delivery_location}\n"
+            "• 📦 **தினசரி கொள்ளளவு**: {org_capacity}\n"
+            "• 🗺️ **டெலிவரி வரைபடம்**: {org_map_link}\n\n"
+            "📏 **மொத்த தூரம்**: ~{total_dist} கி.மீ\n"
+            "💰 **போக்குவரத்து ஆதரவுத் தொகை**: LKR {est_cost}\n"
+            "🗺️ **முழு வழிசெலுத்தல் வரைபடம்**: {directions_link}\n\n"
+            "📍 தயவுசெய்து உணவை சேகரிக்க செல்லவும். சேகரித்த பிறகு *'Collected'* என பதிலளிக்கவும்."
+        ),
+    },
     # 11. Status Queries & Workflow Coordination Cards
     "donation_status_card": {
         "en": (
@@ -864,6 +1042,11 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "si": "ස්තූතියි **{org_name}**! 2️⃣ ඔබගේ සංවිධානය පිහිටා ඇති **දිස්ත්‍රික්කය** කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, ගාල්ල, යාපනය)",
         "ta": "புரிந்தது **{org_name}**! 2️⃣ உங்கள் அமைப்பு அமைந்துள்ள **மாவட்டம்** எது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, காலி, யாழ்ப்பாணம்)",
     },
+    "org_ask_capacity": {
+        "en": "Got it, **{org_name}**! 3️⃣ What type of food and **how many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)",
+        "si": "ස්තූතියි, **{org_name}**! 3️⃣ ඔබේ සංවිධානයට **දිනකට අවශ්‍ය ආහාර ප්‍රමාණය / ධාරිතාව (Daily Capacity)** කොපමණද? (උදා: *ආහාර පැකට් 50*, *පැකට් 100*, *250 meals/day*)",
+        "ta": "நன்றி, **{org_name}**! 3️⃣ உங்கள் அமைப்பிற்கு **தினசரி தேவைப்படும் உணவு அளவு / கொள்ளளவு (Daily Capacity)** எவ்வளவு? (எ.கா: *50 பொதிகள்*, *100 பொதிகள்*, *250 meals/day*)",
+    },
     "org_ask_food_need": {
         "en": "What type of food (e.g. Rice & Curry, cooked meal packets, bakery) and how many portions does **{org_name}** need today?",
         "si": "**{org_name}** සඳහා අද අවශ්‍ය ආහාර වර්ගය (උදා: බත් සහ ව්‍යංජන, පිසූ ආහාර පාර්සල්, බේකරි) සහ ප්‍රමාණය කොපමණද?",
@@ -885,17 +1068,17 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
     "org_ask_live_location": {
         "en": (
-            "📍 **Step 3: Please Share Your Organization's Live Location Pin**\n\n"
-            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to your door!\n\n"
+            "📍 **Step 3: Please Share Your Organization's Live Location Pin in {city}**\n\n"
+            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to your door in {city}!\n\n"
             "Also tell us what type of food and how many meal portions you need today."
         ),
         "si": (
-            "📍 **පියවර 3: කරුණාකර ඔබගේ සංවිධානයේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "📍 **පියවර 3: කරුණාකර ඔබගේ සංවිධානයේ ස්ථානය ({city}) WhatsApp හරහා එවන්න**\n\n"
             "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ගෙනවිත් දිය හැක!\n\n"
             "එසේම ඔබට අවශ්‍ය ආහාර වර්ගය හෝ ප්‍රමාණය ද සඳහන් කරන්න."
         ),
         "ta": (
-            "📍 **படி 3: உங்கள் அமைப்பின் நேரலை இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "📍 **படி 3: உங்கள் அமைப்பின் நேரலை இருப்பிடத்தை ({city}) பகிரவும்**\n\n"
             "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும்.\n\n"
             "மேலும் உங்களுக்குத் தேவையான உணவு வகை அல்லது பொதிகளையும் குறிப்பிடவும்."
         ),
@@ -962,7 +1145,6 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "👉 **➕ (அல்லது 📎) அழுத்தி → Location → 'Send your current location' 📍 என்பதை அனுப்பவும்**"
         ),
     },
-    # Cross-Party Lifecycle Notifications
     "donation_connected_donor": {
         "en": (
             "🍱 *Food Donation Connected!*\n\n"

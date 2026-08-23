@@ -336,7 +336,7 @@ class MongoRepository(BaseRepository):
         phone: str,
         service_area: str,
         accepted_food_types: str,
-        capacity: Optional[str] = "100 meals",
+        capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
         location: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -348,13 +348,44 @@ class MongoRepository(BaseRepository):
             "phone": phone,
             "service_area": service_area,
             "accepted_food_types": accepted_food_types,
-            "capacity": capacity or "100 meals",
+            "capacity": capacity if (capacity and str(capacity).strip()) else "As needed",
             "availability": availability or "daytime",
             "location": loc,
             "created_at": now
         }
         self.organizations_col.insert_one(doc)
         return self._clean_doc(doc) or {}
+
+    def update_organization_record(
+        self,
+        org_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        accepted_food_types: Optional[str] = None,
+        capacity: Optional[str] = None,
+        availability: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        update_fields = {}
+        if name is not None:
+            update_fields["name"] = name
+        if phone is not None:
+            update_fields["phone"] = phone
+        if service_area is not None:
+            update_fields["service_area"] = service_area
+        if accepted_food_types is not None:
+            update_fields["accepted_food_types"] = accepted_food_types
+        if capacity is not None:
+            update_fields["capacity"] = capacity
+        if availability is not None:
+            update_fields["availability"] = availability
+        if location is not None:
+            update_fields["location"] = location
+
+        if update_fields:
+            self.organizations_col.update_one({"id": org_id}, {"$set": update_fields})
+        return self.get_organization_record(org_id)
 
     def get_volunteer_record(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
         doc = self.volunteers_col.find_one({"id": volunteer_id})
@@ -389,13 +420,49 @@ class MongoRepository(BaseRepository):
             "name": name,
             "phone": phone,
             "service_area": service_area,
+            "transport_mode": transport_mode,
             "availability": availability,
             "current_status": current_status,
             "location": loc,
             "created_at": now
         }
-        self.volunteers_col.insert_one(doc)
-        return self._clean_doc(doc) or {}
+        self.volunteers_col.update_one({"id": volunteer_id}, {"$set": doc}, upsert=True)
+        saved = self.volunteers_col.find_one({"id": volunteer_id})
+        return self._clean_doc(saved) or {}
+
+    def update_volunteer_record(
+        self,
+        volunteer_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        transport_mode: Optional[str] = None,
+        availability: Optional[str] = None,
+        current_status: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        update_fields: Dict[str, Any] = {}
+        if name is not None:
+            update_fields["name"] = name
+        if phone is not None:
+            update_fields["phone"] = self._normalize_phone(phone)
+        if service_area is not None:
+            update_fields["service_area"] = service_area
+        if transport_mode is not None:
+            update_fields["transport_mode"] = transport_mode
+        if availability is not None:
+            update_fields["availability"] = availability
+        if current_status is not None:
+            update_fields["current_status"] = current_status
+        if location is not None:
+            update_fields["location"] = location
+
+        if not update_fields:
+            return self.get_volunteer_record(volunteer_id)
+
+        self.volunteers_col.update_one({"id": volunteer_id}, {"$set": update_fields})
+        doc = self.volunteers_col.find_one({"id": volunteer_id})
+        return self._clean_doc(doc)
 
 
     def create_donation_record(

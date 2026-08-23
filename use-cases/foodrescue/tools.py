@@ -1091,7 +1091,7 @@ def register_organization(
     service_area: str,
     accepted_food_types: str,
     phone: Optional[str] = None,
-    capacity: Optional[str] = "100 meals",
+    capacity: Optional[str] = None,
     availability: Optional[str] = "daytime",
     district: Optional[str] = None,
 ) -> str:
@@ -1111,11 +1111,19 @@ def register_organization(
     clean_types = str(accepted_food_types).strip()
     clean_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
     clean_dist = district or routing.resolve_district(clean_loc or clean_area) or "Kegalle"
+    clean_cap = str(capacity).strip() if capacity and str(capacity).strip() else "As needed"
 
     existing = database.get_organization_by_phone(clean_phone) if clean_phone else None
     if existing:
         org_id = existing["id"]
-        record = existing
+        record = database.update_organization_record(
+            org_id=org_id,
+            name=clean_name,
+            service_area=clean_area,
+            accepted_food_types=clean_types,
+            capacity=clean_cap,
+            location=clean_loc,
+        ) or existing
     else:
         org_id = f"o-{uuid.uuid4().hex[:6]}"
         record = database.create_organization_record(
@@ -1124,7 +1132,7 @@ def register_organization(
             phone=clean_phone,
             service_area=clean_area,
             accepted_food_types=clean_types,
-            capacity=capacity or "100 meals",
+            capacity=clean_cap,
             availability=availability or "daytime",
             location=clean_loc,
         )
@@ -1147,7 +1155,9 @@ def register_organization(
             "district": clean_dist,
             "service_area": clean_area,
             "accepted_food_types": clean_types,
+            "capacity": clean_cap,
             "message": f"Organization '{clean_name}' successfully registered with ID {org_id} in {clean_dist} District.",
+            "record": record,
         },
         indent=2,
     )
@@ -1196,20 +1206,16 @@ def register_volunteer(
     existing = database.get_volunteer_by_phone(clean_phone) if clean_phone else None
     if existing:
         vol_id = existing["id"]
-        record = (
-            database.create_volunteer_record(
-                volunteer_id=vol_id,
-                name=clean_name,
-                phone=clean_phone,
-                service_area=clean_area,
-                transport_mode=clean_mode,
-                availability=clean_avail,
-                current_status="available",
-                location=clean_loc,
-            )
-            if not existing.get("name") or existing.get("name") == "Volunteer Courier"
-            else existing
-        )
+        record = database.update_volunteer_record(
+            volunteer_id=vol_id,
+            name=clean_name,
+            phone=clean_phone,
+            service_area=clean_area,
+            transport_mode=clean_mode,
+            availability=clean_avail,
+            current_status="available",
+            location=clean_loc,
+        ) or existing
     else:
         vol_id = f"v-{uuid.uuid4().hex[:6]}"
         record = database.create_volunteer_record(

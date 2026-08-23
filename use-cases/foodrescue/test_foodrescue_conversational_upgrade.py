@@ -175,7 +175,15 @@ async def test_dynamic_slot_filling_and_no_repeated_questions():
         session_id=session_id
     )
     assert "Donation Created" in r4 or "✅" in r4
-    assert "PICKUP_ASSIGNED" in r4
+    assert "PICKUP_ASSIGNED" in r4 or "Organization" in r4 or "Match" in r4
+
+    # Turn 5: User accepts matched organization if matched
+    if database.get_user_conversation_state(phone).get("current_question") == "ACCEPT_ORGANIZATION":
+        r5 = await resilient_executor.execute_deterministic_fallback(
+            prompt="Accept",
+            session_id=session_id
+        )
+        assert "Connected" in r5 or "✅" in r5
 
     # Draft and state are cleared
     assert database.get_draft_donation(phone) is None

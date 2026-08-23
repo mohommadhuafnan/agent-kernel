@@ -441,25 +441,78 @@ class SQLiteRepository(BaseRepository):
         phone: str,
         service_area: str,
         accepted_food_types: str,
-        capacity: Optional[str] = "100 meals",
+        capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
         location: Optional[str] = None
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         loc = location or service_area.split(",")[0].strip()
+        cap_val = capacity if (capacity and str(capacity).strip()) else "As needed"
         with conn:
             cursor = conn.cursor()
             cursor.execute('''
             INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (org_id, name, phone, service_area, accepted_food_types, capacity or "100 meals", availability or "daytime", loc, now))
+            ''', (org_id, name, phone, service_area, accepted_food_types, cap_val, availability or "daytime", loc, now))
 
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else {}
+
+    def update_organization_record(
+        self,
+        org_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        accepted_food_types: Optional[str] = None,
+        capacity: Optional[str] = None,
+        availability: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        fields = []
+        params = []
+        if name is not None:
+            fields.append("name = ?")
+            params.append(name)
+        if phone is not None:
+            fields.append("phone = ?")
+            params.append(phone)
+        if service_area is not None:
+            fields.append("service_area = ?")
+            params.append(service_area)
+        if accepted_food_types is not None:
+            fields.append("accepted_food_types = ?")
+            params.append(accepted_food_types)
+        if capacity is not None:
+            fields.append("capacity = ?")
+            params.append(capacity)
+        if availability is not None:
+            fields.append("availability = ?")
+            params.append(availability)
+        if location is not None:
+            fields.append("location = ?")
+            params.append(location)
+
+        if not fields:
+            conn.close()
+            return self.get_organization_record(org_id)
+
+        params.append(org_id)
+        query = f"UPDATE organizations SET {', '.join(fields)} WHERE id = ?"
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(query, tuple(params))
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
 
     def get_volunteer_record(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
         conn = self._get_connection()
@@ -502,7 +555,7 @@ class SQLiteRepository(BaseRepository):
         with conn:
             cursor = conn.cursor()
             cursor.execute('''
-            INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, location, created_at)
+            INSERT OR REPLACE INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, location, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (volunteer_id, name, phone, service_area, transport_mode, availability, current_status, loc, now))
         
@@ -511,6 +564,57 @@ class SQLiteRepository(BaseRepository):
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else {}
+
+    def update_volunteer_record(
+        self,
+        volunteer_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        transport_mode: Optional[str] = None,
+        availability: Optional[str] = None,
+        current_status: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        updates = []
+        params = []
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if phone is not None:
+            updates.append("phone = ?")
+            params.append(self._normalize_phone(phone))
+        if service_area is not None:
+            updates.append("service_area = ?")
+            params.append(service_area)
+        if transport_mode is not None:
+            updates.append("transport_mode = ?")
+            params.append(transport_mode)
+        if availability is not None:
+            updates.append("availability = ?")
+            params.append(availability)
+        if current_status is not None:
+            updates.append("current_status = ?")
+            params.append(current_status)
+        if location is not None:
+            updates.append("location = ?")
+            params.append(location)
+
+        if not updates:
+            conn.close()
+            return self.get_volunteer_record(volunteer_id)
+
+        params.append(volunteer_id)
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE volunteers SET {', '.join(updates)} WHERE id = ?", tuple(params))
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM volunteers WHERE id = ?", (volunteer_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
 
 
     def create_donation_record(

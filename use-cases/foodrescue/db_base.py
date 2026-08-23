@@ -60,11 +60,26 @@ class BaseRepository(ABC):
         phone: str,
         service_area: str,
         accepted_food_types: str,
-        capacity: Optional[str] = "100 meals",
+        capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
         location: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create a registered recipient organization record."""
+        pass
+
+    @abstractmethod
+    def update_organization_record(
+        self,
+        org_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        accepted_food_types: Optional[str] = None,
+        capacity: Optional[str] = None,
+        availability: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Update an existing organization record."""
         pass
 
     @abstractmethod
@@ -90,6 +105,21 @@ class BaseRepository(ABC):
         location: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create a registered volunteer courier record."""
+        pass
+
+    @abstractmethod
+    def update_volunteer_record(
+        self,
+        volunteer_id: str,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        service_area: Optional[str] = None,
+        transport_mode: Optional[str] = None,
+        availability: Optional[str] = None,
+        current_status: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Update an existing volunteer courier record."""
         pass
 
 
