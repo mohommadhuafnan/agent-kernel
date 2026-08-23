@@ -962,6 +962,24 @@ class MongoRepository(BaseRepository):
                 res["conversation_state"] = {}
             if not isinstance(res.get("active_draft"), dict):
                 res["active_draft"] = {}
+
+            # Enrich display_name and user_role from donor/volunteer/org records if fallback
+            if not res.get("display_name") or res.get("display_name", "").startswith("User_") or res.get("user_role") in ["unknown", None, ""]:
+                donor_rec = self.get_donor_by_phone(norm)
+                if donor_rec and donor_rec.get("name"):
+                    res["display_name"] = donor_rec["name"]
+                    res["user_role"] = "donor"
+                else:
+                    vol_rec = self.get_volunteer_by_phone(norm)
+                    if vol_rec and vol_rec.get("name"):
+                        res["display_name"] = vol_rec["name"]
+                        res["user_role"] = "volunteer"
+                    else:
+                        org_rec = self.get_organization_by_phone(norm)
+                        if org_rec and org_rec.get("name"):
+                            res["display_name"] = org_rec["name"]
+                            res["user_role"] = "organization"
+
         return res
 
     def create_or_update_user(
@@ -1233,10 +1251,28 @@ class MongoRepository(BaseRepository):
             latest_msg = self._clean_doc(latest_msg_doc) if latest_msg_doc else None
             msg_count = self.messages_col.count_documents({"phone_number": norm})
 
+            disp_name = u.get("display_name") or f"User_{norm[-4:]}"
+            u_role = u.get("user_role", "unknown")
+            if not disp_name or disp_name.startswith("User_") or u_role in ["unknown", None, ""]:
+                donor_rec = self.get_donor_by_phone(norm)
+                if donor_rec and donor_rec.get("name"):
+                    disp_name = donor_rec["name"]
+                    u_role = "donor"
+                else:
+                    vol_rec = self.get_volunteer_by_phone(norm)
+                    if vol_rec and vol_rec.get("name"):
+                        disp_name = vol_rec["name"]
+                        u_role = "volunteer"
+                    else:
+                        org_rec = self.get_organization_by_phone(norm)
+                        if org_rec and org_rec.get("name"):
+                            disp_name = org_rec["name"]
+                            u_role = "organization"
+
             conversations.append({
                 "phone_number": norm,
-                "display_name": u.get("display_name") or f"User_{norm[-4:]}",
-                "user_role": u.get("user_role", "unknown"),
+                "display_name": disp_name,
+                "user_role": u_role,
                 "preferred_language": u.get("preferred_language", "en"),
                 "preferred_response_mode": u.get("preferred_response_mode", "text"),
                 "message_count": msg_count,

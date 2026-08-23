@@ -92,11 +92,38 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "rajagiriya": (6.9083, 79.8917),
     "negombo": (7.2083, 79.8358),
     "kandy": (7.2906, 80.6337),
+    "peradeniya": (7.2660, 80.5970),
+    "matale": (7.4675, 80.6234),
+    "dambulla": (7.8731, 80.6517),
     "galle": (6.0535, 80.2210),
     "matara": (5.9549, 80.5550),
     "mawanella": (7.2513, 80.4432),
+    "kegalle": (7.2520, 80.3464),
     "kurunegala": (7.4863, 80.3623),
     "jaffna": (9.6615, 80.0255),
+    "kilinochchi": (9.3803, 80.3770),
+    "vavuniya": (8.7542, 80.4982),
+    "mannar": (8.9810, 79.9044),
+    "anuradhapura": (8.3114, 80.4037),
+    "polonnaruwa": (7.9403, 81.0188),
+    "trincomalee": (8.5874, 81.2152),
+    "batticaloa": (7.7310, 81.6747),
+    "ampara": (7.2912, 81.6724),
+    "badulla": (6.9934, 81.0550),
+    "bandarawela": (6.8333, 80.9833),
+    "nuwara eliya": (6.9497, 80.7891),
+    "ratnapura": (6.6828, 80.4037),
+    "hambantota": (6.1429, 81.1212),
+    "puttalam": (8.0362, 79.8283),
+    "chilaw": (7.5758, 79.7953),
+    "katunayake": (7.1695, 79.8906),
+    "gampaha": (7.0917, 79.9997),
+    "wattala": (6.9895, 79.8913),
+    "kelaniya": (6.9553, 79.9194),
+    "battaramulla": (6.8996, 79.9197),
+    "moratuwa": (6.7730, 79.8816),
+    "panadura": (6.7132, 79.9074),
+    "kalutara": (6.5854, 79.9607),
 }
 
 
@@ -358,19 +385,11 @@ class HaversineRouteProvider(RouteProvider):
         }
 
 
-class GoogleRoutesProvider(RouteProvider):
-    """Real road routing provider using Google Routes API."""
+class GraphHopperRouteProvider(RouteProvider):
+    """Real road routing provider using GraphHopper Routing API."""
 
     def __init__(self, api_key: Optional[str] = None):
-        self._api_key = api_key or os.environ.get("ROUTING_API_KEY", "").strip()
-
-    def _map_travel_mode(self, mode: str) -> str:
-        norm = str(mode).strip().lower()
-        if norm in ["bicycle", "electric bike"]:
-            return "BICYCLE"
-        elif norm == "motorbike":
-            return "TWO_WHEELER"
-        return "DRIVE"
+        self._api_key = api_key or os.environ.get("GRAPHHOPPER_API_KEY", "").strip() or os.environ.get("GRAPH_HOPPER_API_KEY", "").strip()
 
     async def compute_route(
         self,
@@ -378,90 +397,15 @@ class GoogleRoutesProvider(RouteProvider):
         destination: str,
         transport_mode: str = "motorbike"
     ) -> Dict[str, Any]:
-        if not self._api_key:
-            logger.info("No ROUTING_API_KEY configured; using HaversineRouteProvider.")
-            fallback = HaversineRouteProvider()
-            return await fallback.compute_route(origin, destination, transport_mode)
-
-        origin_coords = geocode_location(origin)
-        dest_coords = geocode_location(destination)
-        norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
-
-        if not origin_coords or not dest_coords:
-            fallback = HaversineRouteProvider()
-            return await fallback.compute_route(origin, destination, transport_mode)
-
-        url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": self._api_key,
-            "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline"
-        }
-        payload = {
-            "origin": {
-                "location": {
-                    "latLng": {
-                        "latitude": origin_coords[0],
-                        "longitude": origin_coords[1]
-                    }
-                }
-            },
-            "destination": {
-                "location": {
-                    "latLng": {
-                        "latitude": dest_coords[0],
-                        "longitude": dest_coords[1]
-                    }
-                }
-            },
-            "travelMode": self._map_travel_mode(norm_mode),
-            "routingPreference": "TRAFFIC_UNAWARE",
-            "computeAlternativeRoutes": False,
-            "polylineQuality": "OVERVIEW"
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                
-            if response.status_code == 200:
-                data = response.json()
-                routes = data.get("routes", [])
-                if routes:
-                    route = routes[0]
-                    dist_meters = route.get("distanceMeters", 0)
-                    dist_km = round(dist_meters / 1000.0, 2)
-                    duration_str = route.get("duration", "0s").rstrip("s")
-                    try:
-                        duration_sec = int(duration_str)
-                    except ValueError:
-                        duration_sec = 0
-                    duration_min = max(1, round(duration_sec / 60))
-                    polyline = route.get("polyline", {}).get("encodedPolyline", None)
-                    
-                    cost_calc = calculate_transport_cost(dist_km, norm_mode)
-                    
-                    return {
-                        "status": "success",
-                        "origin": origin,
-                        "origin_coordinates": {"latitude": origin_coords[0], "longitude": origin_coords[1]},
-                        "destination": destination,
-                        "destination_coordinates": {"latitude": dest_coords[0], "longitude": dest_coords[1]},
-                        "distance_km": dist_km,
-                        "duration_seconds": duration_sec,
-                        "duration_text": f"{duration_min} min",
-                        "transport_mode": norm_mode,
-                        "estimated_cost": cost_calc.get("estimated_cost", 0.0),
-                        "currency": "LKR",
-                        "geometry": polyline,
-                        "provider": "google_routes",
-                        "is_road_exact": True
-                    }
-            logger.warning(f"Google Routes API returned status {response.status_code}. Falling back to Haversine.")
-        except Exception as exc:
-            logger.warning(f"Google Routes API request exception ({exc}). Falling back to Haversine.")
-
-        # Fallback if request fails
+        import routing_service
+        res = await routing_service.calculate_route(origin, destination, transport_mode, api_key=self._api_key)
+        if res.get("success"):
+            dist_km = res.get("distance_km", 0.0) or 0.0
+            cost_calc = calculate_transport_cost(dist_km, transport_mode)
+            res["estimated_cost"] = cost_calc.get("estimated_cost", 0.0)
+            res["currency"] = "LKR"
+            return res
+        
         fallback = HaversineRouteProvider()
         return await fallback.compute_route(origin, destination, transport_mode)
 
@@ -469,9 +413,9 @@ class GoogleRoutesProvider(RouteProvider):
 # Global Route Service Dispatcher
 def get_route_provider() -> RouteProvider:
     """Instantiate the active route provider based on environment configuration."""
-    api_key = os.environ.get("ROUTING_API_KEY", "").strip()
+    api_key = os.environ.get("GRAPHHOPPER_API_KEY", "").strip() or os.environ.get("GRAPH_HOPPER_API_KEY", "").strip()
     if api_key:
-        return GoogleRoutesProvider(api_key=api_key)
+        return GraphHopperRouteProvider(api_key=api_key)
     return HaversineRouteProvider()
 
 
@@ -495,23 +439,16 @@ async def compute_two_leg_route(
     Leg 1: Volunteer / Origin -> Donor Pickup Location
     Leg 2: Donor Pickup Location -> Recipient Destination
     """
-    provider = get_route_provider()
+    import routing_service
     norm_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
+    v_loc = volunteer_location if volunteer_location and str(volunteer_location).strip() else pickup_location
 
-    # Leg 1: Volunteer/Origin -> Pickup
-    leg1_origin = volunteer_location if volunteer_location and str(volunteer_location).strip() else pickup_location
-    leg1_res = await provider.compute_route(leg1_origin, pickup_location, norm_mode)
-    leg1_dist = leg1_res.get("distance_km", 0.0) if leg1_res.get("status") == "success" else 0.0
-    leg1_dur_sec = leg1_res.get("duration_seconds", 0) if leg1_res.get("status") == "success" else 0
-
-    # Leg 2: Pickup -> Delivery
-    leg2_res = await provider.compute_route(pickup_location, delivery_location, norm_mode)
-    leg2_dist = leg2_res.get("distance_km", 0.0) if leg2_res.get("status") == "success" else 0.0
-    leg2_dur_sec = leg2_res.get("duration_seconds", 0) if leg2_res.get("status") == "success" else 0
-
-    total_dist = round(leg1_dist + leg2_dist, 2)
-    total_dur_sec = leg1_dur_sec + leg2_dur_sec
-    total_dur_min = max(1, round(total_dur_sec / 60))
+    pickup_res = await routing_service.calculate_pickup_route(v_loc, pickup_location, delivery_location, norm_mode)
+    
+    total_dist = pickup_res.get("total_distance_km", 0.0) or 0.0
+    total_dur_min = pickup_res.get("total_duration_minutes", 0) or 0
+    leg1 = pickup_res.get("volunteer_to_donation", {})
+    leg2 = pickup_res.get("donation_to_organization", {})
 
     cost_est = calculate_transport_estimate(total_dist, norm_mode)
 
@@ -519,30 +456,37 @@ async def compute_two_leg_route(
         "status": "success",
         "transport_mode": norm_mode,
         "leg1_pickup": {
-            "origin": leg1_origin,
+            "origin": v_loc,
             "destination": pickup_location,
-            "distance_km": leg1_dist,
-            "duration_minutes": max(1, round(leg1_dur_sec / 60)) if leg1_dur_sec > 0 else 5,
-            "route_status": leg1_res.get("status")
+            "distance_km": leg1.get("distance_km", 0.0),
+            "duration_minutes": leg1.get("duration_minutes", 5),
+            "route_status": "success"
         },
         "leg2_delivery": {
             "origin": pickup_location,
             "destination": delivery_location,
-            "distance_km": leg2_dist,
-            "duration_minutes": max(1, round(leg2_dur_sec / 60)) if leg2_dur_sec > 0 else 10,
-            "route_status": leg2_res.get("status")
+            "distance_km": leg2.get("distance_km", 0.0),
+            "duration_minutes": leg2.get("duration_minutes", 10),
+            "route_status": "success"
         },
         "total_distance_km": total_dist,
         "total_duration_minutes": total_dur_min,
         "total_duration_text": f"{total_dur_min} min",
         "estimated_transport_cost": cost_est.get("estimated_support_amount", 0.0),
         "currency": "LKR",
-        "display_text": f"Leg 1: {leg1_dist} km | Leg 2: {leg2_dist} km | Total: {total_dist} km (~{total_dur_min} min) | Support: LKR {int(cost_est.get('estimated_support_amount', 0.0))}"
+        "route_geometry": pickup_res.get("route_geometry"),
+        "coordinates": pickup_res.get("coordinates"),
+        "provider": pickup_res.get("provider", "graphhopper"),
+        "display_text": f"Leg 1: {leg1.get('distance_km', 0.0)} km | Leg 2: {leg2.get('distance_km', 0.0)} km | Total: {total_dist} km (~{total_dur_min} min) | Support: LKR {int(cost_est.get('estimated_support_amount', 0.0))}"
     }
 
 
+# Backward compatibility alias
+GoogleRoutesProvider = GraphHopperRouteProvider
+
+
 def generate_map_link(latitude: float, longitude: float) -> str:
-    """Generate a direct Google Maps search link for single coordinate pin."""
+    """Generate a map search link for a single coordinate pin."""
     return f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"
 
 
@@ -552,5 +496,5 @@ def generate_directions_link(
     dest_lat: float,
     dest_lng: float
 ) -> str:
-    """Generate a dynamic Google Maps turn-by-turn directions URL between two coordinates."""
+    """Generate a turn-by-turn directions URL between two coordinates."""
     return f"https://www.google.com/maps/dir/?api=1&origin={origin_lat:.6f},{origin_lng:.6f}&destination={dest_lat:.6f},{dest_lng:.6f}"

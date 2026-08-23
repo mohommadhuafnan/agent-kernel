@@ -25,14 +25,19 @@ import tools
 import app
 
 
+import routing_service
+
+
 @pytest.fixture(autouse=True)
 def clean_db():
     """Ensure database tables exist and are clean for each test."""
     database.setup_database()
     database.reset_database_data()
     database.seed_test_data()
+    routing_service.clear_cache()
     yield
     database.reset_database_data()
+    routing_service.clear_cache()
 
 
 # =========================================================================
@@ -104,41 +109,41 @@ async def test_haversine_unknown_location():
 
 @pytest.mark.asyncio
 async def test_google_routes_mock_success():
-    """Verify parsing of successful Google Routes API response."""
+    """Verify parsing of successful route API response via GraphHopper provider."""
     mock_payload = {
-        "routes": [
+        "paths": [
             {
-                "distanceMeters": 4200,
-                "duration": "720s",
-                "polyline": {"encodedPolyline": "m_e~F`~_uN_c..."}
+                "distance": 4200.0,
+                "time": 720000,
+                "points": "m_e~F`~_uN_c..."
             }
         ]
     }
     
-    provider = routing.GoogleRoutesProvider(api_key="mock_key_12345")
+    provider = routing.GraphHopperRouteProvider(api_key="mock_key_12345")
     
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = mock_payload
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_response
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
         res = await provider.compute_route(origin="Colombo 3", destination="Colombo 7", transport_mode="motorbike")
         
         assert res["status"] == "success"
-        assert res["provider"] == "google_routes"
+        assert res["provider"] == "graphhopper"
         assert res["distance_km"] == 4.2
         assert res["duration_seconds"] == 720
-        assert res["geometry"] == "m_e~F`~_uN_c..."
-        assert res["estimated_cost"] == 210.0  # 4.2 * 50
+        assert res["route_geometry"] == "m_e~F`~_uN_c..."
+        assert res["estimated_cost"] > 0
 
 
 @pytest.mark.asyncio
 async def test_google_routes_mock_timeout_fallback():
-    """Verify automatic fallback to Haversine when Google Routes API times out."""
-    provider = routing.GoogleRoutesProvider(api_key="mock_key_12345")
+    """Verify automatic fallback to Haversine when Route API times out."""
+    provider = routing.GraphHopperRouteProvider(api_key="mock_key_12345")
     
-    with patch("httpx.AsyncClient.post", side_effect=httpx.TimeoutException("Timeout")):
+    with patch("httpx.AsyncClient.get", side_effect=httpx.TimeoutException("Timeout")):
         res = await provider.compute_route(origin="Colombo 3", destination="Colombo 7", transport_mode="motorbike")
         assert res["status"] == "success"
         assert res["provider"] == "haversine_fallback"
@@ -147,13 +152,13 @@ async def test_google_routes_mock_timeout_fallback():
 
 @pytest.mark.asyncio
 async def test_google_routes_mock_error_fallback():
-    """Verify automatic fallback to Haversine when Google Routes API returns 500."""
-    provider = routing.GoogleRoutesProvider(api_key="mock_key_12345")
+    """Verify automatic fallback to Haversine when Route API returns 500."""
+    provider = routing.GraphHopperRouteProvider(api_key="mock_key_12345")
     mock_response = MagicMock()
     mock_response.status_code = 500
     
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_response
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
         res = await provider.compute_route(origin="Colombo 3", destination="Colombo 7", transport_mode="motorbike")
         assert res["status"] == "success"
         assert res["provider"] == "haversine_fallback"

@@ -72,7 +72,7 @@ async def test_first_time_welcome_menu_format():
 
         assert res["status"] == "onboarding_welcome_sent"
         assert "Welcome to FoodRescue AI!" in res["reply"]
-        assert "https://foodrescue-ai-ten.vercel.app/" in res["reply"]
+        assert "Donate surplus food" in res["reply"]
         assert "1️⃣ English" in res["reply"]
         assert "2️⃣ Sinhala" in res["reply"]
         assert "3️⃣ Tamil" in res["reply"]

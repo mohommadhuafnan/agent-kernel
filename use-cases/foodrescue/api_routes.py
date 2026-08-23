@@ -227,42 +227,33 @@ class ConversationSimulateRequest(BaseModel):
 @router.post("/api/conversations/{phone}/simulate")
 async def simulate_conversation_message_endpoint(phone: str, body: ConversationSimulateRequest):
     """Simulate sending an incoming WhatsApp message from a user for live dashboard demonstrations."""
-    from resilient_executor import run_resilient_chat
     import whatsapp_handler
+    import uuid
 
-    session_id = f"whatsapp:{phone}"
+    clean_phone = "".join(ch for ch in str(phone) if ch.isdigit()) or str(phone).strip()
     prompt_text = body.message.strip()
 
-    # Record user message
-    database.record_message(
-        phone=phone,
-        sender="user",
-        text=prompt_text,
-        is_voice=bool(body.is_voice),
-        transcript=prompt_text if body.is_voice else None
-    )
+    msg_payload: Dict[str, Any] = {
+        "from": clean_phone,
+        "id": f"sim_{uuid.uuid4().hex[:10]}",
+        "type": "audio" if body.is_voice else "text",
+    }
+    if body.is_voice:
+        msg_payload["audio"] = {"id": "sim_audio_payload", "voice": True}
+        msg_payload["text"] = {"body": prompt_text}
+    else:
+        msg_payload["text"] = {"body": prompt_text}
 
-    # Process through resilient coordinator
-    chat_result = await run_resilient_chat(
-        prompt=prompt_text,
-        session_id=session_id,
-        preferred_agent="foodrescue_coordinator"
-    )
-    reply_text = chat_result.get("result", "Thank you. Your request was received.")
+    res = await whatsapp_handler.process_incoming_whatsapp_message(msg_payload)
+    reply_text = res.get("reply", "Thank you. Your request was received.")
 
-    # Record agent reply
-    database.record_message(
-        phone=phone,
-        sender="agent",
-        text=reply_text,
-        is_voice=False
-    )
-
-    msgs = database.get_conversation_messages(phone=phone)
+    msgs = database.get_conversation_messages(phone=clean_phone)
+    user_info = database.get_user_by_phone(phone=clean_phone)
     return JSONResponse(content={
         "status": "success",
-        "phone_number": phone,
+        "phone_number": clean_phone,
         "reply": reply_text,
+        "user": user_info,
         "messages": msgs
     })
 
@@ -339,83 +330,157 @@ async def get_agent_events_endpoint(limit: int = Query(100, ge=1, le=500)):
 
 @router.get("/api/locations")
 async def get_map_locations_endpoint():
-    """Get privacy-preserving operational coordinates for map display."""
-    # Pre-defined known coordinates for major hub regions in Sri Lanka
-    hub_coords = {
-        "colombo": {"lat": 6.9271, "lng": 79.8612},
-        "colombo 1": {"lat": 6.9360, "lng": 79.8450},
-        "colombo 3": {"lat": 6.9040, "lng": 79.8540},
-        "colombo 4": {"lat": 6.8880, "lng": 79.8580},
-        "colombo 5": {"lat": 6.8780, "lng": 79.8650},
-        "colombo 7": {"lat": 6.9100, "lng": 79.8700},
-        "dehiwala": {"lat": 6.8510, "lng": 79.8650},
-        "nugegoda": {"lat": 6.8700, "lng": 79.8900},
-        "mount lavinia": {"lat": 6.8350, "lng": 79.8650},
-        "kandy": {"lat": 7.2906, "lng": 80.6337},
-        "galle": {"lat": 6.0535, "lng": 80.2210},
-    }
+    """Get privacy-preserving operational coordinates for map display across Sri Lanka."""
+    import routing
 
     all_orgs = database.get_all_organizations()
     all_vols = database.get_all_volunteers()
     all_tasks = database.get_all_pickup_tasks()
+    all_dons = database.get_all_donations()
 
     markers = []
+    lats = []
+    lngs = []
 
-    # 1. Organization recipient hubs (public operational facilities)
+    # 1. Organization recipient hubs
     for o in all_orgs:
-        loc_str = str(o.get("location", "Colombo 7")).lower()
-        coords = hub_coords.get(loc_str, hub_coords["colombo 7"])
+        lat = o.get("latitude")
+        lng = o.get("longitude")
+        if lat is None or lng is None:
+            loc_str = str(o.get("location", "Colombo 7"))
+            coords = routing.geocode_location(loc_str) or (6.9069, 79.8708)
+            lat, lng = coords
+
+        lats.append(lat)
+        lngs.append(lng)
         markers.append({
             "id": f"org-{o.get('id')}",
             "type": "organization",
             "title": o.get("name"),
-            "subtitle": f"Accepted: {o.get('accepted_food_types')[:40]}...",
-            "latitude": coords["lat"],
-            "longitude": coords["lng"],
+            "subtitle": f"Accepted: {str(o.get('accepted_food_types', 'Meals'))[:40]}...",
+            "latitude": round(lat, 6),
+            "longitude": round(lng, 6),
             "location_name": o.get("location"),
             "status": "active"
         })
 
     # 2. Volunteer couriers
     for v in all_vols:
-        loc_str = str(v.get("location", "Colombo 3")).lower()
-        coords = hub_coords.get(loc_str, hub_coords["colombo 3"])
-        # Slight jitter for visual clarity if overlapping
-        lat_offset = (hash(v.get("id", "")) % 10 - 5) * 0.002
-        lng_offset = (hash(v.get("id", "")[::-1]) % 10 - 5) * 0.002
+        lat = v.get("current_latitude") or v.get("latitude")
+        lng = v.get("current_longitude") or v.get("longitude")
+        if lat is None or lng is None:
+            loc_str = str(v.get("current_location") or v.get("service_area") or v.get("location") or "Colombo 3")
+            coords = routing.geocode_location(loc_str) or (6.9056, 79.8519)
+            lat, lng = coords
+            # Jitter slightly for visual distinction
+            lat += (hash(str(v.get("id", ""))) % 10 - 5) * 0.002
+            lng += (hash(str(v.get("id", ""))[::-1]) % 10 - 5) * 0.002
+
+        lats.append(lat)
+        lngs.append(lng)
         markers.append({
             "id": f"vol-{v.get('id')}",
             "type": "volunteer",
             "title": v.get("name"),
             "subtitle": f"Status: {v.get('current_status', 'available').title()} • {v.get('transport_mode', 'Motorbike')}",
-            "latitude": coords["lat"] + lat_offset,
-            "longitude": coords["lng"] + lng_offset,
-            "location_name": v.get("location"),
+            "latitude": round(lat, 6),
+            "longitude": round(lng, 6),
+            "location_name": v.get("service_area") or v.get("location"),
             "status": v.get("current_status", "available")
         })
 
-    # 3. Active pickups
+    # 3. Active pickups & Tasks
     for t in all_tasks:
-        if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED"]:
-            p_loc = str(t.get("pickup_location", "Colombo")).lower()
-            coords = hub_coords.get(p_loc, hub_coords["colombo"])
+        if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED", "IN_TRANSIT", "PENDING", "OFFERED"]:
+            lat = t.get("pickup_latitude")
+            lng = t.get("pickup_longitude")
+            if lat is None or lng is None:
+                p_loc = str(t.get("pickup_location", "Colombo"))
+                coords = routing.geocode_location(p_loc) or (6.9344, 79.8428)
+                lat, lng = coords
+            lats.append(lat)
+            lngs.append(lng)
             markers.append({
                 "id": f"pickup-{t.get('id')}",
                 "type": "pickup_point",
                 "title": f"Pickup Task {t.get('id')}",
                 "subtitle": f"Deliver to: {t.get('delivery_location')}",
-                "latitude": coords["lat"] + 0.003,
-                "longitude": coords["lng"] - 0.002,
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
                 "location_name": t.get("pickup_location"),
                 "status": t.get("status")
             })
 
+    # 4. Available donations
+    for d in all_dons:
+        if d.get("status") in ["AVAILABLE", "MATCHED"]:
+            lat = d.get("latitude")
+            lng = d.get("longitude")
+            if lat is None or lng is None:
+                d_loc = str(d.get("pickup_location", "Colombo"))
+                coords = routing.geocode_location(d_loc) or (6.9344, 79.8428)
+                lat, lng = coords
+            lats.append(lat)
+            lngs.append(lng)
+            markers.append({
+                "id": f"don-{d.get('id')}",
+                "type": "donation",
+                "title": f"{d.get('food_type', 'Food')} ({d.get('quantity', 0)} {d.get('unit', 'portions')})",
+                "subtitle": f"Location: {d.get('pickup_location')} • Status: {d.get('status')}",
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
+                "location_name": d.get("pickup_location"),
+                "status": d.get("status")
+            })
+
+    # Dynamic Sri Lanka center
+    center_lat = round(sum(lats) / len(lats), 4) if lats else 6.9271
+    center_lng = round(sum(lngs) / len(lngs), 4) if lngs else 79.8612
+
     return JSONResponse(content={
         "status": "success",
-        "center": {"lat": 6.9271, "lng": 79.8612, "zoom": 13},
+        "center": {"lat": center_lat, "lng": center_lng, "zoom": 12 if len(markers) > 0 else 8},
         "count": len(markers),
         "markers": markers
     })
+
+
+class RouteCalculationRequest(BaseModel):
+    origin: Any = Field(..., description="Origin landmark/address string or coordinate dict/array")
+    destination: Any = Field(..., description="Destination landmark/address string or coordinate dict/array")
+    transport_mode: Optional[str] = Field("car", description="Transport mode: car, motorbike, bicycle, walking, van, tuk")
+
+
+class PickupRouteCalculationRequest(BaseModel):
+    volunteer: Optional[Any] = Field(None, description="Volunteer location or coordinates")
+    donation: Any = Field(..., description="Donation pickup location or coordinates")
+    organization: Any = Field(..., description="Organization delivery location or coordinates")
+    transport_mode: Optional[str] = Field("motorbike", description="Transport mode: motorbike, car, bicycle, van, tuk")
+
+
+@router.post("/api/routes/calculate")
+async def calculate_route_endpoint(body: RouteCalculationRequest):
+    """Calculate road route distance, duration, and geometry between two points via GraphHopper Routing API."""
+    import routing_service
+    result = await routing_service.calculate_route(
+        origin=body.origin,
+        destination=body.destination,
+        transport_mode=body.transport_mode or "car"
+    )
+    return JSONResponse(content=result)
+
+
+@router.post("/api/routes/pickup-route")
+async def calculate_pickup_route_endpoint(body: PickupRouteCalculationRequest):
+    """Calculate complete two-leg pickup route (Volunteer -> Donation -> Organization) via GraphHopper Routing API."""
+    import routing_service
+    result = await routing_service.calculate_pickup_route(
+        volunteer_location=body.volunteer,
+        donation_location=body.donation,
+        organization_location=body.organization,
+        transport_mode=body.transport_mode or "motorbike"
+    )
+    return JSONResponse(content=result)
 
 
 @router.get("/api/reports")

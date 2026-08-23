@@ -1282,6 +1282,24 @@ class SQLiteRepository(BaseRepository):
                     pass
             elif json_col in ["conversation_state", "active_draft", "metadata"]:
                 d[json_col] = {}
+
+        # Enrich display_name and user_role from donor/volunteer/org records if fallback
+        if not d.get("display_name") or d.get("display_name", "").startswith("User_") or d.get("user_role") in ["unknown", None, ""]:
+            donor_rec = self.get_donor_by_phone(norm)
+            if donor_rec and donor_rec.get("name"):
+                d["display_name"] = donor_rec["name"]
+                d["user_role"] = "donor"
+            else:
+                vol_rec = self.get_volunteer_by_phone(norm)
+                if vol_rec and vol_rec.get("name"):
+                    d["display_name"] = vol_rec["name"]
+                    d["user_role"] = "volunteer"
+                else:
+                    org_rec = self.get_organization_by_phone(norm)
+                    if org_rec and org_rec.get("name"):
+                        d["display_name"] = org_rec["name"]
+                        d["user_role"] = "organization"
+
         return d
 
     def create_or_update_user(
@@ -1660,10 +1678,28 @@ class SQLiteRepository(BaseRepository):
                 if last_m:
                     latest_msg = dict(last_m)
 
+            disp_name = u.get("display_name") or f"User_{norm[-4:]}"
+            u_role = u.get("user_role", "unknown")
+            if not disp_name or disp_name.startswith("User_") or u_role in ["unknown", None, ""]:
+                donor_rec = self.get_donor_by_phone(norm)
+                if donor_rec and donor_rec.get("name"):
+                    disp_name = donor_rec["name"]
+                    u_role = "donor"
+                else:
+                    vol_rec = self.get_volunteer_by_phone(norm)
+                    if vol_rec and vol_rec.get("name"):
+                        disp_name = vol_rec["name"]
+                        u_role = "volunteer"
+                    else:
+                        org_rec = self.get_organization_by_phone(norm)
+                        if org_rec and org_rec.get("name"):
+                            disp_name = org_rec["name"]
+                            u_role = "organization"
+
             conversations.append({
                 "phone_number": norm,
-                "display_name": u.get("display_name") or f"User_{norm[-4:]}",
-                "user_role": u.get("user_role", "unknown"),
+                "display_name": disp_name,
+                "user_role": u_role,
                 "preferred_language": u.get("preferred_language", "en"),
                 "preferred_response_mode": u.get("preferred_response_mode", "text"),
                 "message_count": msg_count,

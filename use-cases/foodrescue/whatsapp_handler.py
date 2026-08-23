@@ -21,6 +21,7 @@ import httpx
 from agentkernel.core import Config, ChatService
 from agentkernel.core.model import BaseChatRequest
 import database
+import translation_service
 
 logger = logging.getLogger("foodrescue.whatsapp")
 
@@ -236,6 +237,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     f"• 📍 *Status*: Courier is on the way to pick up the food from your location.\n\n"
                     f"Please have the food packed and ready for pickup! 📦"
                 )
+                donor_user = database.get_user_by_phone(donor_phone)
+                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                d_msg = translation_service.translate_message_if_needed(d_msg, target_lang=d_lang)
                 try:
                     await send_whatsapp_message(to_number=donor_phone, text=d_msg)
                 except Exception as e:
@@ -253,6 +257,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     f"• 🍱 *Food*: {food_info}\n"
                     f"• 📍 *Status*: Courier is heading to the donor location to collect the meals."
                 )
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+                o_msg = translation_service.translate_message_if_needed(o_msg, target_lang=o_lang)
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
@@ -291,6 +298,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     f"Courier *{vol_name}* has successfully collected your food donation ({food_info}).\n\n"
                     f"Thank you for saving food and feeding people in need! ❤️"
                 )
+                donor_user = database.get_user_by_phone(donor_phone)
+                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                d_msg = translation_service.translate_message_if_needed(d_msg, target_lang=d_lang)
                 try:
                     await send_whatsapp_message(to_number=donor_phone, text=d_msg)
                 except Exception as e:
@@ -306,6 +316,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     f"Courier *{vol_name}* ({vol_mode}) has collected {food_info} and is now en route to your delivery location.\n\n"
                     f"Please be ready to receive the delivery! 🍱"
                 )
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+                o_msg = translation_service.translate_message_if_needed(o_msg, target_lang=o_lang)
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
@@ -342,11 +355,16 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             # Notify Donor
             donor = database.get_donor_record(don.get("donor_id", "")) if don else None
             donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+            donor_name = donor.get("name", "Donor Partner") if donor else "Donor Partner"
             if donor_phone and donor_phone != from_number:
-                d_msg = (
-                    f"🎉 *Delivery Completed!*\n\n"
-                    f"Your food donation ({food_info}) has been safely delivered to *{org_name}* by courier *{vol_name}*!\n\n"
-                    f"🌟 Together, we rescued food and fed lives. Thank you for your generosity!"
+                donor_user = database.get_user_by_phone(donor_phone)
+                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                d_msg = translation_service.get_localized_message(
+                    "delivery_completed_donor",
+                    lang=d_lang,
+                    food_info=food_info,
+                    org_name=org_name,
+                    vol_name=vol_name
                 )
                 try:
                     await send_whatsapp_message(to_number=donor_phone, text=d_msg)
@@ -355,10 +373,14 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     
             # Notify Recipient Organization
             if org_phone and org_phone != from_number:
-                o_msg = (
-                    f"🎉 *Delivery Completed!*\n\n"
-                    f"Courier *{vol_name}* has delivered the food donation ({food_info}) to your organization.\n\n"
-                    f"Enjoy the fresh meals! 🍱"
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+                o_msg = translation_service.get_localized_message(
+                    "delivery_completed_org",
+                    lang=o_lang,
+                    food_info=food_info,
+                    donor_name=donor_name,
+                    vol_name=vol_name
                 )
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
@@ -463,6 +485,13 @@ async def process_incoming_whatsapp_message(
                 prompt_text = trans_result.get("text", "").strip()
                 voice_transcript_lang = trans_result.get("language")
                 logger.info(f"Transcribed WhatsApp voice note: '{prompt_text}' [lang={voice_transcript_lang}]")
+                if voice_transcript_lang and voice_transcript_lang in ["si", "ta"] and voice_transcript_lang != preferred_language:
+                    database.set_user_language(from_number, voice_transcript_lang)
+                    preferred_language = voice_transcript_lang
+                    try:
+                        cache.set("preferred_language", voice_transcript_lang)
+                    except Exception:
+                        pass
             except Exception as trans_err:
                 logger.warning(f"Voice download or transcription failed: {trans_err}. Using voice fallback.")
                 prompt_text = "I have 15 packets of rice and curry available from our restaurant available until 7 PM"
@@ -615,7 +644,8 @@ async def process_incoming_whatsapp_message(
                 session_id=session_id,
                 preferred_agent="foodrescue_coordinator"
             )
-            reply_text = chat_result.get("result", "Thank you. Your food rescue request was received.")
+            raw_reply = chat_result.get("result", "Thank you. Your food rescue request was received.")
+            reply_text = translation_service.translate_message_if_needed(raw_reply, target_lang=preferred_language)
         except Exception as exc:
             logger.error(f"Error executing resilient agent for {session_id}: {exc}")
             reply_text = translation_service.get_localized_message("error_recovery", lang=preferred_language)
@@ -849,13 +879,14 @@ async def process_incoming_whatsapp_message(
                     )
                     reply_text = f"{loc_ack}\n\n{summary_msg}"
             else:
-                reply_text = (
+                raw_loc_msg = (
                     "📍 *Pickup Location Confirmed!*\n\n"
                     f"Thank you! Your pickup location has been securely recorded.\n"
                     f"• Coordinates: {lat:.4f}, {lng:.4f}\n"
                     f"• Map: {map_link}\n\n"
                     "We're now looking for a suitable recipient organization and volunteer courier. 🚚"
                 )
+                reply_text = translation_service.translate_message_if_needed(raw_loc_msg, target_lang=preferred_language)
             
             # Also notify assigned volunteer if task exists
             if active_task_id:
@@ -863,13 +894,16 @@ async def process_incoming_whatsapp_message(
                 if task and task.get("volunteer_id"):
                     vol = database.get_volunteer_record(task["volunteer_id"])
                     if vol and vol.get("phone"):
-                        vol_text = (
+                        vol_user = database.get_user_by_phone(vol["phone"])
+                        vol_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+                        raw_vol_text = (
                             f"📍 *Pickup Location Received for Task {active_task_id}*\n\n"
                             f"The donor has shared their exact pickup location:\n"
                             f"• Address: {loc_address or loc_name or 'Donor Location'}\n"
                             f"• Navigation: {map_link}\n\n"
                             f"Please proceed to collect the food donation. Once collected, reply *Collected*."
                         )
+                        vol_text = translation_service.translate_message_if_needed(raw_vol_text, target_lang=vol_lang)
                         try:
                             await send_whatsapp_message(to_number=vol["phone"], text=vol_text)
                         except Exception:
@@ -898,12 +932,13 @@ async def process_incoming_whatsapp_message(
     # 4. Unsupported message types (images, audio, video, stickers, documents)
     else:
         logger.info(f"Received unsupported message type '{msg_type}' from {from_number}")
-        fallback_text = (
+        raw_fallback_text = (
             "👋 Thank you for reaching out to FoodRescue AI!\n\n"
             "I can process text and location messages.\n\n"
             "Please send me a text describing what you'd like to donate or request "
             "(for example: *'I have 20 meals to donate'* or reply *'menu'*), or share your *Location*."
         )
+        fallback_text = translation_service.translate_message_if_needed(raw_fallback_text, target_lang=preferred_language)
         send_res = await send_whatsapp_message(
             to_number=from_number,
             text=fallback_text,

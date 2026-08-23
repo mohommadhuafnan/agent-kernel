@@ -889,7 +889,7 @@ const App = (function () {
           }).addTo(state.map);
 
           marker.bindPopup(`
-            <div style="font-family: Inter, sans-serif;">
+            <div style="font-family: Inter, sans-serif; font-size: 13px;">
               <strong>${escapeHtml(pin.title)}</strong><br>
               <small style="color: #64748b;">${escapeHtml(pin.subtitle)}</small><br>
               <small>📍 ${escapeHtml(pin.location_name)}</small>
@@ -900,6 +900,41 @@ const App = (function () {
         });
       })
       .catch(err => console.warn('Map locations error:', err));
+  }
+
+  function drawPickupRoute(pickupLoc, deliveryLoc, volLoc) {
+    if (!state.map || typeof L === 'undefined') return;
+    
+    // Clear previous route polylines
+    (state.routeLayers || []).forEach(l => state.map.removeLayer(l));
+    state.routeLayers = [];
+    
+    fetch('/api/routes/pickup-route', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        volunteer: volLoc || pickupLoc,
+        donation: pickupLoc,
+        organization: deliveryLoc,
+        transport_mode: 'motorbike'
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.coordinates && data.coordinates.length > 0) {
+        const latlngs = data.coordinates.map(pt => [pt[0], pt[1]]);
+        const poly = L.polyline(latlngs, {
+          color: '#10b981',
+          weight: 5,
+          opacity: 0.85,
+          dashArray: '8, 8'
+        }).addTo(state.map);
+        
+        state.routeLayers.push(poly);
+        state.map.fitBounds(poly.getBounds(), {padding: [40, 40]});
+      }
+    })
+    .catch(e => console.warn('GraphHopper pickup route draw error:', e));
   }
 
   // 10. Render Agent Activity (Audit Events) View
@@ -1353,6 +1388,7 @@ const App = (function () {
     openModal,
     closeModal,
     approveReimbursement,
+    drawPickupRoute,
     renderLiveOperations
   };
 })();

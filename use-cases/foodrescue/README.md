@@ -348,29 +348,45 @@ FoodRescue AI implements a **Two-Location Coordination Model**:
 
 ---
 
-## 15. Distance & Transport Cost
+## 15. GraphHopper Location-Aware Routing & Distance Engine
 
-Volunteer travel reimbursements are computed dynamically using configured transport rates:
+FoodRescue AI integrates the **GraphHopper Routing API** exclusively for real-world road network calculations, distance estimation, travel-time ETAs, and pickup route geometry across Sri Lanka.
 
-| Transport Mode | Configured Rate per Km | Base Support (LKR) | Example (5 km) |
-| :--- | :--- | :--- | :--- |
-| **Bicycle / E-Bike** | 25 LKR / km | 50 LKR | 175 LKR |
-| **Motorbike** | 50 LKR / km | 60 LKR | 310 LKR |
-| **Three-Wheeler (Tuk)** | 90 LKR / km | 80 LKR | 530 LKR |
-| **Car** | 80 LKR / km | 100 LKR | 500 LKR |
-| **Van** | 120 LKR / km | 150 LKR | 750 LKR |
+### Core Routing Capabilities:
+1. **Single-Leg Routing**:
+   - **Donation → Organization**: Computes distance and travel time from food pickup location to the matched recipient organization.
+   - **Volunteer → Donation**: Computes distance and travel time from courier location to the food pickup site.
+2. **Two-Leg Multi-Point Routing (Volunteer → Donation → Organization)**:
+   - Evaluates the complete pickup and delivery circuit.
+   - Returns separate metrics for each leg (`volunteer_to_donation` and `donation_to_organization`), combined total distance (`total_distance_km`), total estimated duration (`total_duration_minutes`), and full decoded polyline coordinates for map visualization.
+3. **Location-Aware Volunteer Matching & Ranking**:
+   - Business eligibility rules are enforced **first** (status must be `AVAILABLE`, vehicle capacity must satisfy donation quantity).
+   - Eligible volunteers are then ranked by GraphHopper travel time (`duration_seconds`) and road distance (`distance_km`).
+4. **Performance & Quota Protection**:
+   - **In-Memory LRU/TTL Cache**: 1-hour cache on identical coordinate pairs avoids burning GraphHopper API rate limits.
+   - **Shielded Fallback**: If the API key is missing or the external service experiences downtime/timeouts, the engine smoothly falls back to local coordinate calculation without throwing uncaught exceptions.
 
-*Rates are configurable in `system_settings` / `routing.py`.*
+### Volunteer Travel Reimbursement Ledger:
+Volunteer travel reimbursements are computed dynamically based on real road distance:
 
-> **Civic Accounting Notice**: Transport calculations serve as an internal volunteer reimbursement ledger. The system does not process commercial payment gateway transactions.
+| Transport Mode | GraphHopper Profile | Configured Rate per Km | Base Support (LKR) | Example (5 km) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Bicycle / E-Bike** | `bike` | 25 LKR / km | 50 LKR | 175 LKR |
+| **Motorbike** | `motorcycle` | 50 LKR / km | 60 LKR | 310 LKR |
+| **Three-Wheeler (Tuk)** | `car` | 90 LKR / km | 80 LKR | 530 LKR |
+| **Car** | `car` | 80 LKR / km | 100 LKR | 500 LKR |
+| **Van** | `car` | 120 LKR / km | 150 LKR | 750 LKR |
+
+*Rates are configurable via `/api/settings` and `routing.py`.*
 
 ---
 
 ## 16. Privacy & Security
 
+* **GraphHopper API Key Security**: `GRAPHHOPPER_API_KEY` is loaded on the server and never committed to source or exposed to the frontend browser.
 * **WhatsApp Identity Protection**: User profiles are anchored to verified E.164 phone numbers (`+94...`) from Meta Cloud API headers.
 * **Coordinate Access Control**: Donor and recipient exact coordinates are restricted to the assigned courier.
-* **Zero Hardcoded Secrets**: All API keys (`GEMINI_API_KEY`, `MONGODB_URI`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`) are loaded strictly from environment variables.
+* **Zero Hardcoded Secrets**: All API keys (`GEMINI_API_KEY`, `GRAPHHOPPER_API_KEY`, `MONGODB_URI`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`) are loaded strictly from environment variables.
 * **Webhook Signature Verification**: Verifies SHA-256 HMAC payload signatures from Meta.
 * **Idempotency & Deduplication**: In-memory message hash cache ignores duplicate webhook deliveries within 300 seconds.
 
@@ -385,19 +401,19 @@ FoodRescue AI uses a **Dual-Backend Repository Pattern** ([`db_base.py`](file://
 
 ### Persistent Entity Schemas
 1. `users`: Phone numbers, display names, roles, preferred languages (`en`, `si`, `ta`), conversation state.
-2. `donations`: Food types, quantities, units, statuses (`AVAILABLE`, `MATCHED`, `PICKUP_ASSIGNED`, `COLLECTED`, `DELIVERED`, `CANCELLED`), pickup deadlines, coordinates.
-3. `organizations`: Shelter names, capacities, accepted diets, locations, contact numbers.
-4. `volunteers`: Names, transport modes, service areas, availability (`AVAILABLE`, `BUSY`, `OFFLINE`).
-5. `pickup_tasks`: Task IDs, donation references, organization references, assigned couriers, route URLs.
+2. `donations`: Food types, quantities, units, statuses (`AVAILABLE`, `MATCHED`, `PICKUP_ASSIGNED`, `COLLECTED`, `DELIVERED`, `CANCELLED`), pickup deadlines, coordinates (`latitude`, `longitude`, `pickup_location`).
+3. `organizations`: Shelter names, capacities, accepted diets, locations, coordinates (`latitude`, `longitude`), contact numbers.
+4. `volunteers`: Names, transport modes, service areas, availability (`AVAILABLE`, `BUSY`, `OFFLINE`), current coordinates (`current_coordinates`).
+5. `pickup_tasks`: Task IDs, donation references, organization references, assigned couriers, route metrics (`total_distance_km`, `estimated_transport_cost`).
 6. `draft_donations`: In-progress multi-turn donation drafts surviving serverless cold starts.
 7. `notifications` & `audit_events`: Full transparency audit log feed.
 8. `system_settings`: Configurable transport reimbursement rates.
 
 ---
 
-## 18. Agent Tools
+## 18. Agent Tools & REST Routing Endpoints
 
-Defined in [`tools.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/tools.py) and registered in [`app.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/app.py):
+Defined in [`tools.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/tools.py), [`routing_service.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/routing_service.py), and registered in [`app.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/app.py):
 
 | Tool Category | Tool Name | Description |
 | :--- | :--- | :--- |
@@ -412,7 +428,8 @@ Defined in [`tools.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/to
 | | `accept_donation` | Binds a donation to a recipient organization and marks status as `MATCHED`. |
 | | `register_organization` | Registers a verified recipient organization with capacity and location. |
 | **Volunteer Logistics** | `register_volunteer` | Registers a volunteer courier with vehicle mode and service district. |
-| | `find_available_volunteers` | Finds nearby active volunteers filtered by vehicle type. |
+| | `find_available_volunteers` | Finds nearby active volunteers filtered by vehicle type and GraphHopper distance. |
+| | `find_nearest_volunteers` | Ranks active volunteers by GraphHopper travel time and distance. |
 | | `update_volunteer_availability`| Toggles courier status between `AVAILABLE`, `BUSY`, and `OFFLINE`. |
 | | `create_pickup_task` | Creates a logistics delivery task with scheduled pickup window. |
 | | `get_pickup_task` | Retrieves pickup task status and assigned courier information. |
@@ -421,9 +438,11 @@ Defined in [`tools.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/to
 | | `reject_pickup_task` | Gracefully declines an offer and reassigns to the next courier. |
 | | `update_pickup_status` | Advances task through `EN_ROUTE` → `COLLECTED` → `DELIVERED`. |
 | | `get_my_pickups` | Retrieves assigned task history for the active volunteer. |
-| **Routing & Maps** | `calculate_route` | Computes road distance, travel duration, and Google Maps direction links. |
+| **GraphHopper Routing** | `calculate_route` | Computes road distance, travel duration, and route geometry via GraphHopper. |
+| | `calculate_distance` | Returns normalized road distance and ETA in minutes/seconds. |
+| | `calculate_pickup_route` | Calculates complete 2-leg route (Volunteer → Donation → Organization). |
 | | `calculate_transport_cost` | Calculates estimated volunteer travel reimbursement in LKR. |
-| | `create_route_link` | Generates a secure Google Maps navigation URL between coordinates. |
+| | `create_route_link` | Generates a navigation URL between coordinates. |
 | | `update_pickup_location` | Updates courier GPS location during active delivery. |
 | | `get_protected_location` | Retrieves exact coordinates with role-based privacy masking. |
 | **Session & Memory** | `get_session_context` | Inspects active session variables (`KeyValueCache`). |
@@ -440,6 +459,14 @@ Defined in [`tools.py`](file:///c:/Users/PC/agent-kernel/use-cases/foodrescue/to
 | | `extract_donation_entities` | Extracts food, quantity, unit, name, city, deadline from multilingual text. |
 | | `identify_missing_donation_info`| Checks draft and profile against required fields, returning missing slots. |
 | **Audit & Transparency**| `record_audit_event` | Writes immutable lifecycle audit events for operational transparency. |
+
+### REST API Endpoints for Routing:
+* **`POST /api/routes/calculate`**:
+  - Request: `{"origin": "Colombo 3", "destination": "Colombo 7", "transport_mode": "car"}` (accepts landmark strings, coordinate dicts `{"latitude": 6.9, "longitude": 79.8}`, or `[lat, lng]`).
+  - Response: `{"success": true, "distance_meters": 3150, "distance_km": 3.15, "duration_seconds": 480, "duration_minutes": 8, "route_geometry": "...", "provider": "graphhopper"}`
+* **`POST /api/routes/pickup-route`**:
+  - Request: `{"volunteer": "Colombo 3", "donation": "Colombo 1", "organization": "Colombo 7", "transport_mode": "motorbike"}`
+  - Response: Complete two-leg breakdown (`volunteer_to_donation`, `donation_to_organization`, `total_distance_km`, `total_duration_minutes`, `coordinates`).
 
 ---
 

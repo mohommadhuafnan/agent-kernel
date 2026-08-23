@@ -174,8 +174,11 @@ BOUND_TOOLS = GoogleADKToolBuilder.bind([
     tools.get_available_donations,
     tools.get_available_pickup_tasks,
     tools.cancel_donation,
-    # Phase 7 & 8 Logistics & Location Tools
+    # Phase 7 & 8 Logistics & GraphHopper Location Tools
     tools.calculate_route,
+    tools.calculate_distance,
+    tools.calculate_pickup_route,
+    tools.find_nearest_volunteers,
     tools.calculate_transport_cost,
     tools.create_reimbursement,
     tools.get_reimbursement,

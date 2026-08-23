@@ -6,11 +6,22 @@ Provides:
 3. Language preference resolution and fallback handling.
 """
 
+import os
 import re
-from typing import Optional, Dict, Any
+import json
+import logging
+import requests
+from typing import Optional, Dict, Any, List
+
+logger = logging.getLogger("foodrescue.translation")
 
 SUPPORTED_LANGUAGES = {"en", "si", "ta"}
 DEFAULT_LANGUAGE = "en"
+
+VALSEA_TRANSLATION_ENDPOINT = os.environ.get(
+    "VALSEA_TRANSLATION_ENDPOINT",
+    "https://api.valsea.ai/v1/translations"
+)
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -126,67 +137,49 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     # 1. First-Time User Onboarding Welcome
     "onboarding_welcome": {
         "en": (
-            "👋 Welcome to FoodRescue AI!\n"
-            "We help connect surplus food from donors with organizations and communities that need it.\n\n"
-            "You can use this WhatsApp number to:\n"
-            "1️⃣ Donate surplus food\n"
-            "2️⃣ Request available food\n"
-            "3️⃣ Volunteer to collect and deliver food\n"
+            "👋 Welcome to FoodRescue AI!\n\n"
+            "FoodRescue AI is an intelligent platform connecting hotels, restaurants, and households with surplus food to charities, shelters, and communities in need across Sri Lanka with volunteer couriers.\n\n"
+            "How can I help you today?\n"
+            "1️⃣ Donate surplus food (Hotels, restaurants, households)\n"
+            "2️⃣ Request available food (Charities, orphanages, communities)\n"
+            "3️⃣ Volunteer to collect and deliver food (Couriers & volunteers)\n"
             "4️⃣ Check your donation or pickup status\n"
-            "5️⃣ Get help\n\n"
-            "🌐 Website:\n"
-            "https://foodrescue-ai-ten.vercel.app/\n\n"
-            "🌍 Choose your language:\n"
+            "5️⃣ Language & Help\n\n"
+            "🌍 Choose your language / භාෂාව / மொழி:\n"
             "1️⃣ English\n"
             "2️⃣ Sinhala\n"
             "3️⃣ Tamil\n\n"
-            "🎤 You can also send a voice message.\n\n"
-            "You can simply tell me what you need, for example:\n"
-            "• \"I have 20 packets of rice available.\"\n"
-            "• \"We need food for 30 people.\"\n"
-            "• \"I am free to volunteer today.\""
+            "🎤 You can also send a voice message or simply tell me what you need (e.g. \"I have 20 meal packets in Colombo\")."
         ),
         "si": (
-            "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු!\n"
-            "අතිරික්ත ආහාර පරිත්‍යාගශීලීන්ගෙන් ලබාගෙන අවශ්‍යතා ඇති සංවිධාන සහ ප්‍රජාවන් වෙත සම්බන්ධ කිරීමට අපි සහාය වෙමු.\n\n"
-            "ඔබට මෙම WhatsApp අංකය භාවිතා කළ හැක්කේ:\n"
+            "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු!\n\n"
+            "FoodRescue AI යනු ශ්‍රී ලංකාව පුරා හෝටල්, ආපනශාලා සහ පරිත්‍යාගශීලීන් සතු අතිරික්ත ආහාර, ස්වේච්ඡා කුරියර්වරුන්ගේ සහායෙන් ළමා නිවාස, සුබසාධන සංවිධාන සහ ප්‍රජාවන් වෙත කඩිනමින් සම්බන්ධ කරන බුද්ධිමත් වේදිකාවකි.\n\n"
+            "අද ඔබට මා උදව් කරන්නේ කෙසේද?\n"
             "1️⃣ අතිරික්ත ආහාර පරිත්‍යාග කිරීමට\n"
-            "2️⃣ ලබාගත හැකි ආහාර ඉල්ලුම් කිරීමට\n"
+            "2️⃣ ලබාගත හැකි ආහාර ඉල්ලුම් කිරීමට (සංවිධාන සහ ප්‍රජාවන්)\n"
             "3️⃣ ආහාර එකතු කර බෙදාහැරීමට ස්වේච්ඡාවෙන් ඉදිරිපත් වීමට\n"
             "4️⃣ ඔබගේ පරිත්‍යාග හෝ බෙදාහැරීම් තත්ත්වය පරීක්ෂා කිරීමට\n"
-            "5️⃣ උපකාර ලබාගැනීමට\n\n"
-            "🌐 වෙබ් අඩවිය:\n"
-            "https://foodrescue-ai-ten.vercel.app/\n\n"
+            "5️⃣ භාෂාව සහ උපකාර\n\n"
             "🌍 ඔබගේ භාෂාව තෝරන්න:\n"
             "1️⃣ English\n"
             "2️⃣ Sinhala\n"
             "3️⃣ Tamil\n\n"
-            "🎤 ඔබට හඬ පණිවිඩයක් ද එවිය හැක.\n\n"
-            "ඔබට අවශ්‍ය දේ කෙලින්ම පැවසිය හැක, උදාහරණයක් ලෙස:\n"
-            "• \"මා ළඟ බත් පැකට් 20ක් තියෙනවා.\"\n"
-            "• \"අපිට 30 දෙනෙකුට ආහාර අවශ්‍යයි.\"\n"
-            "• \"මට අද ස්වේච්ඡාවෙන් උදව් කරන්න පුළුවන්.\""
+            "🎤 ඔබට හඬ පණිවිඩයක් ද එවිය හැක හෝ අවශ්‍ය දේ කෙලින්ම පැවසිය හැක (උදා: \"මා ළඟ බත් පැකට් 20ක් තියෙනවා\")."
         ),
         "ta": (
-            "👋 FoodRescue AI இற்கு அன்புடன் வரவேற்கிறோம்!\n"
-            "நன்கொடையாளர்களிடமிருந்து மீதமுள்ள உணவை பெற்று தேவைப்படும் அமைப்புகள் மற்றும் சமூகங்களுடன் இணைக்க நாங்கள் உதவுகிறோம்.\n\n"
-            "நீங்கள் இந்த WhatsApp எண்ணைப் பயன்படுத்தி:\n"
-            "1️⃣ உபரி உணவை தானமாக வழங்கலாம்\n"
-            "2️⃣ கிடைக்கும் உணவைக் கோரலாம்\n"
-            "3️⃣ உணவைச் சேகரித்து வழங்க தன்னார்வலராக உதவலாம்\n"
-            "4️⃣ உங்கள் நன்கொடை அல்லது டெலிவரி நிலையைச் சரிபார்க்கலாம்\n"
-            "5️⃣ உதவி பெறலாம்\n\n"
-            "🌐 இணையதளம்:\n"
-            "https://foodrescue-ai-ten.vercel.app/\n\n"
+            "👋 FoodRescue AI இற்கு அன்புடன் வரவேற்கிறோம்!\n\n"
+            "FoodRescue AI என்பது இலங்கை முழுவதும் ஹோட்டல்கள், உணவகங்கள் மற்றும் நன்கொடையாளர்களிடமிருந்து மீதமுள்ள உணவை பெற்று, தன்னார்வலர்கள் மூலம் தேவைப்படும் அமைப்புகள் மற்றும் சமூகங்களுடன் இணைக்கும் சிறந்த தளமாகும்.\n\n"
+            "இன்று உங்களுக்கு எவ்வாறு உதவலாம்?\n"
+            "1️⃣ உபரி உணவை தானமாக வழங்க\n"
+            "2️⃣ கிடைக்கும் உணவைக் கோர (அமைப்புகள் & தொண்டு இல்லங்கள்)\n"
+            "3️⃣ உணவைச் சேகரித்து வழங்க தன்னார்வலராக உதவ\n"
+            "4️⃣ உங்கள் நன்கொடை அல்லது டெலிவரி நிலையைச் சரிபார்க்க\n"
+            "5️⃣ மொழி மற்றும் உதவி\n\n"
             "🌍 உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:\n"
             "1️⃣ English\n"
             "2️⃣ Sinhala\n"
             "3️⃣ Tamil\n\n"
-            "🎤 நீங்கள் குரல் செய்தியையும் (Voice Message) அனுப்பலாம்.\n\n"
-            "உங்களுக்கு என்ன தேவை என்பதை நேரடியாகக் கூறலாம், உதாரணமாக:\n"
-            "• \"என்னிடம் 20 அரிசி பொட்டலங்கள் உள்ளன.\"\n"
-            "• \"எங்களுக்கு 30 பேருக்கு உணவு தேவை.\"\n"
-            "• \"நான் இன்று தன்னார்வலராக உதவத் தயார்.\""
+            "🎤 நீங்கள் குரல் செய்தியையும் அனுப்பலாம் அல்லது தேவையானதைக் கூறலாம் (எ.கா: \"என்னிடம் 20 பொதி சோறு உள்ளது\")."
         )
     },
 
@@ -679,6 +672,272 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "மன்னிக்கவும், அந்த கோரிக்கையை செயலாக்குவதில் சிக்கல் ஏற்பட்டது.\n\n"
             "தயவுசெய்து சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும். 🙏"
         )
+    },
+
+    # 11. Status Queries & Workflow Coordination Cards
+    "donation_status_card": {
+        "en": (
+            "📦 **Your Latest Donation**\n\n"
+            "• **Donation ID**: `{donation_id}`\n"
+            "• **Food**: {quantity} {unit} of {food_type}\n"
+            "• **Location**: 📍 {location}\n"
+            "• **Status**: `{status}`{task_info}\n\n"
+            "Thank you for helping rescue food! ❤️"
+        ),
+        "si": (
+            "📦 **ඔබගේ නවතම පරිත්‍යාගය**\n\n"
+            "• **පරිත්‍යාග අංකය**: `{donation_id}`\n"
+            "• **ආහාර**: {food_type} {quantity} {unit}\n"
+            "• **ස්ථානය**: 📍 {location}\n"
+            "• **තත්ත්වය**: `{status}`{task_info}\n\n"
+            "ආහාර අපතේ යාම වැළැක්වීමට සහාය වීම ගැන ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "📦 **உங்கள் சமீபத்திய நன்கொடை**\n\n"
+            "• **நன்கொடை எண்**: `{donation_id}`\n"
+            "• **உணவு**: {quantity} {unit} {food_type}\n"
+            "• **இடம்**: 📍 {location}\n"
+            "• **நிலை**: `{status}`{task_info}\n\n"
+            "உணவை மீட்க உதவியதற்கு நன்றி! ❤️"
+        )
+    },
+
+    "donation_status_empty": {
+        "en": (
+            "📦 **No Active Donation Found**\n\n"
+            "You don't have any active donations registered under your phone number right now.\n"
+            "Reply **1** or say *'I have food to donate'* to create a new donation."
+        ),
+        "si": (
+            "📦 **සක්‍රිය පරිත්‍යාගයක් හමු නොවීය**\n\n"
+            "ඔබගේ දුරකථන අංකය යටතේ දැනට සක්‍රිය පරිත්‍යාගයක් ලියාපදිංචි වී නොමැත.\n"
+            "නව පරිත්‍යාගයක් එක් කිරීමට **1** ලෙස පිළිතුරු දෙන්න හෝ *'මට ආහාර පරිත්‍යාග කිරීමට ඇත'* යැයි පවසන්න."
+        ),
+        "ta": (
+            "📦 **செயலில் உள்ள நன்கொடை எதுவும் இல்லை**\n\n"
+            "உங்கள் தொலைபேசி எண்ணின் கீழ் தற்போது செயலில் உள்ள நன்கொடைகள் எதுவும் பதிவு செய்யப்படவில்லை.\n"
+            "புதிய நன்கொடையை உருவாக்க **1** என்று பதிலளிக்கவும் அல்லது *'உணவு தானம் செய்ய விரும்புகிறேன்'* என்று கூறவும்."
+        )
+    },
+
+    "pickup_status_card": {
+        "en": (
+            "🚚 **Pickup Status Update**\n\n"
+            "• **Pickup ID**: `{task_id}`\n"
+            "• **Status**: `{status}`\n"
+            "• **From**: 📍 {pickup_location}\n"
+            "• **To**: 🏢 {delivery_location}\n"
+            "• **Scheduled Time**: ⏰ {scheduled_time}\n"
+            "• **Volunteer**: {volunteer_name}\n\n"
+            "I'll keep you posted as the pickup progresses!"
+        ),
+        "si": (
+            "🚚 **බෙදාහැරීමේ තත්ත්ව යාවත්කාලීනය**\n\n"
+            "• **කාර්ය අංකය**: `{task_id}`\n"
+            "• **තත්ත්වය**: `{status}`\n"
+            "• **ලබාගැනීම**: 📍 {pickup_location}\n"
+            "• **භාරදීම**: 🏢 {delivery_location}\n"
+            "• **නියමිත වේලාව**: ⏰ {scheduled_time}\n"
+            "• **ස්වේච්ඡා සාමාජිකයා**: {volunteer_name}\n\n"
+            "බෙදාහැරීමේ කටයුතු සිදුවන විට අපි ඔබට දන්වන්නෙමු!"
+        ),
+        "ta": (
+            "🚚 **சேகரிப்பு நிலை புதுப்பிப்பு**\n\n"
+            "• **பணி எண்**: `{task_id}`\n"
+            "• **நிலை**: `{status}`\n"
+            "• **பெறுமிடம்**: 📍 {pickup_location}\n"
+            "• **சேருமிடம்**: 🏢 {delivery_location}\n"
+            "• **நேரம்**: ⏰ {scheduled_time}\n"
+            "• **தன்னார்வலர்**: {volunteer_name}\n\n"
+            "பணி முன்னேறும் போது உங்களுக்கு அறிவிப்போம்!"
+        )
+    },
+
+    "pickup_status_empty": {
+        "en": (
+            "🚚 **No Active Pickup Found**\n\n"
+            "There are currently no active pickup tasks assigned to or linked with your account."
+        ),
+        "si": (
+            "🚚 **සක්‍රිය බෙදාහැරීම් කාර්යයක් හමු නොවීය**\n\n"
+            "ඔබගේ ගිණුමට සම්බන්ධ සක්‍රිය බෙදාහැරීම් කාර්යයක් දැනට නොමැත."
+        ),
+        "ta": (
+            "🚚 **செயலில் உள்ள சேகரிப்பு பணிகள் இல்லை**\n\n"
+            "உங்கள் கணக்குடன் இணைக்கப்பட்ட செயலில் உள்ள பணிகள் எதுவும் தற்போது இல்லை."
+        )
+    },
+
+    "donation_cancelled_success": {
+        "en": (
+            "🛑 **Donation Cancelled**\n\n"
+            "Donation `{donation_id}` and its associated pickup coordination have been cancelled.\n"
+            "Let me know if you need help with anything else!"
+        ),
+        "si": (
+            "🛑 **පරිත්‍යාගය අවලංගු කරන ලදී**\n\n"
+            "පරිත්‍යාග අංක `{donation_id}` සහ ඊට අදාළ බෙදාහැරීම් කටයුතු අවලංගු කර ඇත.\n"
+            "ඔබට වෙනත් යමකට උපකාර අවශ්‍ය නම් දන්වන්න!"
+        ),
+        "ta": (
+            "🛑 **நன்கொடை ரத்து செய்யப்பட்டது**\n\n"
+            "நன்கொடை `{donation_id}` மற்றும் அதனுடன் தொடர்புடைய சேகரிப்பு ரத்து செய்யப்பட்டுள்ளது.\n"
+            "வேறு உதவி தேவைப்பட்டால் தெரியப்படுத்தவும்!"
+        )
+    },
+
+    "donation_cancelled_draft_success": {
+        "en": (
+            "🛑 **Donation Cancelled**\n\n"
+            "Your active donation draft has been cancelled. Let me know if you need anything else!"
+        ),
+        "si": (
+            "🛑 **පරිත්‍යාගය අවලංගු කරන ලදී**\n\n"
+            "ඔබගේ සක්‍රිය පරිත්‍යාග සටහන අවලංගු කරන ලදී. ඔබට වෙනත් යමකට උපකාර අවශ්‍ය නම් දන්වන්න!"
+        ),
+        "ta": (
+            "🛑 **நன்கொடை ரத்து செய்யப்பட்டது**\n\n"
+            "உங்கள் நன்கொடை வரைவு ரத்து செய்யப்பட்டுள்ளது. வேறு ஏதேனும் உதவி தேவைப்பட்டால் தெரியப்படுத்தவும்!"
+        )
+    },
+    "donation_ask_food_type": {
+        "en": (
+            "🍱 *What type of Food do you have for Donation?*\n\n"
+            "1️⃣ Rice & Curry\n"
+            "2️⃣ Bread & Bakery\n"
+            "3️⃣ Vegetarian Meals\n"
+            "4️⃣ Biryani\n"
+            "5️⃣ Other\n\n"
+            "Reply with a number or simply describe the food."
+        ),
+        "si": (
+            "🍱 *ඔබ සතුව පරිත්‍යාගය සඳහා ඇති ආහාර වර්ගය කුමක්ද?*\n\n"
+            "1️⃣ බත් සහ ව්‍යංජන\n"
+            "2️⃣ පාන් සහ බේකරි නිෂ්පාදන\n"
+            "3️⃣ නිර්මාංශ ආහාර\n"
+            "4️⃣ බිරියානි\n"
+            "5️⃣ වෙනත්\n\n"
+            "අංකය හෝ ආහාර පිළිබඳ විස්තරය එවන්න."
+        ),
+        "ta": (
+            "🍱 *தானம் செய்ய உங்களிடம் என்ன வகை உணவு உள்ளது?*\n\n"
+            "1️⃣ சோறும் கறியும்\n"
+            "2️⃣ ரொட்டி & பேக்கரி\n"
+            "3️⃣ சைவ உணவுகள்\n"
+            "4️⃣ பிரியாணி\n"
+            "5️⃣ மற்றவை\n\n"
+            "எண்ணை உள்ளிடவும் அல்லது உணவை விவரிக்கவும்."
+        )
+    },
+
+    "donation_ask_food_type_simple": {
+        "en": "🍱 *What type of food do you have available?* (e.g. Rice, Bread, Vegetarian Meals)",
+        "si": "🍱 *ඔබ සතුව ඇති ආහාර වර්ගය කුමක්ද?* (උදා: බත්, පාන්, නිර්මාංශ ආහාර)",
+        "ta": "🍱 *உங்களிடம் என்ன வகை உணவு உள்ளது?* (எ.கா: சோறு, ரொட்டி, சைவ உணவு)"
+    },
+
+    # 12. Organization Support Progressive Slot-Filling
+    "org_ask_name": {
+        "en": (
+            "🏠 **Recipient Organization Support**\n\n"
+            "👋 Welcome to FoodRescue AI! We connect charities, shelters, and community organizations with fresh surplus food.\n\n"
+            "1️⃣ What is your **organization's name**? (e.g. Hope Food Home, Sri Lanka Red Cross, Colombo Care)"
+        ),
+        "si": (
+            "🏠 **සංවිධාන ආහාර ආධාර සේවාව**\n\n"
+            "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු! සුබසාධන සංවිධාන, ළමා නිවාස සහ ප්‍රජාවන් වෙත අතිරික්ත ආහාර සම්බන්ධ කිරීමට අපි සහාය වෙමු.\n\n"
+            "1️⃣ ඔබගේ **සංවිධානයේ නම** කුමක්ද? (උදා: හෝප් ෆුඩ් හෝම්, ශ්‍රී ලංකා රතු කුරුස සමාජය)"
+        ),
+        "ta": (
+            "🏠 **அமைப்புகளுக்கான உணவு உதவி**\n\n"
+            "👋 FoodRescue AI இற்கு வரவேற்கிறோம்! தொண்டு இல்லங்கள் மற்றும் அமைப்புகளுக்கு உபரி உணவை இணைக்க உதவுகிறோம்.\n\n"
+            "1️⃣ உங்கள் **அமைப்பின் பெயர்** என்ன? (எ.கா: ஹோப் ஃபுட் ஹோம், இலங்கை செஞ்சிலுவைச் சங்கம்)"
+        )
+    },
+
+    "org_ask_city": {
+        "en": "Got it, **{org_name}**! Which **city or district** in Sri Lanka is your organization located in? (e.g. Mawanella, Kandy, Colombo, Galle, Jaffna)",
+        "si": "ස්තූතියි **{org_name}**! ඔබගේ සංවිධානය පිහිටා ඇති **නගරය හෝ දිස්ත්‍රික්කය** කුමක්ද? (උදා: මාවනැල්ල, මහනුවර, කොළඹ, ගාල්ල, යාපනය)",
+        "ta": "புரிந்தது **{org_name}**! உங்கள் அமைப்பு அமைந்துள்ள **நகரம் அல்லது மாவட்டம்** எது? (எ.கா: மாவனெல்லை, கண்டி, கொழும்பு, காலி, யாழ்ப்பாணம்)"
+    },
+
+    "org_ask_food_need": {
+        "en": "What type of food (e.g. Rice & Curry, cooked meal packets, bakery) and how many portions does **{org_name}** need today?",
+        "si": "**{org_name}** සඳහා අද අවශ්‍ය ආහාර වර්ගය (උදා: බත් සහ ව්‍යංජන, පිසූ ආහාර පාර්සල්, බේකරි) සහ ප්‍රමාණය කොපමණද?",
+        "ta": "**{org_name}** இற்கு இன்று என்ன வகை உணவு மற்றும் எத்தனை பேருக்கு உணவு தேவை? (எ.கா: சோறும் கறியும், ரொட்டி, பொதிகள்)"
+    },
+
+    "org_ask_location_pin": {
+        "en": (
+            "📍 **Step Required: Please Share Your Delivery Location Pin**\n\n"
+            "Tap ➕ (or paperclip) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can calculate distance and deliver directly to your organization!"
+        ),
+        "si": (
+            "📍 **අවශ්‍ය පියවර: කරුණාකර ඔබගේ බෙදාහැරීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "➕ (හෝ paperclip) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට දුර ගණනය කර ආහාර ගෙනවිත් දිය හැක!"
+        ),
+        "ta": (
+            "📍 **அவசியமான படி: உங்கள் டெலிவரி இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "➕ (அல்லது paperclip) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும். இதன் மூலம் தன்னார்வலர்கள் தூரத்தைக் கணக்கிட்டு உணவை டெலிவரி செய்ய முடியும்!"
+        )
+    },
+
+    # 13. Distinct Delivery Completion Messages
+    "delivery_completed_donor": {
+        "en": (
+            "🎉 *Delivery Completed!*\n\n"
+            "Your food donation ({food_info}) has been safely delivered to *{org_name}* by courier *{vol_name}*!\n\n"
+            "🌟 Together, we rescued food and fed lives. Thank you for your generosity! ❤️"
+        ),
+        "si": (
+            "🎉 *ආහාර බෙදාහැරීම සාර්ථකව අවසන් විය!*\n\n"
+            "ඔබගේ ආහාර පරිත්‍යාගය ({food_info}), *{vol_name}* විසින් *{org_name}* වෙත සාර්ථකව භාරදෙන ලදී!\n\n"
+            "🌟 ආහාර අපතේ යාම වැළැක්වීමට සහ ජනතාවට සහන සැලසීමට දැක්වූ දායකත්වයට ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "🎉 *டெலிவரி வெற்றிகரமாக முடிந்தது!*\n\n"
+            "உங்கள் உணவு நன்கொடை ({food_info}), கூரியர் *{vol_name}* மூலம் *{org_name}* அமைப்பிற்குப் பாதுகாப்பாக வழங்கப்பட்டது!\n\n"
+            "🌟 உணவை மீட்டு பசி போக்க உதவிய உங்கள் தாராள மனப்பான்மைக்கு நன்றி! ❤️"
+        )
+    },
+
+    "delivery_completed_org": {
+        "en": (
+            "🍱 *Food Delivery Arrived!*\n\n"
+            "Courier *{vol_name}* has delivered the food donation ({food_info}) from *{donor_name}* to your organization.\n\n"
+            "Enjoy the fresh meals! 🙏"
+        ),
+        "si": (
+            "🍱 *ආහාර බෙදාහැරීම ලැබිණි!*\n\n"
+            "*{donor_name}* වෙතින් පරිත්‍යාග කරන ලද ආහාර ({food_info}), *{vol_name}* විසින් ඔබගේ සංවිධානය වෙත භාරදෙන ලදී.\n\n"
+            "නැවුම් ආහාර භුක්ති විඳින්න! 🙏"
+        ),
+        "ta": (
+            "🍱 *உணவு டெலிவரி வந்து சேர்ந்தது!*\n\n"
+            "*{donor_name}* வழங்கிய உணவு ({food_info}), கூரியர் *{vol_name}* மூலம் உங்கள் அமைப்பிற்கு டெலிவரி செய்யப்பட்டது.\n\n"
+            "உணவை மகிழ்வுடன் ஏற்றுக்கொள்ளுங்கள்! 🙏"
+        )
+    },
+
+    "delivery_completed_volunteer": {
+        "en": (
+            "✅ *Delivery Confirmed & Completed!*\n\n"
+            "Thank you, Courier *{vol_name}*! The food delivery ({food_info}) to *{org_name}* is complete.\n"
+            "• 💰 *Transport Reimbursement*: LKR {transport_cost} recorded.\n\n"
+            "You are now marked as AVAILABLE for new pickup tasks. 🚚"
+        ),
+        "si": (
+            "✅ *බෙදාහැරීම සාර්ථකව තහවුරු විය!*\n\n"
+            "ස්තූතියි කුරියර් *{vol_name}*! *{org_name}* වෙත ආහාර ({food_info}) බෙදාහැරීම අවසන් විය.\n"
+            "• 💰 *ප්‍රවාහන සහනාධාරය*: රු. {transport_cost} සටහන් විය.\n\n"
+            "ඔබ දැන් නව කාර්යයන් සඳහා සූදානම් (AVAILABLE) ලෙස සටහන් කර ඇත. 🚚"
+        ),
+        "ta": (
+            "✅ *டெலிவரி வெற்றிகரமாக முடிந்தது!*\n\n"
+            "நன்றி கூரியர் *{vol_name}*! *{org_name}* இற்கான உணவு டெலிவரி ({food_info}) முடிவடைந்தது.\n"
+            "• 💰 *போக்குவரத்து கட்டணம்*: LKR {transport_cost} பதிவு செய்யப்பட்டது.\n\n"
+            "நீங்கள் இப்போது புதிய பணிகளுக்குத் தயார் (AVAILABLE) என மாற்றப்பட்டுள்ளீர்கள். 🚚"
+        )
     }
 }
 
@@ -700,3 +959,145 @@ def get_localized_message(key: str, lang: str = "en", **kwargs) -> str:
         return template.format(**kwargs)
     except KeyError:
         return template
+
+
+# =============================================================================
+# VALSEA AI TRANSLATION & RESILIENT FALLBACK ENGINE
+# =============================================================================
+
+DOMAIN_PHRASE_MAPPINGS = {
+    "si": [
+        (r"What type of Food do you have for Donation\?", "ඔබ සතුව පරිත්‍යාගය සඳහා ඇති ආහාර වර්ගය කුමක්ද?"),
+        (r"What type of food do you have available\?", "ඔබ සතුව ඇති ආහාර වර්ගය කුමක්ද?"),
+        (r"Reply with a number or simply describe the food\.?", "අංකය හෝ ආහාර පිළිබඳ විස්තරය එවන්න."),
+        (r"Thank you\. Your food rescue request was received\.?", "ස්තූතියි. ඔබගේ ආහාර මුදාගැනීමේ ඉල්ලීම ලැබිණි."),
+        (r"Thank you\. Your request was received\.?", "ස්තූතියි. ඔබගේ ඉල්ලීම ලැබිණි."),
+        (r"Your donation has been added to the FoodRescue network\.?", "ඔබගේ පරිත්‍යාගය FoodRescue ජාලයට එක් කරන ලදී."),
+        (r"Donation Cancelled", "පරිත්‍යාගය අවලංගු කරන ලදී"),
+        (r"Pickup Status Update", "බෙදාහැරීමේ තත්ත්ව යාවත්කාලීනය"),
+        (r"Your Latest Donation", "ඔබගේ නවතම පරිත්‍යාගය"),
+        (r"No Active Donation Found", "සක්‍රිය පරිත්‍යාගයක් හමු නොවීය"),
+        (r"No Active Pickup Found", "සක්‍රිය බෙදාහැරීම් කාර්යයක් හමු නොවීය"),
+        (r"Let me know if you need help with anything else!?", "ඔබට වෙනත් යමකට උපකාර අවශ්‍ය නම් දන්වන්න!"),
+        (r"Let me know if you need anything else!?", "ඔබට වෙනත් යමකට උපකාර අවශ්‍ය නම් දන්වන්න!"),
+        (r"Thank you for helping rescue food!?", "ආහාර සුරැකීමට සහාය වීම ගැන ස්තූතියි! ❤️"),
+        (r"I'll keep you posted as the pickup progresses!?", "බෙදාහැරීමේ කටයුතු සිදුවන විට අපි ඔබට දන්වන්නෙමු!"),
+    ],
+    "ta": [
+        (r"What type of Food do you have for Donation\?", "தானம் செய்ய உங்களிடம் என்ன வகை உணவு உள்ளது?"),
+        (r"What type of food do you have available\?", "உங்களிடம் என்ன வகை உணவு உள்ளது?"),
+        (r"Reply with a number or simply describe the food\.?", "எண்ணை உள்ளிடவும் அல்லது உணவை விவரிக்கவும்."),
+        (r"Thank you\. Your food rescue request was received\.?", "நன்றி. உங்கள் உணவு மீட்புக் கோரிக்கை பெறப்பட்டது."),
+        (r"Thank you\. Your request was received\.?", "நன்றி. உங்கள் கோரிக்கை பெறப்பட்டது."),
+        (r"Your donation has been added to the FoodRescue network\.?", "உங்கள் நன்கொடை FoodRescue நெட்வொர்க்கில் சேர்க்கப்பட்டுள்ளது."),
+        (r"Donation Cancelled", "நன்கொடை ரத்து செய்யப்பட்டது"),
+        (r"Pickup Status Update", "சேகரிப்பு நிலை புதுப்பிப்பு"),
+        (r"Your Latest Donation", "உங்கள் சமீபத்திய நன்கொடை"),
+        (r"No Active Donation Found", "செயலில் உள்ள நன்கொடை எதுவும் இல்லை"),
+        (r"No Active Pickup Found", "செயலில் உள்ள சேகரிப்பு பணிகள் இல்லை"),
+        (r"Let me know if you need help with anything else!?", "வேறு உதவி தேவைப்பட்டால் தெரியப்படுத்தவும்!"),
+        (r"Let me know if you need anything else!?", "வேறு ஏதேனும் உதவி தேவைப்பட்டால் தெரியப்படுத்தவும்!"),
+        (r"Thank you for helping rescue food!?", "உணவை மீட்க உதவியதற்கு நன்றி! ❤️"),
+        (r"I'll keep you posted as the pickup progresses!?", "பணி முன்னேறும் போது உங்களுக்கு அறிவிப்போம்!"),
+    ]
+}
+
+
+def offline_fallback_translate(text: str, target_lang: str) -> str:
+    """Resilient offline translator preserving markdown, formatting, numbers, and domain context."""
+    if not text:
+        return ""
+    if target_lang not in ["si", "ta"]:
+        return text
+
+    translated = text
+
+    # Apply phrase mappings first
+    mappings = DOMAIN_PHRASE_MAPPINGS.get(target_lang, [])
+    for pattern, replacement in mappings:
+        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+
+    return translated
+
+
+def translate_text(
+    text: str,
+    target_lang: str,
+    source_lang: Optional[str] = None
+) -> str:
+    """Translate text into the target language using VALSEA AI Translation API with resilient fallback.
+    
+    Supported languages: 'si' (Sinhala), 'ta' (Tamil), 'en' (English).
+    """
+    if not text or not isinstance(text, str):
+        return ""
+        
+    target_lang = (target_lang or "en").lower().strip()
+    if target_lang not in SUPPORTED_LANGUAGES:
+        target_lang = DEFAULT_LANGUAGE
+
+    # If target language is English and text has no Sinhala or Tamil script, return directly
+    if target_lang == "en":
+        if not SINHALA_REGEX.search(text) and not TAMIL_REGEX.search(text):
+            return text
+
+    # If text is already in the target language script, return directly
+    if target_lang == "si" and len(SINHALA_REGEX.findall(text)) >= 3:
+        return text
+    if target_lang == "ta" and len(TAMIL_REGEX.findall(text)) >= 3:
+        return text
+
+    valsea_key = os.environ.get("VALSEA_API_KEY", "")
+
+    # 1. Primary: VALSEA AI Translation API
+    if valsea_key and not valsea_key.startswith("your_"):
+        try:
+            logger.info(f"Submitting text ({len(text)} chars) to VALSEA AI Translation API [target={target_lang}]...")
+            headers = {
+                "Authorization": f"Bearer {valsea_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "text": text,
+                "target_language": target_lang,
+                "source_language": source_lang or "auto",
+                "model": "valsea-translate"
+            }
+            resp = requests.post(
+                VALSEA_TRANSLATION_ENDPOINT,
+                headers=headers,
+                json=payload,
+                timeout=15
+            )
+            if resp.status_code == 200:
+                res_json = resp.json()
+                translated = (
+                    res_json.get("translated_text") or
+                    res_json.get("text") or
+                    res_json.get("translation")
+                )
+                if translated:
+                    logger.info(f"VALSEA Translation succeeded into '{target_lang}': {translated[:60]}")
+                    return str(translated).strip()
+            else:
+                logger.warning(f"VALSEA Translation API responded with status {resp.status_code}: {resp.text}")
+        except Exception as exc:
+            logger.warning(f"VALSEA Translation encountered an error: {exc}. Activating resilient fallback.")
+
+    # 2. Resilient Fallback Translation Engine
+    return offline_fallback_translate(text, target_lang)
+
+
+def translate_message_if_needed(text: str, target_lang: str) -> str:
+    """Translate outgoing conversational message to user's preferred language if needed."""
+    if not text:
+        return ""
+    target_lang = (target_lang or "en").lower().strip()
+    if target_lang == "en":
+        return text
+    if target_lang == "si" and len(SINHALA_REGEX.findall(text)) >= 3:
+        return text
+    if target_lang == "ta" and len(TAMIL_REGEX.findall(text)) >= 3:
+        return text
+    return translate_text(text, target_lang=target_lang)
+

@@ -1478,12 +1478,27 @@ def update_volunteer_availability(
     return json.dumps({"status": "error", "message": f"Failed to update volunteer {target_vol_id} availability."})
 
 
+def _run_async(coro):
+    """Run an async coroutine synchronously from tool execution contexts."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        else:
+            return loop.run_until_complete(coro)
+    except Exception:
+        return asyncio.run(coro)
+
+
 def get_available_volunteers(
     service_area: Optional[str] = None,
     min_capacity: Optional[int] = None,
     food_quantity: Optional[float] = None
 ) -> str:
-    """Find and rank available volunteers with capacity checking and suitability scoring."""
+    """Find and rank available volunteers with capacity checking, suitability scoring, and GraphHopper distance ranking."""
+    import routing_service
     target_area = str(service_area).strip() if service_area and str(service_area).strip() else _get_context_val("current_location", "")
     min_cap = int(min_capacity) if min_capacity is not None else (int(food_quantity) if food_quantity is not None else 1)
     
@@ -1492,25 +1507,25 @@ def get_available_volunteers(
         min_capacity=min_cap
     )
     
-    ranked = []
-    for v in volunteers:
-        mode = v.get("transport_mode", "motorbike")
-        cap = routing.get_vehicle_capacity(mode)
-        has_cap, max_cap = routing.check_vehicle_capacity(mode, min_cap)
-        if not has_cap:
-            continue
+    if target_area:
+        ranked = _run_async(routing_service.rank_volunteers_by_distance(
+            volunteers=volunteers,
+            donation_location=target_area,
+            food_quantity=min_cap
+        ))
+    else:
+        ranked = []
+        for v in volunteers:
+            mode = v.get("transport_mode", "motorbike")
+            cap = routing.get_vehicle_capacity(mode)
+            has_cap, max_cap = routing.check_vehicle_capacity(mode, min_cap)
+            if not has_cap:
+                continue
+            v_entry = dict(v)
+            v_entry["suitability_score"] = 80
+            v_entry["vehicle_capacity"] = max_cap
+            ranked.append(v_entry)
             
-        score = 80
-        if target_area and (target_area.lower() in v.get("service_area", "").lower() or target_area.lower() in v.get("location", "").lower()):
-            score += 20
-            
-        v_entry = dict(v)
-        v_entry["suitability_score"] = score
-        v_entry["vehicle_capacity"] = max_cap
-        ranked.append(v_entry)
-        
-    ranked.sort(key=lambda x: x["suitability_score"], reverse=True)
-    
     return json.dumps({
         "status": "success",
         "count": len(ranked),
@@ -1521,27 +1536,90 @@ def get_available_volunteers(
     }, indent=2)
 
 
+def find_nearest_volunteers(
+    pickup_location: str,
+    service_area: Optional[str] = None,
+    min_capacity: Optional[int] = None,
+    food_quantity: Optional[float] = None
+) -> str:
+    """Find and rank available volunteers nearest to a food donation pickup location using GraphHopper Routing API."""
+    import routing_service
+    p_loc = str(pickup_location).strip() if pickup_location and str(pickup_location).strip() else _get_context_val("current_location", "")
+    if not p_loc:
+        return json.dumps({"status": "error", "message": "pickup_location is required."})
+
+    min_cap = int(min_capacity) if min_capacity is not None else (int(food_quantity) if food_quantity is not None else 1)
+    all_vols = database.get_all_volunteers()
+    
+    ranked = _run_async(routing_service.rank_volunteers_by_distance(
+        volunteers=all_vols,
+        donation_location=p_loc,
+        food_quantity=min_cap
+    ))
+
+    return json.dumps({
+        "status": "success",
+        "pickup_location": p_loc,
+        "count": len(ranked),
+        "volunteers": ranked,
+        "message": f"Found {len(ranked)} eligible volunteer(s) ranked by GraphHopper travel time and distance."
+    }, indent=2)
+
+
+def calculate_route(
+    origin: str,
+    destination: str,
+    transport_mode: str = "car"
+) -> str:
+    """Calculate distance, travel time, and route geometry between origin and destination via GraphHopper Routing API."""
+    import routing_service
+    if not origin or not destination:
+        return json.dumps({"status": "error", "message": "Both origin and destination are required."})
+        
+    res = _run_async(routing_service.calculate_route(origin, destination, transport_mode))
+    return json.dumps(res, indent=2)
+
+
+def calculate_distance(
+    origin: str,
+    destination: str,
+    transport_mode: str = "car"
+) -> str:
+    """Calculate road distance and estimated travel time between origin and destination via GraphHopper Routing API."""
+    import routing_service
+    if not origin or not destination:
+        return json.dumps({"status": "error", "message": "Both origin and destination are required."})
+        
+    res = _run_async(routing_service.calculate_distance(origin, destination, transport_mode))
+    return json.dumps(res, indent=2)
+
+
+def calculate_pickup_route(
+    volunteer_location: Optional[str] = None,
+    pickup_location: str = "",
+    delivery_location: str = "",
+    transport_mode: str = "motorbike"
+) -> str:
+    """Calculate complete two-leg pickup and delivery route (Volunteer -> Donation -> Organization) via GraphHopper Routing API."""
+    import routing_service
+    p_loc = str(pickup_location).strip() if pickup_location and str(pickup_location).strip() else _get_context_val("current_location", "")
+    d_loc = str(delivery_location).strip() if delivery_location and str(delivery_location).strip() else ""
+    v_loc = str(volunteer_location).strip() if volunteer_location and str(volunteer_location).strip() else _get_context_val("current_volunteer_location", p_loc)
+
+    if not p_loc or not d_loc:
+        return json.dumps({"status": "error", "message": "Both pickup_location and delivery_location are required."})
+
+    res = _run_async(routing_service.calculate_pickup_route(v_loc, p_loc, d_loc, transport_mode))
+    return json.dumps(res, indent=2)
+
+
 def calculate_route_distance(
     origin: str,
     destination: str,
     transport_mode: str = "motorbike"
 ) -> str:
-    """Calculate distance, duration, and cost estimation between origin and destination."""
-    if not origin or not destination:
-        return json.dumps({"status": "error", "message": "Both origin and destination are required."})
-        
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                res = pool.submit(asyncio.run, routing.calculate_route(origin, destination, transport_mode)).result()
-        else:
-            res = loop.run_until_complete(routing.calculate_route(origin, destination, transport_mode))
-    except Exception:
-        res = asyncio.run(routing.calculate_route(origin, destination, transport_mode))
-        
-    return json.dumps(res, indent=2)
+    """Calculate distance, duration, and cost estimation between origin and destination (legacy alias)."""
+    return calculate_route(origin=origin, destination=destination, transport_mode=transport_mode)
 
 
 def calculate_transport_estimate(

@@ -188,19 +188,18 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             don = my_dons["latest_donation"]
             tasks = my_dons.get("latest_pickup_tasks", [])
             task_info = f"\n🚚 **Pickup**: {tasks[0].get('status', 'PENDING')}" if tasks else ""
-            return (
-                f"📦 **Your Latest Donation**\n\n"
-                f"• **Donation ID**: `{don.get('id')}`\n"
-                f"• **Food**: {don.get('quantity')} {don.get('unit')} of {don.get('food_type')}\n"
-                f"• **Location**: 📍 {don.get('pickup_location')}\n"
-                f"• **Status**: `{don.get('status')}`{task_info}\n\n"
-                f"Thank you for helping rescue food! ❤️"
+            return translation_service.get_localized_message(
+                "donation_status_card",
+                lang=lang,
+                donation_id=don.get("id"),
+                food_type=don.get("food_type"),
+                quantity=don.get("quantity"),
+                unit=don.get("unit"),
+                location=don.get("pickup_location"),
+                status=don.get("status"),
+                task_info=task_info
             )
-        return (
-            "📦 **No Active Donation Found**\n\n"
-            "You don't have any active donations registered under your phone number right now.\n"
-            "Reply **1** or say *'I have food to donate'* to create a new donation."
-        )
+        return translation_service.get_localized_message("donation_status_empty", lang=lang)
 
     if clean_p in ["5", "show my pickup", "where is the pickup?", "where is the pickup", "where is the volunteer?", "where is the volunteer", "where is the food?", "where is the food", "what is my pickup?", "what is my pickup", "pickup status"]:
         my_picks_raw = tools.get_my_pickups(phone=phone)
@@ -208,20 +207,17 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         if my_picks.get("status") == "success" and my_picks.get("latest_task"):
             task = my_picks["latest_task"]
             vol_name = task.get("volunteer_id", "Assigned Volunteer")
-            return (
-                f"🚚 **Pickup Status Update**\n\n"
-                f"• **Pickup ID**: `{task.get('id')}`\n"
-                f"• **Status**: `{task.get('status')}`\n"
-                f"• **From**: 📍 {task.get('pickup_location')}\n"
-                f"• **To**: 🏢 {task.get('delivery_location')}\n"
-                f"• **Scheduled Time**: ⏰ {task.get('scheduled_time')}\n"
-                f"• **Volunteer**: {vol_name}\n\n"
-                f"I'll keep you posted as the pickup progresses!"
+            return translation_service.get_localized_message(
+                "pickup_status_card",
+                lang=lang,
+                task_id=task.get("id"),
+                status=task.get("status"),
+                pickup_location=task.get("pickup_location"),
+                delivery_location=task.get("delivery_location"),
+                scheduled_time=task.get("scheduled_time"),
+                volunteer_name=vol_name
             )
-        return (
-            "🚚 **No Active Pickup Found**\n\n"
-            "There are currently no active pickup tasks assigned to or linked with your account."
-        )
+        return translation_service.get_localized_message("pickup_status_empty", lang=lang)
 
     # 5. Cancellation
     if any(m in clean_p for m in ["cancel my donation", "cancel donation", "cancel pickup", "cancel"]):
@@ -239,17 +235,33 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             res_raw = tools.cancel_donation(donation_id=don_id)
             res = json.loads(res_raw) if isinstance(res_raw, str) else {}
             if res.get("status") == "success":
-                return (
-                    f"🛑 **Donation Cancelled**\n\n"
-                    f"Donation `{don_id}` and its associated pickup coordination have been cancelled.\n"
-                    f"Let me know if you need help with anything else!"
+                return translation_service.get_localized_message(
+                    "donation_cancelled_success",
+                    lang=lang,
+                    donation_id=don_id
                 )
-        return "🛑 **Donation Cancelled**\n\nYour active donation draft has been cancelled. Let me know if you need anything else!"
+        return translation_service.get_localized_message("donation_cancelled_draft_success", lang=lang)
+
+    # =========================================================================
+    # 5.5 GREETINGS & MAIN MENU (Early dispatch when not in active workflow)
+    # =========================================================================
+    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    in_active_workflow = bool(curr_state.get("workflow"))
+    is_greeting_word = clean_p in [
+        "hi", "hello", "hey", "menu", "help", "start", "6", "options",
+        "මෙනුව", "ආයුබෝවන්", "வணக்கம்", "welcome", "greetings"
+    ]
+    if is_greeting_word and not in_active_workflow:
+        if user and user.get("onboarding_completed"):
+            donor_rec = database.get_donor_by_phone(phone) if phone else None
+            if donor_rec:
+                return translation_service.get_localized_message("returning_donor_welcome", lang=lang, name=donor_rec.get("name", ""))
+            return translation_service.get_localized_message("returning_welcome", lang=lang)
+        return translation_service.get_localized_message("onboarding_welcome", lang=lang)
 
     # =========================================================================
     # 6. VOLUNTEER COURIER COORDINATION & PROGRESSIVE ONBOARDING
     # =========================================================================
-    curr_state = database.get_user_conversation_state(phone) if phone else {}
     in_vol_workflow = curr_state.get("workflow") in ["VOLUNTEER", "VOLUNTEER_REGISTRATION"]
     existing_vol = database.get_volunteer_by_phone(phone) if phone else None
 
@@ -536,12 +548,19 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             final_vol_veh = vol_vehicle or (existing_vol.get("transport_mode") if existing_vol else "Three-Wheeler")
             final_vol_loc = vol_loc or (existing_vol.get("service_area") if existing_vol else "Mawanella")
 
-            if phone and not existing_vol:
-                tools.register_volunteer(
-                    name=final_vol_name,
-                    service_area=final_vol_loc,
+            if phone:
+                if not existing_vol:
+                    tools.register_volunteer(
+                        name=final_vol_name,
+                        service_area=final_vol_loc,
+                        phone=phone,
+                        transport_mode=final_vol_veh
+                    )
+                database.update_user_profile(
                     phone=phone,
-                    transport_mode=final_vol_veh
+                    display_name=final_vol_name,
+                    user_role="volunteer",
+                    default_location=final_vol_loc
                 )
             
             # Clear conversation state
@@ -602,8 +621,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 })
             return (
                 "❤️ **Volunteer Courier Registration**\n\n"
-                "👋 Thank you for offering to help rescue food and deliver meals to people in need!\n\n"
-                "1️⃣ What is your **name**? (e.g. Kamal, Mushan, Amara)"
+                "Thank you for stepping up to rescue food in your community! 🚚\n\n"
+                "1️⃣ What is your **full name**?"
             )
         elif not vol_vehicle:
             if phone:
@@ -614,7 +633,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "vol_name": vol_name
                 })
             return (
-                f"Thanks, **{vol_name}**! What **transport mode / vehicle** will you use for deliveries? (e.g. Three-Wheeler, Motorbike, Car, Van, Bicycle)"
+                f"Nice to meet you, **{vol_name}**! 🛵\n\n"
+                "2️⃣ What **vehicle or transport mode** will you use for deliveries?\n"
+                "(e.g. *Three-Wheeler*, *Motorbike*, *Car*, *Van*, *Bicycle*)"
             )
         else:
             if phone:
@@ -626,11 +647,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "vol_vehicle": vol_vehicle
                 })
             return (
-                f"Which **city or district** in Sri Lanka are you available to cover? (e.g. Mawanella, Kegalle, Colombo, Kandy, Galle)"
+                f"Got it! 📍 3️⃣ What **city, town, or service area** in Sri Lanka can you cover? (e.g. Mawanella, Colombo, Kandy, Galle)"
             )
 
     # 7. Recipient Organization Workflow ("2", "request food", "need food", "community organization", "shelter", "hope food")
-    is_org_query = clean_p in ["2", "view all", "view all available donations", "view available", "all donations", "view donations", "available donations", "surplus food"]
+    is_org_inventory_query = clean_p in ["view all", "view all available donations", "view available", "all donations", "view donations", "available donations", "surplus food", "inventory"]
+    is_org_menu_opt = clean_p in ["2", "request food", "request available food", "need food", "food request", "community organization", "shelter"]
     is_org_intent = any(m in clean_p for m in [
         "community organization", "need food", "request food", "food bank", "shelter",
         "we need", "meals for", "packets for", "food for our", "for our shelter",
@@ -639,11 +661,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     curr_state = database.get_user_conversation_state(phone) if phone else {}
     in_org_workflow = curr_state.get("workflow") == "RECIPIENT_REQUEST"
 
-    if (is_org_query or is_org_intent or in_org_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow):
+    if (is_org_inventory_query or is_org_menu_opt or is_org_intent or in_org_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow):
         existing_org = database.get_organization_by_phone(phone) if phone else None
         
         # 7a. User explicitly asked to view all available donations across the network
-        if is_org_query and existing_org:
+        if is_org_inventory_query and existing_org:
             all_dons = database.get_all_donations()
             active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING", "PICKUP_ASSIGNED"]]
             if active_dons:
@@ -658,7 +680,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 return (
                     f"📦 **Available Surplus Food Donations Across Network:**\n\n"
                     f"{items_str}\n\n"
-                    f"📍 Please share your organization's delivery location using WhatsApp (Tap ➕ → Location → Send current location 📍) to reserve food!"
+                    f"📍 Please share your organization's delivery location using WhatsApp (Tap ➕ → Location → Send your current location 📍) to reserve food!"
                 )
             else:
                 return (
@@ -702,18 +724,24 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             food_needed = prompt.strip()
 
         # If all details are present, register & match!
-        if (org_name or existing_org) and (org_loc or (existing_org and existing_org.get("location"))):
-            final_org_name = org_name or (existing_org.get("name") if existing_org else "Hope Food Home")
-            final_org_loc = org_loc or (existing_org.get("location") if existing_org else "Mawanella")
+        if org_name and org_loc and (food_needed or curr_state.get("expected_input_type") == "FOOD_NEED" or is_org_intent):
+            final_org_name = org_name or "Community Organization"
+            final_org_loc = org_loc or "Mawanella"
             final_food = food_needed or "Meal packets"
 
-            if phone and not existing_org:
+            if phone:
                 tools.register_organization(
                     name=final_org_name,
                     location=final_org_loc,
                     service_area=final_org_loc,
                     accepted_food_types=final_food,
                     phone=phone
+                )
+                database.update_user_profile(
+                    phone=phone,
+                    display_name=final_org_name,
+                    user_role="organization",
+                    default_location=final_org_loc
                 )
             
             # Clear recipient conversation state on completion
@@ -756,7 +784,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 return (
                     f"👋 Hello from **{final_org_name}**! I've successfully registered your organization in {final_org_loc}.\n\n"
                     f"🔍 We have logged your request for {final_food} in {final_org_loc}. Our AI coordinator will immediately notify you and dispatch a courier the moment a donor posts surplus food in your area!\n\n"
-                    f"📍 Please share your organization's WhatsApp location pin 📍 so your delivery coordinates are stored."
+                    f"📍 **Please share your organization's WhatsApp location pin 📍** so volunteer couriers can navigate directly to your delivery point."
                 )
 
         # If details are missing, progressive slot-filling:
@@ -767,11 +795,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "expected_input_type": "ORG_NAME",
                     "current_question": "ORG_NAME"
                 })
-            return (
-                "🏠 **Recipient Organization Support**\n\n"
-                "👋 Hello! Welcome to FoodRescue AI. We connect community organizations and charities with fresh surplus food donations.\n\n"
-                "1️⃣ What is your **organization's name**? (e.g. Hope Food Home, Colombo Care, Sri Lanka Red Cross)"
-            )
+            return translation_service.get_localized_message("org_ask_name", lang=lang)
         elif not org_loc:
             if phone:
                 database.set_user_conversation_state(phone, {
@@ -780,9 +804,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "current_question": "CITY",
                     "org_name": org_name
                 })
-            return (
-                f"Got it, **{org_name}**! What **city or district** in Sri Lanka is your organization located in? (e.g. Mawanella, Colombo, Kandy, Galle)"
-            )
+            return translation_service.get_localized_message("org_ask_city", lang=lang, org_name=org_name)
         else:
             if phone:
                 database.set_user_conversation_state(phone, {
@@ -792,9 +814,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "org_name": org_name,
                     "city": org_loc
                 })
-            return (
-                f"What type of food (e.g. Rice & Curry, cooked meal packets, bakery items) and how many portions does **{org_name}** need today?"
-            )
+            return translation_service.get_localized_message("org_ask_food_need", lang=lang, org_name=org_name)
 
     # 8. Greetings & Main Menu
     if clean_p in ["hi", "hello", "hey", "menu", "help", "start", "6", "options", "මෙනුව", "ආයුබෝවන්", "வணக்கம்"]:
@@ -1055,15 +1075,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     "5": "Other"
                 }
             })
-        return (
-            "🍱 *What type of Food do you have for Donation?*\n\n"
-            "1️⃣ Rice & Curry\n"
-            "2️⃣ Bread & Bakery\n"
-            "3️⃣ Vegetarian Meals\n"
-            "4️⃣ Biryani\n"
-            "5️⃣ Other\n\n"
-            "Reply with a number or simply describe the food."
-        )
+        return translation_service.get_localized_message("donation_ask_food_type", lang=lang)
 
     # 9e. Persistent State Resolution & Strict Ordering for Missing Slots
     food_val = existing_draft.get("food_type")
@@ -1095,7 +1107,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 "current_question": "FOOD_TYPE",
                 "expected_input_type": "FOOD_CHOICE"
             })
-        return "🍱 *What type of food do you have available?* (e.g. Rice, Bread, Vegetarian Meals)"
+        return translation_service.get_localized_message("donation_ask_food_type_simple", lang=lang)
 
     if qty_val is None or float(qty_val) <= 0:
         if phone:
@@ -1253,6 +1265,12 @@ async def run_resilient_chat(
             ]):
                 logger.warning(f"Model '{model_name}' returned failure/error in text: '{reply_text[:60]}...'. Rotating model...")
                 continue
+
+            # If user has a preferred language that is not English, translate the reply
+            user = database.get_user_by_phone(phone) if phone else None
+            user_lang = user.get("preferred_language", "en") if user else "en"
+            if user_lang != "en":
+                reply_text = translation_service.translate_message_if_needed(reply_text, target_lang=user_lang)
 
             return {
                 "status": "success",
