@@ -388,19 +388,22 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
 
     "donor_ask_location_native": {
         "en": (
-            "Almost done! 📍\n"
-            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n"
-            "Tap ➕ → Location → Send your current location."
+            "Got it! 📍 Recorded {quantity} {unit} of {food_type} in {city}.\n\n"
+            "📍 **Step 4: Please Share Your Pickup Live Location Pin**\n\n"
+            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to collect the food!\n\n"
+            "*(You can also include pickup deadline e.g. Before 8 PM)*"
         ),
         "si": (
-            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n"
-            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n"
-            "Tap ➕ → Location → Send your current location."
+            "ස්තූතියි! 📍 {city} හි {food_type} {quantity} {unit} සටහන් කරගත්තා.\n\n"
+            "📍 **පියවර 4: කරුණාකර ඔබගේ ආහාර ලබාගැනීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ලබාගැනීමට පැමිණිය හැක!\n\n"
+            "*(ආහාර ලබාගත හැකි අවසන් වේලාව ද සඳහන් කළ හැක, උදා. රාත්‍රී 8 ට පෙර)*"
         ),
         "ta": (
-            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n"
-            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n"
-            "Tap ➕ → Location → Send your current location."
+            "நன்றி! 📍 {city} பகுதியில் {quantity} {unit} {food_type} பதிவு செய்யப்பட்டது.\n\n"
+            "📍 **படி 4: உங்கள் உணவு சேகரிக்கும் நேரலை இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும். இதன் மூலம் தன்னார்வலர்கள் உணவை வந்து சேகரிக்க முடியும்!\n\n"
+            "*(உணவு எத்தனை மணி வரை கிடைக்கும் என்பதையும் குறிப்பிடலாம், எ.கா. இரவு 8 மணிக்குள்)*"
         )
     },
 
@@ -418,19 +421,19 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
 
     "slot_ask_location": {
         "en": (
-            "Almost done! 📍\n\n"
-            "Please send the pickup location using WhatsApp's Location option so the volunteer can navigate to the food.\n\n"
-            "Tap ➕ → Location → Send your current location."
+            "📍 **Step 4: Please Share Your Pickup Live Location Pin**\n\n"
+            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to collect the food!\n\n"
+            "*(You can also include pickup deadline e.g. Before 8 PM)*"
         ),
         "si": (
-            "සියල්ල සූදානම් වෙමින් පවතී! 📍\n\n"
-            "ස්වේච්ඡා කුරියර්වරයාට ආහාර වෙත පැමිණීමට කරුණාකර WhatsApp හි Location පහසුකම භාවිතයෙන් ස්ථානය එවන්න.\n\n"
-            "Tap ➕ → Location → Send your current location."
+            "📍 **පියවර 4: කරුණාකර ඔබගේ ආහාර ලබාගැනීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ලබාගැනීමට පැමිණිය හැක!\n\n"
+            "*(ආහාර ලබාගත හැකි අවසන් වේලාව ද සඳහන් කළ හැක, උදා. රාත්‍රී 8 ට පෙර)*"
         ),
         "ta": (
-            "கிட்டத்தட்ட முடிந்துவிட்டது! 📍\n\n"
-            "தன்னார்வலர் உணவை வந்து சேகரிக்க WhatsApp இன் Location வசதியைப் பயன்படுத்தி இருப்பிடத்தை அனுப்பவும்.\n\n"
-            "Tap ➕ → Location → Send your current location."
+            "📍 **படி 4: உங்கள் உணவு சேகரிக்கும் நேரலை இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும். இதன் மூலம் தன்னார்வலர்கள் உணவை வந்து சேகரிக்க முடியும்!\n\n"
+            "*(உணவு எத்தனை மணி வரை கிடைக்கும் என்பதையும் குறிப்பிடலாம், எ.கா. இரவு 8 மணிக்குள்)*"
         )
     },
 
@@ -1135,22 +1138,24 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
 
     # 14. Mandatory WhatsApp Location Pin Templates
-    "donor_ask_location_native": {
+    "donor_ask_location_pin": {
         "en": (
-            "📍 **Step 5: Share Your Exact Pickup Location Pin**\n\n"
-            "To connect your donation with nearby volunteer couriers and calculate exact road directions, please share your WhatsApp location pin:\n\n"
-            "👉 **Tap ➕ (or 📎) → Location → 'Send your current location' 📍**\n\n"
-            "*(This enables GraphHopper road routing and exact volunteer navigation!)*"
+            "Got it! 📍 Recorded {quantity} {unit} of {food_type} in {city}.\n\n"
+            "📍 **Step 4: Please Share Your Pickup Live Location Pin**\n\n"
+            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to collect the food!\n\n"
+            "*(You can also include pickup deadline e.g. Before 8 PM)*"
         ),
         "si": (
-            "📍 **පියවර 5: කරුණාකර ඔබගේ ආහාර ලබාගැනීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
-            "ස්වේච්ඡා කුරියර්වරයාට නිවැරදි GPS මඟපෙන්වීම ලබාදීමට කරුණාකර ඔබගේ ස්ථානය එවන්න:\n\n"
-            "👉 **➕ (හෝ 📎) ඔබා → ස්ථානය (Location) → 'වත්මන් ස්ථානය එවන්න' 📍 යවන්න**"
+            "ස්තූතියි! 📍 {city} හි {food_type} {quantity} {unit} සටහන් කරගත්තා.\n\n"
+            "📍 **පියවර 4: කරුණාකර ඔබගේ ආහාර ලබාගැනීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ලබාගැනීමට පැමිණිය හැක!\n\n"
+            "*(ආහාර ලබාගත හැකි අවසන් වේලාව ද සඳහන් කළ හැක, උදා. රාත්‍රී 8 ට පෙර)*"
         ),
         "ta": (
-            "📍 **படி 5: உங்கள் உணவு எடுக்கும் இடத்தை (Location Pin) பகிரவும்**\n\n"
-            "தன்னார்வலர் உங்கள் இடத்திற்கு வந்து உணவை எடுக்க, தயவுசெய்து உங்கள் இருப்பிடத்தை வாட்ஸ்அப் மூலம் அனுப்பவும்:\n\n"
-            "👉 **➕ (அல்லது 📎) அழுத்தி → Location → 'Send your current location' 📍 என்பதை அனுப்பவும்**"
+            "நன்றி! 📍 {city} பகுதியில் {quantity} {unit} {food_type} பதிவு செய்யப்பட்டது.\n\n"
+            "📍 **படி 4: உங்கள் உணவு சேகரிக்கும் நேரலை இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும். இதன் மூலம் தன்னார்வலர்கள் உணவை வந்து சேகரிக்க முடியும்!\n\n"
+            "*(உணவு எத்தனை மணி வரை கிடைக்கும் என்பதையும் குறிப்பிடலாம், எ.கா. இரவு 8 மணிக்குள்)*"
         )
     },
 

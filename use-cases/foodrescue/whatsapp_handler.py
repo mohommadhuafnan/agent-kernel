@@ -864,46 +864,35 @@ async def process_incoming_whatsapp_message(
             deadline = draft.get("pickup_deadline")
             
             if qty and food and not active_don_id:
-                # Drafting donor
-                if not deadline or deadline.lower() in ["tbd", "now", "today", ""]:
-                    database.set_user_conversation_state(from_number, {
-                        "workflow": "DONATION",
-                        "current_question": "PICKUP_DEADLINE",
-                        "expected_input_type": "DEADLINE"
-                    })
-                    city_label = draft.get("city") or "Colombo"
-                    reply_text = translation_service.get_localized_message(
-                        "donor_ask_deadline",
-                        lang=preferred_language,
-                        city=city_label
-                    )
-                else:
-                    # All fields present -> Show Confirmation Summary!
-                    database.set_user_conversation_state(from_number, {
-                        "workflow": "DONATION",
-                        "current_question": "CONFIRMATION",
-                        "expected_input_type": "CONFIRMATION"
-                    })
-                    donor_user = database.get_user_by_phone(from_number)
-                    donor_rec = database.get_donor_by_phone(from_number)
-                    d_name = draft.get("donor_name") or draft.get("business_name") or (donor_rec.get("name") if donor_rec else None) or (donor_user.get("display_name") if donor_user and not donor_user.get("display_name", "").startswith("User_") else "Donor Partner")
-                    b_name = draft.get("business_name") or d_name
-                    city_val = draft.get("city") or (donor_rec.get("location") if donor_rec else None) or "Colombo"
-                    
-                    loc_ack = translation_service.get_localized_message("donor_location_received", lang=preferred_language)
-                    summary_msg = translation_service.get_localized_message(
-                        "donation_summary_confirm",
-                        lang=preferred_language,
-                        donor_name=d_name,
-                        business_name=b_name,
-                        food_type=food,
-                        quantity=qty,
-                        unit=unit,
-                        city=city_val,
-                        deadline=deadline,
-                        contact_phone=from_number
-                    )
-                    reply_text = f"{loc_ack}\n\n{summary_msg}"
+                # All required slots present -> Default deadline if omitted and Show Summary Confirmation!
+                final_deadline = deadline if (deadline and deadline.lower() not in ["tbd", "now", "today", ""]) else "Today before 8 PM"
+                database.save_draft_donation(from_number, {"pickup_deadline": final_deadline})
+
+                database.set_user_conversation_state(from_number, {
+                    "workflow": "DONATION",
+                    "current_question": "CONFIRMATION",
+                    "expected_input_type": "CONFIRMATION"
+                })
+                donor_user = database.get_user_by_phone(from_number)
+                donor_rec = database.get_donor_by_phone(from_number)
+                d_name = draft.get("donor_name") or draft.get("business_name") or (donor_rec.get("name") if donor_rec else None) or (donor_user.get("display_name") if donor_user and not donor_user.get("display_name", "").startswith("User_") else "Donor Partner")
+                b_name = draft.get("business_name") or d_name
+                city_val = draft.get("city") or (donor_rec.get("location") if donor_rec else None) or "Colombo"
+                
+                loc_ack = translation_service.get_localized_message("donor_location_received", lang=preferred_language)
+                summary_msg = translation_service.get_localized_message(
+                    "donation_summary_confirm",
+                    lang=preferred_language,
+                    donor_name=d_name,
+                    business_name=b_name,
+                    food_type=food,
+                    quantity=qty,
+                    unit=unit,
+                    city=city_val,
+                    deadline=final_deadline,
+                    contact_phone=from_number
+                )
+                reply_text = f"{loc_ack}\n\n{summary_msg}"
             else:
                 raw_loc_msg = (
                     "📍 *Pickup Location Confirmed!*\n\n"

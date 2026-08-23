@@ -143,34 +143,38 @@ async def test_dynamic_slot_filling_and_no_repeated_questions():
     assert draft1["quantity"] == 20.0
     assert "Vegetarian" in draft1["food_type"]
 
-    # Turn 2: User provides location "Colombo 05"
+    # Turn 2: User provides district "Colombo 05" -> Immediately asks for Live Location Pin!
     r2 = await resilient_executor.execute_deterministic_fallback(
         prompt="Colombo 05",
         session_id=session_id
     )
-    # Deadline should be asked next; Food and Quantity must NOT be re-asked!
-    assert "What time" in r2 or "available until" in r2
+    assert "location" in r2.lower() or "📍" in r2
     assert "How many meals" not in r2
     draft2 = database.get_draft_donation(phone)
     assert draft2["location"] == "Colombo 05"
 
-    # Turn 3: User provides deadline "Before 8 PM"
+    # Turn 3: User shares live location coordinates
+    database.save_draft_donation(phone, {
+        "location_received": True,
+        "latitude": 6.8900,
+        "longitude": 79.8700,
+        "pickup_deadline": "Before 8 PM"
+    })
     r3 = await resilient_executor.execute_deterministic_fallback(
-        prompt="Before 8 PM",
+        prompt="Here is my location pin",
         session_id=session_id
     )
     # All slots collected -> Summary confirmation presented
     assert "Donation Summary" in r3 or "Confirm" in r3
     assert "20" in r3
     assert "Colombo 05" in r3
-    assert "8 PM" in r3
 
     # Turn 4: User confirms "Confirm"
     r4 = await resilient_executor.execute_deterministic_fallback(
         prompt="Confirm",
         session_id=session_id
     )
-    assert "Donation Created & Matched" in r4 or "✅" in r4
+    assert "Donation Created" in r4 or "✅" in r4
     assert "PICKUP_ASSIGNED" in r4
 
     # Draft and state are cleared
@@ -180,7 +184,7 @@ async def test_dynamic_slot_filling_and_no_repeated_questions():
 
 @pytest.mark.asyncio
 async def test_all_in_one_message_skips_intermediate_questions():
-    """If user provides all slots at once in one message, skip individual questions and show confirmation immediately."""
+    """If user provides all text slots at once in one message, ask for location pin and on pin show confirmation immediately."""
     session_id = "whatsapp:+94775566778"
     phone = "+94775566778"
 
@@ -188,7 +192,7 @@ async def test_all_in_one_message_skips_intermediate_questions():
         prompt="I have 25 vegetarian rice meals at Colombo 05 ready before 8 PM",
         session_id=session_id
     )
-    assert "Donation Summary" in reply or "Confirm" in reply
+    assert "location" in reply.lower() or "📍" in reply
     assert "25" in reply
     assert "Colombo 05" in reply
 

@@ -1284,7 +1284,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         or (user.get("city") if user else None)
     )
     deadline_val = existing_draft.get("pickup_deadline")
-    loc_received = bool(existing_draft.get("location_received") or (existing_draft.get("latitude") and existing_draft.get("longitude")) or city_val)
+    loc_received = bool(existing_draft.get("location_received") or (existing_draft.get("latitude") and existing_draft.get("longitude")))
 
     # If all other slots (food, qty, city, deadline) were provided all-in-one, default donor name
     if not donor_name_val and (city_val and deadline_val):
@@ -1330,17 +1330,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             })
         return translation_service.get_localized_message("donor_ask_district", lang=lang, name=donor_name_val, quantity=qty_val, unit=unit_val, food_type=food_val)
 
-    # Step 4: Missing Pickup Deadline
-    if not deadline_val:
-        if phone:
-            database.set_user_conversation_state(phone, {
-                "workflow": "DONATION",
-                "current_question": "DEADLINE",
-                "expected_input_type": "DEADLINE"
-            })
-        return translation_service.get_localized_message("donor_ask_deadline", lang=lang, city=city_val)
-
-    # Step 5: Missing Exact WhatsApp Location Pin (MANDATORY before confirmation)
+    # Step 4: Missing Exact WhatsApp Location Pin (MANDATORY before summary / confirmation)
     if not loc_received:
         if phone:
             database.set_user_conversation_state(phone, {
@@ -1348,9 +1338,17 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 "current_question": "WHATSAPP_LOCATION",
                 "expected_input_type": "LOCATION"
             })
-        return translation_service.get_localized_message("donor_ask_location_native", lang=lang)
+        return translation_service.get_localized_message(
+            "donor_ask_location_native",
+            lang=lang,
+            quantity=qty_val or 20,
+            unit=unit_val or "packets",
+            food_type=food_val or "Food",
+            city=city_val or "Sri Lanka",
+            donor_name=donor_name_val or "Friend"
+        )
 
-    # Step 6: All fields present -> Show Summary Confirmation!
+    # Step 5: All fields present (Food, Qty, Name, District, Live Location Pin) -> Show Summary Confirmation!
     if phone:
         database.set_user_conversation_state(phone, {
             "workflow": "DONATION",
@@ -1358,6 +1356,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             "expected_input_type": "CONFIRMATION"
         })
 
+    final_deadline = deadline_val or "Today before 8 PM"
     return translation_service.get_localized_message(
         "donation_summary_confirm",
         lang=lang,
@@ -1367,7 +1366,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         quantity=qty_val,
         unit=unit_val,
         city=city_val,
-        deadline=deadline_val,
+        deadline=final_deadline,
         contact_phone=phone
     )
 

@@ -87,23 +87,17 @@ async def test_mandatory_location_pin_required_for_donation():
         r3 = await whatsapp_handler.process_incoming_whatsapp_message(m3)
         assert "city" in r3["reply"].lower() or "district" in r3["reply"].lower() or "area" in r3["reply"].lower()
 
-        # Step 4: Donor provides District / City
+        # Step 4: Donor provides District (Kegalle) -> Immediately asks for Live Location Pin!
         m4 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "Kegalle"}}
         r4 = await whatsapp_handler.process_incoming_whatsapp_message(m4)
-        assert "time" in r4["reply"].lower() or "deadline" in r4["reply"].lower() or "until" in r4["reply"].lower()
+        assert "location pin" in r4["reply"].lower() or "location" in r4["reply"].lower() or "📍" in r4["reply"]
 
-        # Step 5: Donor provides Deadline
-        m5 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "Today before 7 PM"}}
+        # Step 5: If donor types text before sharing location pin -> Reminds to share WhatsApp location pin
+        m5 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "Near clock tower, before 8 PM"}}
         r5 = await whatsapp_handler.process_incoming_whatsapp_message(m5)
-        # MUST ask for WhatsApp location pin!
-        assert "location pin" in r5["reply"].lower() or "whatsapp" in r5["reply"].lower() or "📍" in r5["reply"]
+        assert "location pin" in r5["reply"].lower() or "location" in r5["reply"].lower() or "📍" in r5["reply"]
 
-        # Step 6: If donor types text before sharing location pin -> Reminds to share WhatsApp location pin
-        m6 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "Near clock tower"}}
-        r6 = await whatsapp_handler.process_incoming_whatsapp_message(m6)
-        assert "location pin" in r6["reply"].lower() or "location" in r6["reply"].lower() or "📍" in r6["reply"]
-
-        # Step 7: Donor sends WhatsApp Location Pin
+        # Step 6: Donor sends WhatsApp Location Pin -> Returns Donation Summary!
         loc_msg = {
             "from": phone,
             "id": f"wamid.{uuid.uuid4().hex[:4]}",
@@ -115,13 +109,13 @@ async def test_mandatory_location_pin_required_for_donation():
                 "address": "Kegalle Main Street"
             }
         }
-        r7 = await whatsapp_handler.process_incoming_whatsapp_message(loc_msg)
-        assert "confirm" in r7["reply"].lower() or "Kegalle" in r7["reply"] or "Afnan Hotel" in r7["reply"]
+        r6 = await whatsapp_handler.process_incoming_whatsapp_message(loc_msg)
+        assert "confirm" in r6["reply"].lower() or "kegalle" in r6["reply"].lower() or "afnan hotel" in r6["reply"].lower() or "summary" in r6["reply"].lower()
 
-        # Step 8: Donor confirms
-        m8 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "1"}}
-        r8 = await whatsapp_handler.process_incoming_whatsapp_message(m8)
-        assert "created" in r8["reply"].lower() or "registered" in r8["reply"].lower() or "don-" in r8["reply"].lower() or "confirmed" in r8["reply"].lower()
+        # Step 7: Donor confirms
+        m7 = {"from": phone, "id": f"wamid.{uuid.uuid4().hex[:4]}", "type": "text", "text": {"body": "Confirm"}}
+        r7 = await whatsapp_handler.process_incoming_whatsapp_message(m7)
+        assert "created" in r7["reply"].lower() or "registered" in r7["reply"].lower() or "don-" in r7["reply"].lower() or "confirmed" in r7["reply"].lower()
 
 
 @pytest.mark.asyncio

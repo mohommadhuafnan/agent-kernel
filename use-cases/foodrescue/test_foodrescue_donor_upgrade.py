@@ -180,35 +180,29 @@ async def test_donor_multi_turn_flow_strict_order():
     draft2 = database.get_draft_donation(phone)
     assert draft2["donor_name"] == "Cinnamon Kitchen"
 
-    # Turn 3: User provides city "Colombo 07"
+    # Turn 3: User provides district "Colombo 07" -> Immediately asks for Live Location Pin!
     r3 = await resilient_executor.execute_deterministic_fallback("Colombo 07", session_id=session_id)
-    # Deadline must be asked next!
-    assert "time" in r3.lower() or "until" in r3.lower()
+    assert "location" in r3.lower() or "📍" in r3
     draft3 = database.get_draft_donation(phone)
     assert "Colombo 07" in draft3["city"]
 
-    # Turn 4: User provides deadline "Today before 8 PM"
-    r4 = await resilient_executor.execute_deterministic_fallback("Today before 8 PM", session_id=session_id)
-    # WhatsApp Native Location must be asked next!
-    assert "location" in r4.lower() or "📍" in r4
-
-    # Turn 5: User shares location coordinates
+    # Turn 4: User shares location coordinates
     database.save_draft_donation(phone, {
         "location_received": True,
         "latitude": 6.9056,
         "longitude": 79.8519,
         "address": "Colombo 07"
     })
-    r5 = await resilient_executor.execute_deterministic_fallback("Here is my location", session_id=session_id)
+    r4 = await resilient_executor.execute_deterministic_fallback("Here is my location", session_id=session_id)
     # Summary confirmation must be displayed!
-    assert "Donation Summary" in r5 or "Confirm" in r5
-    assert "40" in r5
-    assert "Cinnamon Kitchen" in r5
-    assert "Colombo 07" in r5
+    assert "Donation Summary" in r4 or "Confirm" in r4
+    assert "40" in r4
+    assert "Cinnamon Kitchen" in r4
+    assert "Colombo 07" in r4
 
-    # Turn 6: User confirms
-    r6 = await resilient_executor.execute_deterministic_fallback("Confirm", session_id=session_id)
-    assert "Donation Created" in r6 or "✅" in r6
+    # Turn 5: User confirms
+    r5 = await resilient_executor.execute_deterministic_fallback("Confirm", session_id=session_id)
+    assert "Donation Created" in r5 or "✅" in r5
     assert database.get_draft_donation(phone) is None
 
 
