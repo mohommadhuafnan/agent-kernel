@@ -247,17 +247,134 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     # =========================================================================
     curr_state = database.get_user_conversation_state(phone) if phone else {}
     in_active_workflow = bool(curr_state.get("workflow"))
-    is_greeting_word = clean_p in [
-        "hi", "hello", "hey", "menu", "help", "start", "6", "options",
-        "මෙනුව", "ආයුබෝවන්", "வணக்கம்", "welcome", "greetings"
-    ]
+    is_greeting_word = translation_service.is_greeting_message(clean_p)
     if is_greeting_word and not in_active_workflow:
         if user and user.get("onboarding_completed"):
             donor_rec = database.get_donor_by_phone(phone) if phone else None
+            vol_rec = database.get_volunteer_by_phone(phone) if phone else None
+            org_rec = database.get_organization_by_phone(phone) if phone else None
             if donor_rec:
                 return translation_service.get_localized_message("returning_donor_welcome", lang=lang, name=donor_rec.get("name", ""))
             return translation_service.get_localized_message("returning_welcome", lang=lang)
         return translation_service.get_localized_message("onboarding_welcome", lang=lang)
+
+    # =========================================================================
+    # 5.6 ROLE-AWARE CONTEXTUAL QUESTIONS
+    # =========================================================================
+    vol_rec = database.get_volunteer_by_phone(phone) if phone else None
+    org_rec = database.get_organization_by_phone(phone) if phone else None
+    donor_rec = database.get_donor_by_phone(phone) if phone else None
+
+    is_food_or_task_query = any(w in clean_p for w in [
+        "any food", "any foods", "what food", "what foods", "available food", "available foods",
+        "food available", "foods available", "food do you have", "foods do you have", "food you have",
+        "any pickup", "any pickups", "pickups available", "pickup available", "tasks available",
+        "what tasks", "any tasks", "task available", "surplus food", "surplus available",
+        "do you have food", "have food", "food near me", "pickups near me"
+    ])
+
+    if is_food_or_task_query and not in_active_workflow:
+        # A. Registered Volunteer asking for tasks/foods
+        if vol_rec or (user and user.get("user_role") == "volunteer"):
+            pending = database.get_all_pickup_tasks()
+            available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+            if available_tasks:
+                top_task = available_tasks[0]
+                task_id = top_task["id"]
+                don_id = top_task.get("donation_id", "")
+                don = database.get_donation_record(don_id) if don_id else None
+                food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets of Rice & Curry"
+                total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
+                
+                tools.set_session_context(key="current_task_id", value=task_id)
+                if vol_rec:
+                    tools.set_session_context(key="current_volunteer_id", value=vol_rec["id"])
+                if phone:
+                    database.set_user_conversation_state(phone, {
+                        "workflow": "VOLUNTEER",
+                        "current_question": "ACCEPT_TASK",
+                        "expected_input_type": "CHOICE",
+                        "task_id": task_id
+                    })
+                return (
+                    f"🚚 **Food Pickup Opportunity Available!**\n\n"
+                    f"• 🆔 **Task ID**: `{task_id}`\n"
+                    f"• 🍱 **Food**: {food_info}\n"
+                    f"• 📍 **Pickup**: {p_area}\n"
+                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
+                    f"• 📏 **Distance**: ~{total_dist} km\n"
+                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
+                    f"*Reply **Accept** or **Reject***"
+                )
+            else:
+                s_area = vol_rec.get("service_area", "your district") if vol_rec else "your district"
+                return (
+                    f"📦 **Volunteer Status**: You are registered in **{s_area}** and marked **AVAILABLE**.\n\n"
+                    f"There are currently 0 unassigned pickups waiting in your area.\n"
+                    f"As soon as a donation is posted nearby, our coordinator will immediately dispatch a WhatsApp offer to you! 🚚"
+                )
+
+        # B. Registered Recipient Organization asking for food
+        elif org_rec or (user and user.get("user_role") == "organization"):
+            all_dons = database.get_all_donations()
+            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING"]]
+            if active_dons:
+                lines = []
+                for idx, don in enumerate(active_dons[:5], 1):
+                    lines.append(f"{idx}️⃣ **{don.get('quantity', 0)} {don.get('unit', 'portions')} — {don.get('food_type', 'Prepared Meals')}** (📍 {don.get('pickup_location', 'Sri Lanka')})")
+                items_str = "\n".join(lines)
+                return (
+                    f"🍱 **Available Food Donations in Network:**\n\n"
+                    f"{items_str}\n\n"
+                    f"📍 Please share your organization's delivery location (Tap ➕ → Location → Send your current location 📍) to reserve food!"
+                )
+            else:
+                return (
+                    "📦 **Surplus Food Inventory:**\n\n"
+                    "There are currently 0 unassigned donations available right now.\n"
+                    "We have your organization on our priority list and will alert you the moment fresh food is donated in your district! 🍱"
+                )
+
+        # C. Registered Donor asking for status/food
+        elif donor_rec or (user and user.get("user_role") == "donor"):
+            my_dons_raw = tools.get_my_donations(phone=phone)
+            my_dons = json.loads(my_dons_raw) if isinstance(my_dons_raw, str) else {}
+            if my_dons.get("status") == "success" and my_dons.get("latest_donation"):
+                don = my_dons["latest_donation"]
+                tasks = my_dons.get("latest_pickup_tasks", [])
+                task_info = f"\n🚚 **Pickup**: {tasks[0].get('status', 'PENDING')}" if tasks else ""
+                return translation_service.get_localized_message(
+                    "donation_status_card",
+                    lang=lang,
+                    donation_id=don.get("id"),
+                    food_type=don.get("food_type"),
+                    quantity=don.get("quantity"),
+                    unit=don.get("unit"),
+                    location=don.get("pickup_location"),
+                    status=don.get("status"),
+                    task_info=task_info
+                )
+            return (
+                "👋 As a food donor, you can donate prepared meals, bakery items, or groceries to feed local shelters!\n\n"
+                "Reply **1** to start donating food, or reply **menu** to see all options."
+            )
+
+        # D. First-time or Unregistered user asking "what food do you have available?"
+        else:
+            return (
+                "🍱 **Welcome to FoodRescue AI!**\n\n"
+                "FoodRescue AI connects surplus food donors (hotels, bakeries, restaurants) with shelters and charities across Sri Lanka.\n\n"
+                "Available food types typically include:\n"
+                "• 🍚 Fresh Rice & Curry Packets\n"
+                "• 🍞 Bakery Items & Bread\n"
+                "• 🥗 Vegetarian & Prepared Meals\n"
+                "• 🍲 Biryani & Cooked Food\n\n"
+                "How would you like to participate?\n"
+                "1️⃣ *Donate Food* (Share surplus meals)\n"
+                "2️⃣ *Request Food* (For shelters and charities)\n"
+                "3️⃣ *Volunteer Courier* (Deliver food and earn travel support)\n\n"
+                "Reply with a number (1-3) to begin!"
+            )
 
     # =========================================================================
     # 6. VOLUNTEER COURIER COORDINATION & PROGRESSIVE ONBOARDING
@@ -388,9 +505,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 task_id = my_picks["latest_task"]["id"]
         if not task_id:
             all_tasks = database.get_all_pickup_tasks()
-            active_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE"]]
+            active_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "PICKUP_ASSIGNED", "EN_ROUTE"]]
             if active_tasks:
                 task_id = active_tasks[-1]["id"]
+            elif all_tasks:
+                task_id = all_tasks[-1]["id"]
                 
         if task_id:
             res_raw = tools.confirm_pickup(pickup_task_id=task_id)
@@ -420,9 +539,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 task_id = my_picks["latest_task"]["id"]
         if not task_id:
             all_tasks = database.get_all_pickup_tasks()
-            active_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT", "ASSIGNED", "EN_ROUTE"]]
+            active_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT", "ASSIGNED", "PICKUP_ASSIGNED", "EN_ROUTE"]]
             if active_tasks:
                 task_id = active_tasks[-1]["id"]
+            elif all_tasks:
+                task_id = all_tasks[-1]["id"]
                 
         if task_id:
             res_raw = tools.confirm_delivery(pickup_task_id=task_id)
@@ -842,6 +963,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     ] or clean_p == "confirm" or "confirm" in clean_p
     is_confirm_intent = is_confirm_word
 
+    loc_received = bool(existing_draft.get("location_received") or (existing_draft.get("latitude") and existing_draft.get("longitude")) or existing_draft.get("city") or existing_draft.get("location"))
+
     has_required_to_confirm = bool(
         existing_draft.get("food_type") and
         (existing_draft.get("city") or existing_draft.get("location"))
@@ -1060,6 +1183,47 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     phone=phone
                 )
 
+    elif (curr_q in ["WHATSAPP_LOCATION", "LOCATION"] or expected_type == "LOCATION") and not loc_received:
+        cand_text = prompt.strip()
+        if not re.search(r'^(?:cancel|stop|menu)\b', clean_p):
+            if _extract_location(cand_text):
+                loc_ext = _extract_location(cand_text)
+                database.save_draft_donation(phone, {"city": loc_ext, "address": cand_text})
+            return translation_service.get_localized_message("location_pin_required_reminder", lang=lang)
+
+    # 9c. General Entity Extraction on natural messages
+    if curr_q not in ["LANGUAGE_MENU", "WHATSAPP_LOCATION"] and not prompt.strip().isdigit() and prompt.strip() not in ["1", "2", "3", "4", "5", "6"]:
+        entities = voice_service.extract_donation_entities(prompt)
+        draft_patch = {}
+        is_correction = any(w in clean_p for w in ["actually", "change", "instead", "not", "correct", "update", "rather"])
+
+        if entities.get("food_type") and (not existing_draft.get("food_type") or is_correction):
+            draft_patch["food_type"] = entities["food_type"]
+        if entities.get("quantity") is not None and (not existing_draft.get("quantity") or is_correction or "have" in clean_p):
+            draft_patch["quantity"] = entities["quantity"]
+            if entities.get("unit"):
+                draft_patch["unit"] = entities["unit"]
+        if entities.get("city") and (not existing_draft.get("city") or is_correction or "city" in clean_p or "location" in clean_p or "pickup" in clean_p or "in " in clean_p or "at " in clean_p):
+            draft_patch["city"] = entities["city"]
+            draft_patch["location"] = entities["city"]
+        if entities.get("pickup_deadline") and (not existing_draft.get("pickup_deadline") or is_correction or "time" in clean_p or "deadline" in clean_p or "before" in clean_p or "until" in clean_p):
+            draft_patch["pickup_deadline"] = entities["pickup_deadline"]
+        if entities.get("donor_name") and (not existing_draft.get("donor_name") or is_correction or "name is" in clean_p):
+            draft_patch["donor_name"] = entities["donor_name"]
+            draft_patch["business_name"] = entities["donor_name"]
+        if entities.get("dietary_info") and entities["dietary_info"] != "Standard":
+            draft_patch["dietary_info"] = entities["dietary_info"]
+
+        if draft_patch and phone:
+            existing_draft = database.save_draft_donation(phone, draft_patch)
+            loc_reg = draft_patch.get("city") or existing_draft.get("city")
+            if loc_reg:
+                tools.register_donor(
+                    name=draft_patch.get("donor_name") or existing_draft.get("donor_name") or (user.get("display_name") if user else "Donor Partner"),
+                    location=loc_reg,
+                    phone=phone
+                )
+
     # 9d. If User Pressed "1" or says "I want to donate" with no draft yet, prompt for food:
     if (clean_p in ["1", "donate", "i want to donate", "donate food", "i have food", "පරිත්‍යාග", "தானம்"]) and not existing_draft.get("food_type"):
         if phone:
@@ -1092,7 +1256,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         or (user.get("city") if user else None)
     )
     deadline_val = existing_draft.get("pickup_deadline")
-    loc_received = bool(existing_draft.get("location_received") or existing_draft.get("latitude"))
+    loc_received = bool(existing_draft.get("location_received") or (existing_draft.get("latitude") and existing_draft.get("longitude")) or city_val)
 
     # If all other slots (food, qty, city, deadline) were provided all-in-one, default donor name
     if not donor_name_val and (city_val and deadline_val):
@@ -1128,7 +1292,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             })
         return translation_service.get_localized_message("donor_ask_name", lang=lang, quantity=qty_val, unit=unit_val, food_type=food_val)
 
-    # Step 3: Missing City / Area
+    # Step 3: Missing City / Area / District
     if not city_val:
         if phone:
             database.set_user_conversation_state(phone, {
@@ -1148,8 +1312,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             })
         return translation_service.get_localized_message("donor_ask_deadline", lang=lang, city=city_val)
 
-    # Step 5: Missing Exact WhatsApp Location (Ask as native standalone instruction)
-    if not loc_received and not existing_draft.get("location"):
+    # Step 5: Missing Exact WhatsApp Location Pin (MANDATORY before confirmation)
+    if not loc_received:
         if phone:
             database.set_user_conversation_state(phone, {
                 "workflow": "DONATION",
@@ -1196,6 +1360,18 @@ async def run_resilient_chat(
         (active_draft and active_draft.get("food_type")) or
         conv_state.get("workflow") in ["DONATION", "VOLUNTEER", "RECIPIENT", "LANGUAGE"]
     )
+
+    is_greeting = translation_service.is_greeting_message(clean_p)
+    if is_greeting and not has_active_state:
+        logger.info(f"[Greeting Engine] Executing greeting/welcome for session '{session_id}' with prompt: '{prompt[:60]}'")
+        fallback_result = await execute_deterministic_fallback(prompt, session_id)
+        return {
+            "status": "success",
+            "result": fallback_result,
+            "agent_used": "foodrescue_coordinator",
+            "model_used": "stateful_coordinator_engine",
+            "session_id": session_id,
+        }
 
     is_domain_intent = any(w in clean_p for w in [
         "donate", "food", "packet", "meals", "rice", "curry", "bread", "biryani",

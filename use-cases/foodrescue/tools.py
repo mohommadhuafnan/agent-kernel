@@ -2010,7 +2010,7 @@ def confirm_delivery(
     database.create_audit_event_record(
         event_id=f"audit-{uuid.uuid4().hex[:8]}",
         event_type="FOOD_DELIVERED",
-        actor=vol_id,
+        actor=vol_id or "volunteer",
         related_id=target_task_id,
         metadata={"delivered_at": now, "reimbursement_lkr": reimb_amount}
     )

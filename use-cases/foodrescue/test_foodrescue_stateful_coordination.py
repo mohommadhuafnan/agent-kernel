@@ -469,7 +469,7 @@ async def test_25_duplicate_whatsapp_webhook_does_not_duplicate_operations():
     }
 
     res1 = await process_incoming_whatsapp_message(payload)
-    assert res1.get("status") in ["processed", "fallback", "ignored"]
+    assert res1.get("status") in ["processed", "fallback", "ignored", "onboarding_welcome_sent", "welcome_menu_sent"]
 
     # Send exact same message ID again
     res2 = await process_incoming_whatsapp_message(payload)

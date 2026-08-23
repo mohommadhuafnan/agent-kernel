@@ -115,6 +115,22 @@ def is_language_selection_intent(text: str, in_language_menu: bool = False) -> O
     return None
 
 
+def is_greeting_message(text: str) -> bool:
+    """Check if incoming text is a greeting or main menu intent (e.g. 'hi', 'hii', 'hiii', 'hey', 'hello', 'menu', 'help', 'start', etc.)."""
+    if not text or not isinstance(text, str):
+        return False
+    clean = text.strip().lower()
+    clean = re.sub(r'[!.,?~#@*_\-\s]+$', '', clean).strip()
+    if clean in [
+        "hi", "hii", "hiii", "hiiii", "hey", "heyy", "heyyy", "hello", "helloo", "hellooo",
+        "hlo", "hai", "haai", "hay", "hola", "ola", "start", "join", "help", "menu", "info",
+        "welcome", "greetings", "options", "6", "මෙනුව", "ආයුබෝවන්", "வணக்கம்"
+    ]:
+        return True
+    pattern = r'^(h+i+|h+e+y+|h+e+l+o+|hlo|hai|hay|hola|ola|good\s+(?:morning|afternoon|evening|day)|greetings\b|welcome\b|menu\b|help\b|start\b|options\b|ආයුබෝවන්|வணக்கம்)'
+    return bool(re.match(pattern, clean))
+
+
 def is_response_mode_intent(text: str) -> Optional[str]:
     """Detect if user is setting response mode preference ('voice' or 'text')."""
     if not text:
@@ -354,9 +370,9 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
 
     "donor_ask_deadline": {
-        "en": "Got it. 📍 {city}\n\nWhat time will the food be available until for collection / pickup? (e.g. 'Before 8 PM', 'By 6:30 PM')",
-        "si": "තේරුම් ගත්තා. 📍 {city}\n\nආහාර එකතු කරගත හැකි අවසන් වේලාව කවදාද? (උදා. 'රාත්‍රී 8 ට පෙර')",
-        "ta": "புரிந்தது. 📍 {city}\n\nஉணவை எத்தனை மணிக்குள் சேகரிக்க முடியும்? (எ.கா. 'இரவு 8 மணிக்கு முன்')"
+        "en": "Got it. 📍 Pickup location: {city}\n\nWhat time will the food donation be available until for collection / pickup? (e.g. 'Before 8 PM', 'By 6:30 PM')",
+        "si": "තේරුම් ගත්තා. 📍 ලබාගැනීමේ ස්ථානය: {city}\n\nආහාර පරිත්‍යාගය එකතු කරගත හැකි අවසන් වේලාව කවදාද? (උදා. 'රාත්‍රී 8 ට පෙර')",
+        "ta": "புரிந்தது. 📍 சேகரிக்கும் இடம்: {city}\n\nஉணவு தானத்தை எத்தனை மணிக்குள் சேகரிக்க முடியும்? (எ.கா. 'இரவு 8 மணிக்கு முன்')"
     },
 
     "donor_ask_location_native": {
@@ -937,6 +953,70 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "நன்றி கூரியர் *{vol_name}*! *{org_name}* இற்கான உணவு டெலிவரி ({food_info}) முடிவடைந்தது.\n"
             "• 💰 *போக்குவரத்து கட்டணம்*: LKR {transport_cost} பதிவு செய்யப்பட்டது.\n\n"
             "நீங்கள் இப்போது புதிய பணிகளுக்குத் தயார் (AVAILABLE) என மாற்றப்பட்டுள்ளீர்கள். 🚚"
+        )
+    },
+
+    # 14. Mandatory WhatsApp Location Pin Templates
+    "donor_ask_location_native": {
+        "en": (
+            "📍 **Step 5: Share Your Exact Pickup Location Pin**\n\n"
+            "To connect your donation with nearby volunteer couriers and calculate exact road directions, please share your WhatsApp location pin:\n\n"
+            "👉 **Tap ➕ (or 📎) → Location → 'Send your current location' 📍**\n\n"
+            "*(This enables GraphHopper road routing and exact volunteer navigation!)*"
+        ),
+        "si": (
+            "📍 **පියවර 5: කරුණාකර ඔබගේ ආහාර ලබාගැනීමේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "ස්වේච්ඡා කුරියර්වරයාට නිවැරදි GPS මඟපෙන්වීම ලබාදීමට කරුණාකර ඔබගේ ස්ථානය එවන්න:\n\n"
+            "👉 **➕ (හෝ 📎) ඔබා → ස්ථානය (Location) → 'වත්මන් ස්ථානය එවන්න' 📍 යවන්න**"
+        ),
+        "ta": (
+            "📍 **படி 5: உங்கள் உணவு எடுக்கும் இடத்தை (Location Pin) பகிரவும்**\n\n"
+            "தன்னார்வலர் உங்கள் இடத்திற்கு வந்து உணவை எடுக்க, தயவுசெய்து உங்கள் இருப்பிடத்தை வாட்ஸ்அப் மூலம் அனுப்பவும்:\n\n"
+            "👉 **➕ (அல்லது 📎) அழுத்தி → Location → 'Send your current location' 📍 என்பதை அனுப்பவும்**"
+        )
+    },
+
+    "volunteer_ask_location_pin": {
+        "en": (
+            "📍 **Courier Location Pin Required**\n\n"
+            "Please share your courier current/live location on WhatsApp:\n\n"
+            "👉 **Tap ➕ (or 📎) → Location → 'Send your current location' 📍**\n\n"
+            "This enables our AI to calculate exact road distances and match you with the nearest food pickups!"
+        ),
+        "si": (
+            "📍 **කුරියර් ස්ථානය අවශ්‍ය වේ**\n\n"
+            "කරුණාකර ඔබගේ වත්මන් ස්ථානය WhatsApp හරහා එවන්න:\n\n"
+            "👉 **➕ (හෝ 📎) ඔබා → ස්ථානය (Location) → 'වත්මන් ස්ථානය එවන්න' 📍 යවන්න**"
+        ),
+        "ta": (
+            "📍 **கூரியர் இருப்பிடம் தேவை**\n\n"
+            "தயவுசெய்து உங்கள் தற்போதைய இருப்பிடத்தை வாட்ஸ்அப் மூலம் பகிரவும்:\n\n"
+            "👉 **➕ (அல்லது 📎) அழுத்தி → Location → 'Send your current location' 📍 என்பதை அனுப்பவும்**"
+        )
+    },
+
+    "location_pin_required_reminder": {
+        "en": (
+            "📍 **WhatsApp Location Pin Required**\n\n"
+            "We received your message, but to dispatch a volunteer courier and calculate road distances accurately, please share your exact location pin:\n\n"
+            "1️⃣ Tap the **➕** (or **📎** paperclip) icon\n"
+            "2️⃣ Select **Location**\n"
+            "3️⃣ Tap **'Send your current location'** 📍\n\n"
+            "Once received, we will proceed immediately! 🚚"
+        ),
+        "si": (
+            "📍 **WhatsApp ස්ථාන පින් එක (Location Pin) අවශ්‍ය වේ**\n\n"
+            "නිවැරදිව කුරියර්වරයෙකු සම්බන්ධ කිරීමට කරුණාකර ඔබගේ ස්ථානය එවන්න:\n\n"
+            "1️⃣ **➕** (හෝ **📎**) ඔබන්න\n"
+            "2️⃣ **ස්ථානය (Location)** තෝරන්න\n"
+            "3️⃣ **'වත්මන් ස්ථානය එවන්න'** 📍 ඔබන්න"
+        ),
+        "ta": (
+            "📍 **வாட்ஸ்அப் இருப்பிடப் பகிர்வு (Location Pin) தேவை**\n\n"
+            "துல்லியமாக தூரத்தைக் கணக்கிட உங்கள் இருப்பிடத்தை அனுப்பவும்:\n\n"
+            "1️⃣ **➕** (அல்லது **📎**) அழுத்தவும்\n"
+            "2️⃣ **Location** ஐத் தேர்ந்தெடுக்கவும்\n"
+            "3️⃣ **'Send your current location'** 📍 என்பதை அழுத்தவும்"
         )
     }
 }

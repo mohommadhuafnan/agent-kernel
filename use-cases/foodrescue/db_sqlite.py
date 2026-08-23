@@ -328,34 +328,32 @@ class SQLiteRepository(BaseRepository):
         conn = self._get_connection()
         with conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM donors")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute(
-                    "INSERT INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", self._now())
-                )
-                cursor.execute(
-                    "INSERT INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", self._now())
-                )
+            cursor.execute(
+                "INSERT OR IGNORE INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", self._now())
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", self._now())
+            )
 
-                cursor.execute(
-                    "INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("o1", "Community Kitchen Colombo", "+9419876543", "Colombo, Dehiwala", "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items", "200 meals", "always", "Colombo 7", self._now())
-                )
-                cursor.execute(
-                    "INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("o2", "Hope Food Bank", "+9419876544", "Colombo 3, Colombo 4, Wellawatte", "dry rations, bakery items, vegetarian", "100 meals", "daytime", "Colombo 4", self._now())
-                )
+            cursor.execute(
+                "INSERT OR IGNORE INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o1", "Community Kitchen Colombo", "+9419876543", "Colombo, Dehiwala", "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items", "200 meals", "always", "Colombo 7", self._now())
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("o2", "Hope Food Bank", "+9419876544", "Colombo 3, Colombo 4, Wellawatte", "dry rations, bakery items, vegetarian", "100 meals", "daytime", "Colombo 4", self._now())
+            )
 
-                cursor.execute(
-                    "INSERT INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("v1", "Amara Silva", "+94771234567", "Colombo, Colombo 3, Colombo 4, Colombo 7", "immediate, evenings", "available", "Colombo 3", self._now())
-                )
-                cursor.execute(
-                    "INSERT INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "weekends, evenings", "available", "Colombo 5", self._now())
-                )
+            cursor.execute(
+                "INSERT OR IGNORE INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("v1", "Amara Silva", "+94771234567", "Colombo, Colombo 3, Colombo 4, Colombo 7", "immediate, evenings", "available", "Colombo 3", self._now())
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "weekends, evenings", "available", "Colombo 5", self._now())
+            )
 
         conn.close()
 

@@ -201,9 +201,9 @@ class MongoRepository(BaseRepository):
             pass
 
     def seed_test_data(self) -> None:
-        """Seed master data if donors collection is empty."""
+        """Seed master data if collections are empty."""
+        now = self._now()
         if self.donors_col.count_documents({}) == 0:
-            now = self._now()
             self.donors_col.insert_many([
                 {
                     "id": "d1",
@@ -223,6 +223,7 @@ class MongoRepository(BaseRepository):
                 }
             ])
 
+        if self.organizations_col.count_documents({}) == 0:
             self.organizations_col.insert_many([
                 {
                     "id": "o1",
