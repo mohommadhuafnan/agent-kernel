@@ -387,6 +387,36 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception as e:
                     logger.warning(f"Failed to send WhatsApp organization delivery notification: {e}")
 
+    # 4. Organization Connects to Donation / Donation Matched
+    elif any(w in reply_text.lower() for w in ["found an available food match", "connected to", "food match in"]) and ("organization" in reply_text.lower() or "recipient" in reply_text.lower()):
+        org = database.get_organization_by_phone(from_number)
+        org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+        org_dist = (org.get("service_area") or org.get("location") or "Kegalle") if org else "Kegalle"
+        import routing
+        clean_dist = routing.resolve_district(org_dist) or "Kegalle"
+        
+        all_dons = database.get_all_donations()
+        matched_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_ASSIGNED"]]
+        if matched_dons:
+            top_don = matched_dons[0]
+            donor = database.get_donor_record(top_don.get("donor_id", "")) if top_don else None
+            donor_phone = donor.get("phone") if donor else (top_don.get("donor_phone") if top_don else None)
+            if donor_phone and donor_phone != from_number:
+                donor_user = database.get_user_by_phone(donor_phone)
+                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                food_info = f"{top_don.get('quantity', 30)} {top_don.get('unit', 'meal packets')} — {top_don.get('food_type', 'Rice & Curry')}"
+                d_msg = translation_service.get_localized_message(
+                    "donation_connected_donor",
+                    lang=d_lang,
+                    org_name=org_name,
+                    district=clean_dist,
+                    food_info=food_info
+                )
+                try:
+                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp donor matched notification: {e}")
+
 
 async def process_incoming_whatsapp_message(
     message: Dict[str, Any],
@@ -581,14 +611,15 @@ async def process_incoming_whatsapp_message(
             database.set_user_conversation_state(from_number, {
                 "workflow": "LANGUAGE",
                 "current_question": "LANGUAGE_MENU",
-                "expected_input_type": "CHOICE"
+                "expected_input_type": "CHOICE",
+                "available_options": {"6": "en", "7": "si", "8": "ta"}
             })
             reply_text = (
                 "🌍 *FoodRescue AI Language Selection / භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்*:\n\n"
                 "Reply with:\n"
-                "1️⃣ English\n"
-                "2️⃣ Sinhala (සිංහල)\n"
-                "3️⃣ Tamil (தமிழ்)"
+                "6️⃣ English\n"
+                "7️⃣ Sinhala (සිංහල)\n"
+                "8️⃣ Tamil (தமிழ்)"
             )
             try:
                 database.record_message(phone=from_number, sender="agent", text=reply_text)

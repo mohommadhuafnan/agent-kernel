@@ -60,17 +60,14 @@ def detect_language(text: str) -> Optional[str]:
     if latin_count / total_len > 0.5:
         return "en"
         
-    return None
-
-
 def is_language_selection_intent(text: str, in_language_menu: bool = False) -> Optional[str]:
     """Check if the user is explicitly selecting or requesting a language change.
     Handles:
     - Keywords & codes: 'sinhala', 'tamil', 'english', 'si', 'ta', 'en', 'L1'..'L3'
     - Numbers:
-        1 -> English (or Sinhala if in legacy menu)
-        2 -> Sinhala (or Tamil)
-        3 -> Tamil (or English)
+        6 -> English
+        7 -> Sinhala
+        8 -> Tamil
     - Natural language phrases:
         'change language to tamil', 'tamil please', 'தமிழ்', 'தமிழில் பேசுங்கள்', 'speak in tamil'
         'change language to sinhala', 'sinhala please', 'සිංහල', 'සිංහලෙන් කතා කරන්න', 'speak in sinhala'
@@ -86,22 +83,30 @@ def is_language_selection_intent(text: str, in_language_menu: bool = False) -> O
     if any(p in clean for p in ["සිංහල", "සිංහලෙන්", "සිංහලෙන් කතා කරන්න"]):
         return "si"
 
+    # Number-based language selection (6: English, 7: Sinhala, 8: Tamil)
+    if clean in ["6", "6️⃣", "l1", "option 6", "opt 6", "select 6"]:
+        return "en"
+    if clean in ["7", "7️⃣", "l2", "option 7", "opt 7", "select 7"]:
+        return "si"
+    if clean in ["8", "8️⃣", "l3", "option 8", "opt 8", "select 8"]:
+        return "ta"
+
     if in_language_menu:
-        if clean in ["1", "l1"]:
+        if clean in ["1"]:
             return "en"
-        elif clean in ["2", "l2"]:
+        elif clean in ["2"]:
             return "si"
-        elif clean in ["3", "l3"]:
+        elif clean in ["3"]:
             return "ta"
 
     # Exact codes or explicit change phrases
-    if clean in ["tamil", "ta", "l3"] or any(p in clean for p in ["change language to tamil", "speak in tamil", "tamil please", "change to tamil", "in tamil", "tamil language"]):
+    if clean in ["tamil", "ta"] or any(p in clean for p in ["change language to tamil", "speak in tamil", "tamil please", "change to tamil", "in tamil", "tamil language"]):
         return "ta"
 
-    if clean in ["sinhala", "si", "l2"] or any(p in clean for p in ["change language to sinhala", "speak in sinhala", "sinhala please", "change to sinhala", "in sinhala", "sinhala language"]):
+    if clean in ["sinhala", "si"] or any(p in clean for p in ["change language to sinhala", "speak in sinhala", "sinhala please", "change to sinhala", "in sinhala", "sinhala language"]):
         return "si"
 
-    if clean in ["english", "en", "l1"] or any(p in clean for p in ["speak in english", "english please", "change language to english", "change to english", "in english", "english language"]):
+    if clean in ["english", "en"] or any(p in clean for p in ["speak in english", "english please", "change language to english", "change to english", "in english", "english language"]):
         return "en"
 
     # Safe regex for standalone language names or commands
@@ -124,7 +129,7 @@ def is_greeting_message(text: str) -> bool:
     if clean in [
         "hi", "hii", "hiii", "hiiii", "hey", "heyy", "heyyy", "hello", "helloo", "hellooo",
         "hlo", "hai", "haai", "hay", "hola", "ola", "start", "join", "help", "menu", "info",
-        "welcome", "greetings", "options", "6", "මෙනුව", "ආයුබෝවන්", "வணக்கம்"
+        "welcome", "greetings", "options", "මෙනුව", "ආයුබෝවන්", "வணக்கம்"
     ]:
         return True
     pattern = r'^(h+i+|h+e+y+|h+e+l+o+|hlo|hai|hay|hola|ola|good\s+(?:morning|afternoon|evening|day)|greetings\b|welcome\b|menu\b|help\b|start\b|options\b|ආයුබෝවන්|வணக்கம்)'
@@ -160,12 +165,12 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "2️⃣ Request available food (Charities, orphanages, communities)\n"
             "3️⃣ Volunteer to collect and deliver food (Couriers & volunteers)\n"
             "4️⃣ Check your donation or pickup status\n"
-            "5️⃣ Language & Help\n\n"
-            "🌍 Choose your language / භාෂාව / மொழி:\n"
-            "1️⃣ English\n"
-            "2️⃣ Sinhala\n"
-            "3️⃣ Tamil\n\n"
-            "🎤 You can also send a voice message or simply tell me what you need (e.g. \"I have 20 meal packets in Colombo\")."
+            "5️⃣ Help & Info\n\n"
+            "🌍 Choose your language / භාෂාව තෝරන්න / மொழியைத் தேர்ந்தெடுக்கவும்:\n"
+            "6️⃣ English\n"
+            "7️⃣ Sinhala (සිංහල)\n"
+            "8️⃣ Tamil (தமிழ்)\n\n"
+            "🎤 You can also send a voice message or simply tell me what you need (e.g. \"I have 20 meal packets in Kegalle\")."
         ),
         "si": (
             "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු!\n\n"
@@ -175,12 +180,12 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "2️⃣ ලබාගත හැකි ආහාර ඉල්ලුම් කිරීමට (සංවිධාන සහ ප්‍රජාවන්)\n"
             "3️⃣ ආහාර එකතු කර බෙදාහැරීමට ස්වේච්ඡාවෙන් ඉදිරිපත් වීමට\n"
             "4️⃣ ඔබගේ පරිත්‍යාග හෝ බෙදාහැරීම් තත්ත්වය පරීක්ෂා කිරීමට\n"
-            "5️⃣ භාෂාව සහ උපකාර\n\n"
+            "5️⃣ උපකාර සහ තොරතුරු\n\n"
             "🌍 ඔබගේ භාෂාව තෝරන්න:\n"
-            "1️⃣ English\n"
-            "2️⃣ Sinhala\n"
-            "3️⃣ Tamil\n\n"
-            "🎤 ඔබට හඬ පණිවිඩයක් ද එවිය හැක හෝ අවශ්‍ය දේ කෙලින්ම පැවසිය හැක (උදා: \"මා ළඟ බත් පැකට් 20ක් තියෙනවා\")."
+            "6️⃣ English\n"
+            "7️⃣ Sinhala (සිංහල)\n"
+            "8️⃣ Tamil (தமிழ்)\n\n"
+            "🎤 ඔබට හඬ පණිවිඩයක් ද එවිය හැක හෝ අවශ්‍ය දේ කෙලින්ම පැවසිය හැක (උදා: \"මා ළඟ කෑගල්ලේ බත් පැකට් 20ක් තියෙනවා\")."
         ),
         "ta": (
             "👋 FoodRescue AI இற்கு அன்புடன் வரவேற்கிறோம்!\n\n"
@@ -190,12 +195,12 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "2️⃣ கிடைக்கும் உணவைக் கோர (அமைப்புகள் & தொண்டு இல்லங்கள்)\n"
             "3️⃣ உணவைச் சேகரித்து வழங்க தன்னார்வலராக உதவ\n"
             "4️⃣ உங்கள் நன்கொடை அல்லது டெலிவரி நிலையைச் சரிபார்க்க\n"
-            "5️⃣ மொழி மற்றும் உதவி\n\n"
+            "5️⃣ உதவி மற்றும் தகவல்\n\n"
             "🌍 உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:\n"
-            "1️⃣ English\n"
-            "2️⃣ Sinhala\n"
-            "3️⃣ Tamil\n\n"
-            "🎤 நீங்கள் குரல் செய்தியையும் அனுப்பலாம் அல்லது தேவையானதைக் கூறலாம் (எ.கா: \"என்னிடம் 20 பொதி சோறு உள்ளது\")."
+            "6️⃣ English\n"
+            "7️⃣ Sinhala (සිංහල)\n"
+            "8️⃣ Tamil (தமிழ்)\n\n"
+            "🎤 நீங்கள் குரல் செய்தியையும் அனுப்பலாம் அல்லது தேவையானதைக் கூறலாம் (எ.கா: \"என்னிடம் கேகாலையில் 20 பொதி சோறு உள்ளது\")."
         )
     },
 
@@ -364,9 +369,15 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
 
     "donor_ask_city": {
-        "en": "Thanks, {name}! 📍 I've noted {quantity} {unit} of {food_type}. 🍚\n\nWhich city or area is the food currently located in?",
-        "si": "ස්තූතියි, {name}! 📍 මා {food_type} {quantity} {unit} සටහන් කරගත්තා. 🍚\n\nආහාර දැනට පිහිටා ඇති නගරය හෝ ප්‍රදේශය කුමක්ද?",
-        "ta": "நன்றி, {name}! 📍 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚\n\nஉணவு தற்போது எந்த நகரம் அல்லது பகுதியில் உள்ளது?"
+        "en": "Thanks, {name}! 📍 I've noted {quantity} {unit} of {food_type}. 🍚\n\nWhich **district** or city in Sri Lanka is the food currently located in? (e.g. Kegalle, Kandy, Colombo, Gampaha, Kurunegala, Galle)",
+        "si": "ස්තූතියි, {name}! 📍 මා {food_type} {quantity} {unit} සටහන් කරගත්තා. 🍚\n\nආහාර දැනට පිහිටා ඇති **දිස්ත්‍රික්කය** හෝ නගරය කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, කුරුණෑගල, ගාල්ල)",
+        "ta": "நன்றி, {name}! 📍 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚\n\nஉணவு தற்போது இலங்கையின் எந்த **மாவட்டம்** அல்லது பகுதியில் உள்ளது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, குருநாகல், காலி)"
+    },
+
+    "donor_ask_district": {
+        "en": "Thanks, {name}! 📍 I've noted {quantity} {unit} of {food_type}. 🍚\n\nWhich **district** in Sri Lanka is the food currently located in? (e.g. Kegalle, Kandy, Colombo, Gampaha, Kurunegala, Galle)",
+        "si": "ස්තූතියි, {name}! 📍 මා {food_type} {quantity} {unit} සටහන් කරගත්තා. 🍚\n\nආහාර දැනට පිහිටා ඇති **දිස්ත්‍රික්කය** කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, කුරුණෑගල, ගාල්ල)",
+        "ta": "நன்றி, {name}! 📍 நான் {quantity} {unit} {food_type} பதிவு செய்துள்ளேன். 🍚\n\nஉணவு தற்போது இலங்கையின் எந்த **மாவட்டத்தில்** உள்ளது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, குருநாகல், காலி)"
     },
 
     "donor_ask_deadline": {
@@ -855,26 +866,32 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     # 12. Organization Support Progressive Slot-Filling
     "org_ask_name": {
         "en": (
-            "🏠 **Recipient Organization Support**\n\n"
+            "🏢 **Recipient Organization Support**\n\n"
             "👋 Welcome to FoodRescue AI! We connect charities, shelters, and community organizations with fresh surplus food.\n\n"
             "1️⃣ What is your **organization's name**? (e.g. Hope Food Home, Sri Lanka Red Cross, Colombo Care)"
         ),
         "si": (
-            "🏠 **සංවිධාන ආහාර ආධාර සේවාව**\n\n"
+            "🏢 **සංවිධාන ආහාර ආධාර සේවාව**\n\n"
             "👋 FoodRescue AI වෙත සාදරයෙන් පිළිගනිමු! සුබසාධන සංවිධාන, ළමා නිවාස සහ ප්‍රජාවන් වෙත අතිරික්ත ආහාර සම්බන්ධ කිරීමට අපි සහාය වෙමු.\n\n"
             "1️⃣ ඔබගේ **සංවිධානයේ නම** කුමක්ද? (උදා: හෝප් ෆුඩ් හෝම්, ශ්‍රී ලංකා රතු කුරුස සමාජය)"
         ),
         "ta": (
-            "🏠 **அமைப்புகளுக்கான உணவு உதவி**\n\n"
+            "🏢 **அமைப்புகளுக்கான உணவு உதவி**\n\n"
             "👋 FoodRescue AI இற்கு வரவேற்கிறோம்! தொண்டு இல்லங்கள் மற்றும் அமைப்புகளுக்கு உபரி உணவை இணைக்க உதவுகிறோம்.\n\n"
             "1️⃣ உங்கள் **அமைப்பின் பெயர்** என்ன? (எ.கா: ஹோப் ஃபுட் ஹோம், இலங்கை செஞ்சிலுவைச் சங்கம்)"
         )
     },
 
     "org_ask_city": {
-        "en": "Got it, **{org_name}**! Which **city or district** in Sri Lanka is your organization located in? (e.g. Mawanella, Kandy, Colombo, Galle, Jaffna)",
-        "si": "ස්තූතියි **{org_name}**! ඔබගේ සංවිධානය පිහිටා ඇති **නගරය හෝ දිස්ත්‍රික්කය** කුමක්ද? (උදා: මාවනැල්ල, මහනුවර, කොළඹ, ගාල්ල, යාපනය)",
-        "ta": "புரிந்தது **{org_name}**! உங்கள் அமைப்பு அமைந்துள்ள **நகரம் அல்லது மாவட்டம்** எது? (எ.கா: மாவனெல்லை, கண்டி, கொழும்பு, காலி, யாழ்ப்பாணம்)"
+        "en": "Got it, **{org_name}**! 2️⃣ Which **district** in Sri Lanka is your organization located in? (e.g. Kegalle, Kandy, Colombo, Gampaha, Galle, Jaffna)",
+        "si": "ස්තූතියි **{org_name}**! 2️⃣ ඔබගේ සංවිධානය පිහිටා ඇති **දිස්ත්‍රික්කය** කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, ගාල්ල, යාපනය)",
+        "ta": "புரிந்தது **{org_name}**! 2️⃣ உங்கள் அமைப்பு அமைந்துள்ள **மாவட்டம்** எது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, காலி, யாழ்ப்பாணம்)"
+    },
+
+    "org_ask_district": {
+        "en": "Got it, **{org_name}**! 2️⃣ Which **district** in Sri Lanka is your organization located in? (e.g. Kegalle, Kandy, Colombo, Gampaha, Galle, Jaffna)",
+        "si": "ස්තූතියි **{org_name}**! 2️⃣ ඔබගේ සංවිධානය පිහිටා ඇති **දිස්ත්‍රික්කය** කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, ගාල්ල, යාපනය)",
+        "ta": "புரிந்தது **{org_name}**! 2️⃣ உங்கள் அமைப்பு அமைந்துள்ள **மாவட்டம்** எது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, காலி, யாழ்ப்பாணம்)"
     },
 
     "org_ask_food_need": {
@@ -885,7 +902,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
 
     "org_ask_location_pin": {
         "en": (
-            "📍 **Step Required: Please Share Your Delivery Location Pin**\n\n"
+            "📍 **Step 3: Please Share Your Delivery Location Pin**\n\n"
             "Tap ➕ (or paperclip) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can calculate distance and deliver directly to your organization!"
         ),
         "si": (
@@ -895,6 +912,167 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "ta": (
             "📍 **அவசியமான படி: உங்கள் டெலிவரி இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
             "➕ (அல்லது paperclip) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும். இதன் மூலம் தன்னார்வலர்கள் தூரத்தைக் கணக்கிட்டு உணவை டெலிவரி செய்ய முடியும்!"
+        )
+    },
+
+    "org_ask_live_location": {
+        "en": (
+            "📍 **Step 3: Please Share Your Organization's Live Location Pin**\n\n"
+            "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to your door!\n\n"
+            "Also tell us what type of food and how many meal portions you need today."
+        ),
+        "si": (
+            "📍 **පියවර 3: කරුණාකර ඔබගේ සංවිධානයේ ස්ථානය WhatsApp හරහා එවන්න**\n\n"
+            "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ගෙනවිත් දිය හැක!\n\n"
+            "එසේම ඔබට අවශ්‍ය ආහාර වර්ගය හෝ ප්‍රමාණය ද සඳහන් කරන්න."
+        ),
+        "ta": (
+            "📍 **படி 3: உங்கள் அமைப்பின் நேரலை இருப்பிடத்தை (Location Pin) பகிரவும்**\n\n"
+            "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும்.\n\n"
+            "மேலும் உங்களுக்குத் தேவையான உணவு வகை அல்லது பொதிகளையும் குறிப்பிடவும்."
+        )
+    },
+
+    # Volunteer Workflow Templates
+    "vol_ask_name": {
+        "en": (
+            "❤️ **Volunteer Courier Registration**\n\n"
+            "Thank you for stepping up to rescue food in your community! 🚚\n\n"
+            "1️⃣ What is your **full name**?"
+        ),
+        "si": (
+            "❤️ **ස්වේච්ඡා කුරියර් සාමාජික ලියාපදිංචිය**\n\n"
+            "ඔබගේ ප්‍රජාවේ ආහාර සුරැකීමට ඉදිරිපත් වීම පිළිබඳව ස්තූතියි! 🚚\n\n"
+            "1️⃣ ඔබගේ **සම්පූර්ණ නම** කුමක්ද?"
+        ),
+        "ta": (
+            "❤️ **தன்னார்வ கூரியர் பதிவு**\n\n"
+            "உங்கள் சமூகத்தில் உணவை மீட்க முன்வந்ததற்கு நன்றி! 🚚\n\n"
+            "1️⃣ உங்கள் **முழுப் பெயர்** என்ன?"
+        )
+    },
+
+    "vol_ask_vehicle": {
+        "en": (
+            "Nice to meet you, **{vol_name}**! 🛵\n\n"
+            "2️⃣ What **vehicle or transport mode** will you use for deliveries?\n"
+            "(e.g. *Three-Wheeler*, *Motorbike*, *Car*, *Van*, *Bicycle*)"
+        ),
+        "si": (
+            "හමුවීම සතුටක්, **{vol_name}**! 🛵\n\n"
+            "2️⃣ බෙදාහැරීම් සඳහා ඔබ භාවිතා කරන **වාහනය හෝ ප්‍රවාහන මාදිලිය** කුමක්ද?\n"
+            "(උදා: *Three-Wheeler* (ත්‍රීරෝද රථ), *Motorbike* (යතුරුපැදි), *Car*, *Van*, *Bicycle*)"
+        ),
+        "ta": (
+            "மகிழ்ச்சி, **{vol_name}**! 🛵\n\n"
+            "2️⃣ டெலிவரி செய்ய நீங்கள் பயன்படுத்தும் **வாகனம் அல்லது போக்குவரத்து முறை** என்ன?\n"
+            "(எ.கா: *Three-Wheeler* (ஆட்டோ), *Motorbike* (பைக்), *Car*, *Van*, *Bicycle*)"
+        )
+    },
+
+    "vol_ask_district": {
+        "en": (
+            "Got it, **{vol_name}**! 📍\n\n"
+            "3️⃣ Which **district** in Sri Lanka do you live in / can you cover? (e.g. Kegalle, Kandy, Colombo, Gampaha, Kurunegala, Galle, etc.)"
+        ),
+        "si": (
+            "තේරුම් ගත්තා, **{vol_name}**! 📍\n\n"
+            "3️⃣ ඔබ ජීවත් වන / ආවරණය කළ හැකි **දිස්ත්‍රික්කය** කුමක්ද? (උදා: කෑගල්ල, මහනුවර, කොළඹ, ගම්පහ, කුරුණෑගල, ගාල්ල)"
+        ),
+        "ta": (
+            "புரிந்தது, **{vol_name}**! 📍\n\n"
+            "3️⃣ நீங்கள் வசிக்கும் அல்லது சேவை செய்யக்கூடிய **மாவட்டம்** எது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, குருநாகல், காலி)"
+        )
+    },
+
+    "vol_ask_live_location": {
+        "en": (
+            "Thank you, **{vol_name}**! 📍 Registered in **{district}** District ({vehicle}).\n\n"
+            "4️⃣ **Please share your live location pin** now so we can coordinate nearby pickups in {district}.\n\n"
+            "👉 Tap **➕ (or 📎) → Location → 'Send your current location' 📍**"
+        ),
+        "si": (
+            "ස්තූතියි, **{vol_name}**! 📍 **{district}** දිස්ත්‍රික්කයේ ({vehicle}) ලියාපදිංචි විය.\n\n"
+            "4️⃣ {district} දිස්ත්‍රික්කයේ ආහාර බෙදාහැරීම් සම්බන්ධ කිරීමට කරුණාකර ඔබගේ **වත්මන් ස්ථානය (Live Location)** එවන්න.\n\n"
+            "👉 **➕ (හෝ 📎) ඔබා → ස්ථානය (Location) → 'වත්මන් ස්ථානය එවන්න' 📍 යවන්න**"
+        ),
+        "ta": (
+            "நன்றி, **{vol_name}**! 📍 **{district}** மாவட்டத்தில் ({vehicle}) பதிவு செய்யப்பட்டது.\n\n"
+            "4️⃣ {district} மாவட்டத்தில் அருகிலுள்ள பணிகளை இணைக்க உங்கள் **இருப்பிடத்தை (Live Location Pin)** பகிரவும்.\n\n"
+            "👉 **➕ (அல்லது 📎) அழுத்தி → Location → 'Send your current location' 📍 என்பதை அனுப்பவும்**"
+        )
+    },
+
+    # Cross-Party Lifecycle Notifications
+    "donation_connected_donor": {
+        "en": (
+            "🍱 *Food Donation Connected!*\n\n"
+            "• 🏢 *Recipient*: {org_name} ({district})\n"
+            "• 🍱 *Food*: {food_info}\n"
+            "• 📍 *Status*: Your food donation has been connected to a verified recipient organization in {district}. We are assigning a local volunteer courier."
+        ),
+        "si": (
+            "🍱 *ආහාර පරිත්‍යාගය සම්බන්ධ කරන ලදී!*\n\n"
+            "• 🏢 *භාරගන්නා සංවිධානය*: {org_name} ({district})\n"
+            "• 🍱 *ආහාර*: {food_info}\n"
+            "• 📍 *තත්ත්වය*: ඔබගේ ආහාර පරිත්‍යාගය {district} හි සංවිධානයක් සමඟ සම්බන්ධ විය. ආහාර රැගෙන ඒමට ප්‍රාදේශීය ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ කරමින් සිටිමු."
+        ),
+        "ta": (
+            "🍱 *உணவு நன்கொடை இணைக்கப்பட்டது!*\n\n"
+            "• 🏢 *பெறுநர்*: {org_name} ({district})\n"
+            "• 🍱 *உணவு*: {food_info}\n"
+            "• 📍 *நிலை*: உங்கள் உணவு நன்கொடை {district} இல் உள்ள அமைப்புடன் இணைக்கப்பட்டுள்ளது. உணவை சேகரிக்க தன்னார்வலர் பணிக்கப்படுகிறார்."
+        )
+    },
+
+    "volunteer_dispatched_donor": {
+        "en": (
+            "🚚 *Volunteer Courier Assigned!*\n\n"
+            "• 👤 *Courier*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *Contact*: {vol_phone}\n"
+            "• 🍱 *Food*: {food_info}\n"
+            "• 📍 *Status*: Courier is en route to collect the food from your location.\n\n"
+            "Please have the food packed and ready! 📦"
+        ),
+        "si": (
+            "🚚 *ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ විය!*\n\n"
+            "• 👤 *කුරියර්*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *දුරකථන*: {vol_phone}\n"
+            "• 🍱 *ආහාර*: {food_info}\n"
+            "• 📍 *තත්ත්වය*: කුරියර්වරයා ආහාර ලබාගැනීමට ඔබගේ ස්ථානය වෙත පැමිණෙමින් සිටී.\n\n"
+            "කරුණාකර ආහාර සූදානම් කර තබන්න! 📦"
+        ),
+        "ta": (
+            "🚚 *தன்னார்வ கூரியர் நியமிக்கப்பட்டார்!*\n\n"
+            "• 👤 *கூரியர்*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *தொடர்பு*: {vol_phone}\n"
+            "• 🍱 *உணவு*: {food_info}\n"
+            "• 📍 *நிலை*: கூரியர் உங்கள் இடத்திற்கு உணவை சேகரிக்க வந்துகொண்டிருக்கிறார்.\n\n"
+            "உணவை தயார் நிலையில் வைத்திருக்கவும்! 📦"
+        )
+    },
+
+    "volunteer_dispatched_org": {
+        "en": (
+            "🚚 *Courier Dispatched for Your Food Delivery!*\n\n"
+            "• 👤 *Courier*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *Contact*: {vol_phone}\n"
+            "• 🍱 *Food*: {food_info}\n"
+            "• 📍 *Status*: Courier is heading to collect the meals from {donor_name} in {district}."
+        ),
+        "si": (
+            "🚚 *ඔබගේ ආහාර බෙදාහැරීම සඳහා කුරියර්වරයෙකු ගමන් ආරම්භ කර ඇත!*\n\n"
+            "• 👤 *කුරියර්*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *දුරකථන*: {vol_phone}\n"
+            "• 🍱 *ආහාර*: {food_info}\n"
+            "• 📍 *තත්ත්වය*: {district} හි {donor_name} වෙතින් ආහාර එකතු කරගැනීමට කුරියර්වරයා ගමන් කරයි."
+        ),
+        "ta": (
+            "🚚 *உங்கள் உணவு டெலிவரிக்காக கூரியர் புறப்பட்டுள்ளார்!*\n\n"
+            "• 👤 *கூரியர்*: {vol_name} ({vol_vehicle})\n"
+            "• 📞 *தொடர்பு*: {vol_phone}\n"
+            "• 🍱 *உணவு*: {food_info}\n"
+            "• 📍 *நிலை*: {district} இல் உள்ள {donor_name} இடமிருந்து உணவை எடுக்க கூரியர் செல்கிறார்."
         )
     },
 

@@ -68,6 +68,278 @@ TRANSPORT_SPEEDS_KMH = {
     "van": 22.0,
 }
 
+# 25 Administrative Districts of Sri Lanka
+SRI_LANKA_DISTRICTS = [
+    "Colombo", "Gampaha", "Kalutara", "Kandy", "Matale", "Nuwara Eliya",
+    "Galle", "Matara", "Hambantota", "Jaffna", "Kilinochchi", "Mannar",
+    "Vavuniya", "Mullaitivu", "Batticaloa", "Ampara", "Trincomalee",
+    "Kurunegala", "Puttalam", "Anuradhapura", "Polonnaruwa", "Badulla",
+    "Monaragala", "Ratnapura", "Kegalle"
+]
+
+# Mapping Sri Lankan towns/suburbs to their primary district
+TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
+    # Kegalle District
+    "kegalle": "Kegalle",
+    "mawanella": "Kegalle",
+    "rambukkana": "Kegalle",
+    "ruwanwella": "Kegalle",
+    "warakapola": "Kegalle",
+    "yatiyantota": "Kegalle",
+    "dehiowita": "Kegalle",
+    "deraniyagala": "Kegalle",
+    "galigamuwa": "Kegalle",
+    "aranayaka": "Kegalle",
+    "bulathkohupitiya": "Kegalle",
+
+    # Kandy District
+    "kandy": "Kandy",
+    "peradeniya": "Kandy",
+    "katugastota": "Kandy",
+    "gampola": "Kandy",
+    "nawalapitiya": "Kandy",
+    "kundasale": "Kandy",
+    "digana": "Kandy",
+    "akurana": "Kandy",
+    "wattegama": "Kandy",
+    "gelioya": "Kandy",
+    "kadugannawa": "Kandy",
+
+    # Colombo District
+    "colombo": "Colombo",
+    "colombo 1": "Colombo", "colombo 2": "Colombo", "colombo 3": "Colombo", "colombo 4": "Colombo",
+    "colombo 5": "Colombo", "colombo 6": "Colombo", "colombo 7": "Colombo", "colombo 8": "Colombo",
+    "colombo 9": "Colombo", "colombo 10": "Colombo", "colombo 11": "Colombo", "colombo 12": "Colombo",
+    "colombo 13": "Colombo", "colombo 14": "Colombo", "colombo 15": "Colombo",
+    "kollupitiya": "Colombo",
+    "bambalapitiya": "Colombo",
+    "wellawatte": "Colombo",
+    "cinnamon gardens": "Colombo",
+    "borella": "Colombo",
+    "havelock town": "Colombo",
+    "dehiwala": "Colombo",
+    "mount lavinia": "Colombo",
+    "nugegoda": "Colombo",
+    "kotte": "Colombo",
+    "rajagiriya": "Colombo",
+    "battaramulla": "Colombo",
+    "moratuwa": "Colombo",
+    "maharagama": "Colombo",
+    "homagama": "Colombo",
+    "kolonnawa": "Colombo",
+    "malabe": "Colombo",
+    "kaduwela": "Colombo",
+    "piliyandala": "Colombo",
+    "kesbewa": "Colombo",
+    "boralesgamuwa": "Colombo",
+    "ratmalana": "Colombo",
+    "fort": "Colombo",
+
+    # Gampaha District
+    "gampaha": "Gampaha",
+    "negombo": "Gampaha",
+    "katunayake": "Gampaha",
+    "wattala": "Gampaha",
+    "kelaniya": "Gampaha",
+    "ja-ela": "Gampaha",
+    "ja ela": "Gampaha",
+    "kiribathgoda": "Gampaha",
+    "kadawatha": "Gampaha",
+    "minuwangoda": "Gampaha",
+    "divulapitiya": "Gampaha",
+    "mirigama": "Gampaha",
+    "veyangoda": "Gampaha",
+    "ragama": "Gampaha",
+    "kandana": "Gampaha",
+    "seeduwa": "Gampaha",
+
+    # Kalutara District
+    "kalutara": "Kalutara",
+    "panadura": "Kalutara",
+    "horana": "Kalutara",
+    "beruwala": "Kalutara",
+    "matugama": "Kalutara",
+    "wadduwa": "Kalutara",
+    "bandaragama": "Kalutara",
+    "aluthgama": "Kalutara",
+
+    # Galle District
+    "galle": "Galle",
+    "hikkaduwa": "Galle",
+    "karapitiya": "Galle",
+    "ambalangoda": "Galle",
+    "bentota": "Galle",
+    "elpitiya": "Galle",
+    "baddegama": "Galle",
+    "ahungalla": "Galle",
+
+    # Matara District
+    "matara": "Matara",
+    "weligama": "Matara",
+    "akuressa": "Matara",
+    "dickwella": "Matara",
+    "hakmana": "Matara",
+    "kamburupitiya": "Matara",
+    "deniyaya": "Matara",
+
+    # Hambantota District
+    "hambantota": "Hambantota",
+    "tangalle": "Hambantota",
+    "beliatta": "Hambantota",
+    "tissamaharama": "Hambantota",
+    "ambalantota": "Hambantota",
+    "kataragama": "Hambantota",
+
+    # Kurunegala District
+    "kurunegala": "Kurunegala",
+    "kuliyapitiya": "Kurunegala",
+    "narammala": "Kurunegala",
+    "wariyapola": "Kurunegala",
+    "pannala": "Kurunegala",
+    "polgahawela": "Kurunegala",
+    "giriulla": "Kurunegala",
+    "alawwa": "Kurunegala",
+    "ibbagamuwa": "Kurunegala",
+    "nikaweratiya": "Kurunegala",
+
+    # Puttalam District
+    "puttalam": "Puttalam",
+    "chilaw": "Puttalam",
+    "wennappuwa": "Puttalam",
+    "marawila": "Puttalam",
+    "dankotuwa": "Puttalam",
+    "anamaduwa": "Puttalam",
+    "nattandiya": "Puttalam",
+
+    # Jaffna District
+    "jaffna": "Jaffna",
+    "chavakachcheri": "Jaffna",
+    "point pedro": "Jaffna",
+    "nallur": "Jaffna",
+    "chunnakam": "Jaffna",
+    "valvettithurai": "Jaffna",
+
+    # Kilinochchi, Mannar, Vavuniya, Mullaitivu
+    "kilinochchi": "Kilinochchi",
+    "mannar": "Mannar",
+    "vavuniya": "Vavuniya",
+    "mullaitivu": "Mullaitivu",
+
+    # Anuradhapura District
+    "anuradhapura": "Anuradhapura",
+    "kekirawa": "Anuradhapura",
+    "medawachchiya": "Anuradhapura",
+    "tambuttegama": "Anuradhapura",
+    "eppawala": "Anuradhapura",
+    "habarana": "Anuradhapura",
+
+    # Polonnaruwa District
+    "polonnaruwa": "Polonnaruwa",
+    "kaduruwela": "Polonnaruwa",
+    "hingurakgoda": "Polonnaruwa",
+    "medirigiriya": "Polonnaruwa",
+
+    # Badulla District
+    "badulla": "Badulla",
+    "bandarawela": "Badulla",
+    "ella": "Badulla",
+    "welimada": "Badulla",
+    "haputale": "Badulla",
+    "mahiyanganaya": "Badulla",
+    "hali-ela": "Badulla",
+
+    # Monaragala District
+    "monaragala": "Monaragala",
+    "wellawaya": "Monaragala",
+    "buttala": "Monaragala",
+    "bibile": "Monaragala",
+
+    # Ratnapura District
+    "ratnapura": "Ratnapura",
+    "embilipitiya": "Ratnapura",
+    "balangoda": "Ratnapura",
+    "pelmadulla": "Ratnapura",
+    "kuruwita": "Ratnapura",
+    "eheliyagoda": "Ratnapura",
+
+    # Matale District
+    "matale": "Matale",
+    "dambulla": "Matale",
+    "sigiriya": "Matale",
+    "ukuwela": "Matale",
+    "rattota": "Matale",
+
+    # Nuwara Eliya District
+    "nuwara eliya": "Nuwara Eliya",
+    "hatton": "Nuwara Eliya",
+    "talawakele": "Nuwara Eliya",
+    "maskeliya": "Nuwara Eliya",
+    "ginigathena": "Nuwara Eliya",
+    "kotagala": "Nuwara Eliya",
+
+    # Trincomalee District
+    "trincomalee": "Trincomalee",
+    "kinniya": "Trincomalee",
+    "mutur": "Trincomalee",
+    "kantale": "Trincomalee",
+
+    # Batticaloa District
+    "batticaloa": "Batticaloa",
+    "eravur": "Batticaloa",
+    "kattankudy": "Batticaloa",
+    "valachchenai": "Batticaloa",
+    "kaluwanchikudy": "Batticaloa",
+
+    # Ampara District
+    "ampara": "Ampara",
+    "kalmunai": "Ampara",
+    "sammanthurai": "Ampara",
+    "akkaraipattu": "Ampara",
+    "pottuvil": "Ampara",
+    "sainthamaruthu": "Ampara",
+}
+
+
+def resolve_district(location_or_town_text: Optional[str], fallback_to_raw: bool = False) -> Optional[str]:
+    """Resolve a town, city, landmark, or district string to its canonical Sri Lanka District name.
+    Examples:
+        'Mawanella' -> 'Kegalle'
+        'Kegalle' -> 'Kegalle'
+        'Peradeniya' -> 'Kandy'
+        'Colombo 03' -> 'Colombo'
+        'Unknown Area' -> 'Unknown Area' (fallback)
+    """
+    if not location_or_town_text or not isinstance(location_or_town_text, str):
+        return None
+    raw = location_or_town_text.strip()
+    if not raw:
+        return None
+    clean = raw.lower()
+    
+    # Check direct district match
+    for dist in SRI_LANKA_DISTRICTS:
+        if dist.lower() == clean or dist.lower() in clean.split() or f"{dist.lower()} district" in clean:
+            return dist
+
+    # Check known town mapping (exact, then token match)
+    if clean in TOWN_TO_DISTRICT_MAP:
+        return TOWN_TO_DISTRICT_MAP[clean]
+
+    import re
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', clean)
+    for w in words:
+        if w in TOWN_TO_DISTRICT_MAP:
+            return TOWN_TO_DISTRICT_MAP[w]
+
+    for town, dist in TOWN_TO_DISTRICT_MAP.items():
+        if len(town) >= 4 and re.search(r'\b' + re.escape(town) + r'\b', clean):
+            return dist
+
+    if fallback_to_raw:
+        return raw.title()
+    return None
+
+
 # Known Landmark Coordinates (Sri Lanka)
 KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "colombo 1": (6.9344, 79.8428),
@@ -104,6 +376,7 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "kilinochchi": (9.3803, 80.3770),
     "vavuniya": (8.7542, 80.4982),
     "mannar": (8.9810, 79.9044),
+    "mullaitivu": (9.2671, 80.8142),
     "anuradhapura": (8.3114, 80.4037),
     "polonnaruwa": (7.9403, 81.0188),
     "trincomalee": (8.5874, 81.2152),
@@ -111,6 +384,7 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "ampara": (7.2912, 81.6724),
     "badulla": (6.9934, 81.0550),
     "bandarawela": (6.8333, 80.9833),
+    "monaragala": (6.8728, 81.3507),
     "nuwara eliya": (6.9497, 80.7891),
     "ratnapura": (6.6828, 80.4037),
     "hambantota": (6.1429, 81.1212),

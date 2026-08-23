@@ -625,6 +625,9 @@ class SQLiteRepository(BaseRepository):
         loc_clean = location.strip().lower()
         food_clean = food_type.strip().lower()
 
+        import routing
+        target_district = (routing.resolve_district(location) or "").lower()
+
         cursor.execute("SELECT * FROM organizations")
         all_orgs = [dict(row) for row in cursor.fetchall()]
         conn.close()
@@ -634,10 +637,15 @@ class SQLiteRepository(BaseRepository):
             score = 0
             service_area = org.get("service_area", "").lower()
             org_location = org.get("location", "").lower()
+            org_district = (routing.resolve_district(org.get("service_area") or org.get("location")) or "").lower()
             accepted_types = org.get("accepted_food_types", "").lower()
 
+            # District matching boost
+            if target_district and org_district and target_district == org_district:
+                score += 30
+
             if loc_clean in service_area or loc_clean in org_location:
-                score += 10
+                score += 15
             elif any(part.strip() in service_area for part in loc_clean.split() if len(part.strip()) > 2):
                 score += 5
 
@@ -674,19 +682,30 @@ class SQLiteRepository(BaseRepository):
         cursor = conn.cursor()
         loc_clean = location.strip().lower()
 
+        import routing
+        target_district = (routing.resolve_district(location) or "").lower()
+
         cursor.execute("SELECT * FROM volunteers WHERE current_status = 'available'")
         all_vols = [dict(row) for row in cursor.fetchall()]
         conn.close()
 
         matched_vols = []
         for vol in all_vols:
+            score = 0
             service_area = vol.get("service_area", "").lower()
             vol_loc = vol.get("location", "").lower()
+            vol_district = (routing.resolve_district(vol.get("service_area") or vol.get("location") or vol.get("current_location")) or "").lower()
+
+            if target_district and vol_district and target_district == vol_district:
+                score += 30
+
             if loc_clean in service_area or loc_clean in vol_loc:
-                vol["match_score"] = 10
-                matched_vols.append(vol)
+                score += 15
             elif any(part.strip() in service_area for part in loc_clean.split() if len(part.strip()) > 2):
-                vol["match_score"] = 5
+                score += 5
+
+            if score > 0:
+                vol["match_score"] = score
                 matched_vols.append(vol)
 
         matched_vols.sort(key=lambda x: x.get("match_score", 0), reverse=True)

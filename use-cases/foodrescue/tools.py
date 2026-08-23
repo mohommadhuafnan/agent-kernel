@@ -1070,7 +1070,8 @@ def register_organization(
     accepted_food_types: str,
     phone: Optional[str] = None,
     capacity: Optional[str] = "100 meals",
-    availability: Optional[str] = "daytime"
+    availability: Optional[str] = "daytime",
+    district: Optional[str] = None
 ) -> str:
     """Register a new recipient organization (community kitchen, shelter, food bank) profile."""
     if not name or not str(name).strip():
@@ -1080,11 +1081,13 @@ def register_organization(
     if not accepted_food_types or not str(accepted_food_types).strip():
         return json.dumps({"status": "error", "message": "accepted_food_types is required."})
 
+    import routing
     clean_name = str(name).strip()
     clean_loc = str(location).strip()
     clean_area = str(service_area).strip() if service_area and str(service_area).strip() else clean_loc
     clean_types = str(accepted_food_types).strip()
     clean_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
+    clean_dist = district or routing.resolve_district(clean_loc or clean_area) or "Kegalle"
 
     existing = database.get_organization_by_phone(clean_phone) if clean_phone else None
     if existing:
@@ -1106,6 +1109,8 @@ def register_organization(
     _set_context_val("current_organization_id", org_id)
     _set_context_val("org_name", clean_name)
     _set_context_val("current_location", clean_loc)
+    _set_context_val("district", clean_dist)
+    _set_context_val("org_district", clean_dist)
     _set_context_val("user_role", "organization")
     if clean_phone:
         _set_context_val("whatsapp_phone", clean_phone)
@@ -1115,9 +1120,10 @@ def register_organization(
         "organization_id": org_id,
         "name": clean_name,
         "location": clean_loc,
+        "district": clean_dist,
         "service_area": clean_area,
         "accepted_food_types": clean_types,
-        "message": f"Organization '{clean_name}' successfully registered with ID {org_id}."
+        "message": f"Organization '{clean_name}' successfully registered with ID {org_id} in {clean_dist} District."
     }, indent=2)
 
 
@@ -1127,7 +1133,8 @@ def register_volunteer(
     phone: Optional[str] = None,
     transport_mode: Optional[str] = "Motorbike",
     availability: Optional[str] = "immediate, evenings",
-    location: Optional[str] = None
+    location: Optional[str] = None,
+    district: Optional[str] = None
 ) -> str:
     """Register a new volunteer courier profile."""
     if not name or not str(name).strip():
@@ -1135,17 +1142,43 @@ def register_volunteer(
     if not service_area or not str(service_area).strip():
         return json.dumps({"status": "error", "message": "service_area is required for volunteer registration."})
 
+    import routing
     clean_name = str(name).strip()
     clean_area = str(service_area).strip()
     clean_loc = str(location).strip() if location and str(location).strip() else clean_area.split(",")[0].strip()
     clean_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
-    clean_mode = str(transport_mode).strip() if transport_mode and str(transport_mode).strip() else "Motorbike"
+    
+    # Normalize transport mode
+    raw_mode = str(transport_mode).strip().lower() if transport_mode else "motorbike"
+    if any(w in raw_mode for w in ["three-wheeler", "three wheeler", "three_wheeler", "tuk", "tuk-tuk", "tuktuk", "ත්‍රීරෝද", "ஆட்டோ"]):
+        clean_mode = "Three-Wheeler"
+    elif any(w in raw_mode for w in ["motorbike", "bike", "motorcycle", "scooter", "යතුරුපැදි", "பைக்", "மோட்டார்"]):
+        clean_mode = "Motorbike"
+    elif "van" in raw_mode or "වෑන්" in raw_mode or "வேன்" in raw_mode:
+        clean_mode = "Van"
+    elif "car" in raw_mode or "කාර්" in raw_mode or "கார்" in raw_mode:
+        clean_mode = "Car"
+    elif "bicycle" in raw_mode or "පාපැදි" in raw_mode or "மிதிவண்டி" in raw_mode:
+        clean_mode = "Bicycle"
+    else:
+        clean_mode = str(transport_mode).strip().title() if transport_mode else "Motorbike"
+
     clean_avail = str(availability).strip() if availability and str(availability).strip() else "immediate, evenings"
+    clean_district = str(district).strip() if district else routing.resolve_district(clean_loc or clean_area) or "Kegalle"
 
     existing = database.get_volunteer_by_phone(clean_phone) if clean_phone else None
     if existing:
         vol_id = existing["id"]
-        record = existing
+        record = database.create_volunteer_record(
+            volunteer_id=vol_id,
+            name=clean_name,
+            phone=clean_phone,
+            service_area=clean_area,
+            transport_mode=clean_mode,
+            availability=clean_avail,
+            current_status="available",
+            location=clean_loc
+        ) if not existing.get("name") or existing.get("name") == "Volunteer Courier" else existing
     else:
         vol_id = f"v-{uuid.uuid4().hex[:6]}"
         record = database.create_volunteer_record(
@@ -1162,6 +1195,10 @@ def register_volunteer(
     _set_context_val("current_volunteer_id", vol_id)
     _set_context_val("volunteer_name", clean_name)
     _set_context_val("current_location", clean_loc)
+    _set_context_val("transport_mode", clean_mode)
+    _set_context_val("volunteer_vehicle", clean_mode)
+    _set_context_val("district", clean_district)
+    _set_context_val("volunteer_district", clean_district)
     _set_context_val("user_role", "volunteer")
     if clean_phone:
         _set_context_val("whatsapp_phone", clean_phone)
@@ -1171,9 +1208,10 @@ def register_volunteer(
         "volunteer_id": vol_id,
         "name": clean_name,
         "service_area": clean_area,
+        "district": clean_district,
         "transport_mode": clean_mode,
         "availability": clean_avail,
-        "message": f"Volunteer '{clean_name}' successfully registered with ID {vol_id}."
+        "message": f"Volunteer '{clean_name}' successfully registered with ID {vol_id} ({clean_mode} in {clean_district})."
     }, indent=2)
 
 
