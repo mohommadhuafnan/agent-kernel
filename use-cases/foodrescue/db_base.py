@@ -536,4 +536,60 @@ class BaseRepository(ABC):
         """Update dynamic transport reimbursement cost configuration."""
         pass
 
+    # QR Code Handover Verification Persistence
+    @abstractmethod
+    def create_qr_code_record(
+        self,
+        qr_id: str,
+        task_id: str,
+        donation_id: str,
+        qr_type: str,
+        token: str,
+        token_hash: str,
+        donor_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        assigned_volunteer_id: Optional[str] = None,
+        status: str = "ACTIVE",
+        created_at: Optional[str] = None,
+        expires_at: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Create a new secure handover verification QR code record."""
+        pass
+
+    @abstractmethod
+    def get_qr_code_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a QR code record by its raw verification token."""
+        pass
+
+    @abstractmethod
+    def get_qr_codes_for_task(self, task_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all QR code records associated with a pickup task."""
+        pass
+
+    @abstractmethod
+    def get_qr_code_by_id(self, qr_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a QR code record by its primary ID."""
+        pass
+
+    @abstractmethod
+    def verify_qr_code_record(
+        self,
+        token: str,
+        volunteer_id: Optional[str] = None,
+        gps_coords: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Atomically verify a physical handover QR code and advance task lifecycle status."""
+        pass
+
+    @abstractmethod
+    def get_all_qr_codes(
+        self,
+        status: Optional[str] = None,
+        qr_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Retrieve all QR codes with optional status or type filtering."""
+        pass
+
+
 

@@ -214,6 +214,10 @@ BOUND_TOOLS = GoogleADKToolBuilder.bind([
     tools.update_draft_donation,
     tools.get_draft_donation,
     tools.clear_draft_donation,
+    # Physical Handover QR Verification Tools
+    tools.generate_handover_qr,
+    tools.verify_handover_qr,
+    tools.get_task_qr_verification,
 ])
 
 # Canonical FoodRescue AI Coordinator Agent

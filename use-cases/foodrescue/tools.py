@@ -2372,3 +2372,97 @@ def clear_draft_donation(phone: Optional[str] = None) -> str:
         database.clear_draft_donation(target_phone)
     _set_context_val("active_draft", {})
     return json.dumps({"status": "success", "message": "Draft donation cleared."}, indent=2)
+
+
+# =============================================================================
+# QR CODE HANDOVER VERIFICATION TOOLS
+# =============================================================================
+
+def generate_handover_qr(task_id: str, qr_type: str = "PICKUP") -> str:
+    """Generate a task-specific physical handover verification QR code record and token."""
+    import qr_service
+    clean_task_id = str(task_id).strip()
+    clean_type = qr_type.strip().upper()
+    if clean_type not in ["PICKUP", "DELIVERY"]:
+        clean_type = "PICKUP"
+
+    task = database.get_pickup_task_record(clean_task_id)
+    if not task:
+        return json.dumps({"status": "error", "message": f"Task '{clean_task_id}' not found."}, indent=2)
+
+    donation_id = task.get("donation_id", "don-unknown")
+    org_id = task.get("organization_id")
+    vol_id = task.get("volunteer_id")
+    don = database.get_donation_record(donation_id)
+    donor_id = don.get("donor_id") if don else None
+
+    # Check for existing active token
+    existing = database.get_qr_codes_for_task(clean_task_id)
+    active_qr = next((q for q in existing if q.get("qr_type") == clean_type and q.get("status") == "ACTIVE"), None)
+    if active_qr:
+        token = active_qr["token"]
+    else:
+        prefix = "PK" if clean_type == "PICKUP" else "DL"
+        token = qr_service.generate_secure_token(prefix)
+        active_qr = database.create_qr_code_record(
+            qr_id=f"qr-{prefix.lower()}-{clean_task_id}",
+            task_id=clean_task_id,
+            donation_id=donation_id,
+            qr_type=clean_type,
+            token=token,
+            token_hash=qr_service.hash_token(token),
+            donor_id=donor_id,
+            organization_id=org_id,
+            assigned_volunteer_id=vol_id,
+            status="ACTIVE"
+        )
+
+    verif_url = qr_service.build_verification_url(clean_type, token)
+    img_url = f"{qr_service.get_base_url()}/api/qr/{token}.png"
+
+    return json.dumps({
+        "status": "success",
+        "qr_id": active_qr.get("id"),
+        "task_id": clean_task_id,
+        "qr_type": clean_type,
+        "token": token,
+        "verification_url": verif_url,
+        "qr_image_url": img_url,
+        "qr_status": active_qr.get("status", "ACTIVE")
+    }, indent=2)
+
+
+def verify_handover_qr(token: str, volunteer_id: Optional[str] = None, current_coordinates: Optional[str] = None) -> str:
+    """Verify a physical handover QR code token and transition the task lifecycle state."""
+    clean_token = str(token).strip()
+    if not clean_token:
+        return json.dumps({"status": "error", "message": "Token cannot be empty."}, indent=2)
+
+    vol_id = str(volunteer_id).strip() if volunteer_id else _get_context_val("current_volunteer_id")
+    coords = None
+    if current_coordinates:
+        try:
+            coords = json.loads(current_coordinates) if isinstance(current_coordinates, str) else current_coordinates
+        except Exception:
+            pass
+
+    res = database.verify_qr_code_record(clean_token, volunteer_id=vol_id, gps_coords=coords)
+    return json.dumps(res, indent=2)
+
+
+def get_task_qr_verification(task_id: str) -> str:
+    """Retrieve all physical handover QR codes and verification statuses for a task."""
+    clean_id = str(task_id).strip()
+    import qr_service
+    qrs = database.get_qr_codes_for_task(clean_id)
+    enriched = []
+    for q in qrs:
+        t = q.get("token", "")
+        qr_type = q.get("qr_type", "PICKUP")
+        enriched.append({
+            **q,
+            "verification_url": qr_service.build_verification_url(qr_type, t),
+            "qr_image_url": f"{qr_service.get_base_url()}/api/qr/{t}.png"
+        })
+    return json.dumps({"status": "success", "task_id": clean_id, "qr_codes": enriched}, indent=2)
+

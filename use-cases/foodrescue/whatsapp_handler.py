@@ -166,6 +166,49 @@ async def send_whatsapp_message(to_number: str, text: str, reply_to_message_id: 
     return {"status": "sent", "results": results}
 
 
+async def send_whatsapp_image(
+    to_number: str,
+    image_url: str,
+    caption: Optional[str] = None,
+    reply_to_message_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Send a WhatsApp image message via Meta Graph API v24.0."""
+    access_token = get_access_token()
+    phone_number_id = get_phone_number_id()
+
+    if not access_token:
+        logger.info(f"[WhatsApp Mock Image Delivery] To: {to_number} | Image: {image_url} | Caption: {caption[:60] if caption else ''}...")
+        return {"status": "mock_delivered", "to": to_number, "image_url": image_url, "caption": caption}
+
+    url = f"https://graph.facebook.com/{DEFAULT_API_VERSION}/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+    payload: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_number,
+        "type": "image",
+        "image": {
+            "link": image_url,
+        }
+    }
+    if caption:
+        payload["image"]["caption"] = caption[:1024]
+    if reply_to_message_id:
+        payload["context"] = {"message_id": reply_to_message_id}
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            return {"status": "sent", "result": resp.json()}
+        except Exception as exc:
+            logger.error(f"Error sending WhatsApp image to {to_number}: {exc}")
+            # Graceful fallback to text message with link
+            fallback_text = f"{caption}\n\n🔐 QR Code Link: {image_url}" if caption else f"🔐 QR Code Link: {image_url}"
+            return await send_whatsapp_message(to_number=to_number, text=fallback_text)
+
+
 # In-memory LRU/dedup set for processed Meta message IDs (prevents double processing of retried webhook deliveries)
 PROCESSED_MESSAGE_IDS: set = set()
 MAX_DEDUP_CACHE_SIZE = 10000
@@ -226,37 +269,62 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         if target_task:
             don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
-            food_info = (
-                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "30 meal packets — Rice & Curry"
-            )
-
-            # Notify Donor
             donor = database.get_donor_record(don.get("donor_id", "")) if don else None
-            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
-            if donor_phone and donor_phone != from_number:
-                d_msg = (
-                    f"🚚 *Volunteer Courier Assigned!*\n\n"
-                    f"• 👤 *Courier*: {vol_name} ({vol_mode})\n"
-                    f"• 📞 *Contact*: {vol_phone}\n"
-                    f"• 🍱 *Food*: {food_info}\n"
-                    f"• 📍 *Status*: Courier is on the way to pick up the food from your location.\n\n"
-                    f"Please have the food packed and ready for pickup! 📦"
-                )
-                donor_user = database.get_user_by_phone(donor_phone)
-                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
-                d_msg = translation_service.translate_message_if_needed(d_msg, target_lang=d_lang)
-                try:
-                    await send_whatsapp_message(to_number=donor_phone, text=d_msg)
-                except Exception as e:
-                    logger.warning(f"Failed to send WhatsApp donor assignment notification: {e}")
-
-            # Notify Recipient Organization
             org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
+
+            food_info = (
+                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}"
+                if don
+                else "30 meal packets of Rice & Curry"
+            )
+
+            # Generate or retrieve active Pickup QR for this task
+            import qr_service
+            task_qrs = database.get_qr_codes_for_task(target_task["id"])
+            pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
+            if not pk_qr:
+                pk_token = qr_service.generate_secure_token("PK")
+                pk_qr = database.create_qr_code_record(
+                    qr_id=f"qr-pk-{target_task['id']}",
+                    task_id=target_task["id"],
+                    donation_id=don_id or "don-unknown",
+                    qr_type="PICKUP",
+                    token=pk_token,
+                    token_hash=qr_service.hash_token(pk_token),
+                    donor_id=donor.get("id") if donor else (don.get("donor_id") if don else None),
+                    organization_id=org_id,
+                    assigned_volunteer_id=vol.get("id") if vol else None,
+                    status="ACTIVE"
+                )
+            pk_token = pk_qr.get("token")
+            verif_url = qr_service.build_verification_url("PICKUP", pk_token)
+            qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
+
+            # Notify Donor with Pickup QR Image & Instructions
+            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+            if donor_phone and donor_phone != from_number:
+                donor_user = database.get_user_by_phone(donor_phone)
+                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+                d_msg = translation_service.get_localized_message(
+                    "donor_pickup_qr_instructions",
+                    lang=d_lang,
+                    volunteer_name=vol_name,
+                    transport_mode=vol_mode,
+                    food_info=food_info,
+                    task_id=target_task["id"],
+                    verification_url=verif_url
+                )
+                try:
+                    await send_whatsapp_image(to_number=donor_phone, image_url=qr_img_url, caption=d_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send WhatsApp donor QR assignment notification: {e}")
+
+            # Notify Recipient Organization
             org_phone = org.get("phone") if org else None
             if org_phone and org_phone != from_number:
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
                 o_msg = (
                     f"🚚 *Courier Dispatched for Your Food Delivery!*\n\n"
                     f"• 👤 *Courier*: {vol_name} ({vol_mode})\n"
@@ -264,13 +332,21 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     f"• 🍱 *Food*: {food_info}\n"
                     f"• 📍 *Status*: Courier is heading to the donor location to collect the meals."
                 )
-                org_user = database.get_user_by_phone(org_phone)
-                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
                 o_msg = translation_service.translate_message_if_needed(o_msg, target_lang=o_lang)
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
                     logger.warning(f"Failed to send WhatsApp organization assignment notification: {e}")
+
+            # Send Pickup QR scanning instructions to Volunteer
+            if vol_phone:
+                vol_user = database.get_user_by_phone(vol_phone)
+                v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+                v_instr = translation_service.get_localized_message("volunteer_ask_pickup_qr", lang=v_lang)
+                try:
+                    await send_whatsapp_message(to_number=vol_phone, text=v_instr)
+                except Exception as e:
+                    logger.warning(f"Failed to send volunteer pickup scan instructions: {e}")
 
     # 2. Volunteer Confirms Collection ("Collected", "Got the food")
     elif any(
@@ -441,7 +517,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
 
             import routing
-            task_dist = routing.resolve_district(donor_loc) or "Kegalle"
+            task_dist = routing.resolve_district(donor_loc) or routing.resolve_district(org.get("location") if org else "") or "Kegalle"
 
             # Send notification to Organization
             if org_phone and org_phone != from_number:
@@ -468,8 +544,12 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             dist_vols = [
                 v
                 for v in all_vols
-                if v.get("status") in ["AVAILABLE", "ACTIVE"]
-                and routing.resolve_district(v.get("service_area") or v.get("location") or "") == task_dist
+                if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
+                and (
+                    routing.resolve_district(v.get("service_area") or v.get("location") or "") == task_dist
+                    or not v.get("service_area")
+                    or v.get("service_area") == "Sri Lanka"
+                )
             ]
             import resilient_executor
 
@@ -557,6 +637,193 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                         await send_whatsapp_message(to_number=donor_phone, text=d_msg)
                     except Exception as e:
                         logger.warning(f"Failed to send WhatsApp donor matched notification: {e}")
+
+
+async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: Optional[str] = None) -> None:
+    """Send real-time WhatsApp cross-notifications upon successful Pickup QR verification."""
+    task = database.get_pickup_task_record(task_id)
+    if not task:
+        return
+
+    don_id = task.get("donation_id")
+    don = database.get_donation_record(don_id) if don_id else None
+    donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+    org_id = task.get("organization_id")
+    org = database.get_organization_record(org_id) if org_id else None
+
+    vol_ref = volunteer_id or task.get("volunteer_id")
+    vol = database.get_volunteer_record(vol_ref) or database.get_volunteer_by_phone(vol_ref) if vol_ref else None
+    vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+    vol_phone = vol.get("phone") if vol else (vol_ref if vol_ref and str(vol_ref).isdigit() else None)
+
+    food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets of Rice & Curry"
+    donor_loc = don.get("pickup_location") or don.get("location") or "Donor Location" if don else "Donor Location"
+    org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+    org_loc = org.get("location") or org.get("service_area") or task.get("delivery_location") or "Recipient Location"
+    import datetime
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    import qr_service
+    # Generate Delivery QR for the Organization if not already active
+    task_qrs = database.get_qr_codes_for_task(task_id)
+    dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
+    if not dl_qr:
+        dl_token = qr_service.generate_secure_token("DL")
+        dl_qr = database.create_qr_code_record(
+            qr_id=f"qr-dl-{task_id}",
+            task_id=task_id,
+            donation_id=don_id or "don-unknown",
+            qr_type="DELIVERY",
+            token=dl_token,
+            token_hash=qr_service.hash_token(dl_token),
+            donor_id=donor.get("id") if donor else (don.get("donor_id") if don else None),
+            organization_id=org_id,
+            assigned_volunteer_id=vol.get("id") if vol else None,
+            status="ACTIVE"
+        )
+    dl_token = dl_qr.get("token")
+    dl_verif_url = qr_service.build_verification_url("DELIVERY", dl_token)
+    dl_qr_img = f"{qr_service.get_base_url()}/api/qr/{dl_token}.png"
+
+    # 1. Notify Donor: Food collected & on the way
+    donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+    if donor_phone:
+        donor_user = database.get_user_by_phone(donor_phone)
+        d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+        d_msg = translation_service.get_localized_message(
+            "qr_pickup_verified_donor",
+            lang=d_lang,
+            food_info=food_info,
+            volunteer_name=vol_name,
+            task_id=task_id,
+            donor_location=donor_loc,
+            timestamp=now_str
+        )
+        try:
+            await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR pickup notification to donor: {e}")
+
+    # 2. Notify Organization with Delivery QR Image
+    org_phone = org.get("phone") if org else None
+    if org_phone:
+        org_user = database.get_user_by_phone(org_phone)
+        o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+        o_msg = translation_service.get_localized_message(
+            "org_delivery_qr_instructions",
+            lang=o_lang,
+            food_info=food_info,
+            volunteer_name=vol_name,
+            task_id=task_id,
+            verification_url=dl_verif_url
+        )
+        try:
+            await send_whatsapp_image(to_number=org_phone, image_url=dl_qr_img, caption=o_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR delivery instructions to org: {e}")
+
+    # 3. Notify Volunteer with route navigation to Recipient Organization
+    if vol_phone:
+        vol_user = database.get_user_by_phone(vol_phone)
+        v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+        import resilient_executor
+        ext = resilient_executor._get_task_extended_metrics(task, vol)
+        v_msg = translation_service.get_localized_message(
+            "qr_pickup_verified_volunteer",
+            lang=v_lang,
+            food_info=food_info,
+            org_name=org_name,
+            org_location=org_loc,
+            directions_link=ext.get("directions_link", f"https://www.google.com/maps/dir/?api=1&destination={org_loc.replace(' ', '+')}")
+        )
+        try:
+            await send_whatsapp_message(to_number=vol_phone, text=v_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR pickup confirmation to volunteer: {e}")
+
+
+async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id: Optional[str] = None) -> None:
+    """Send real-time WhatsApp cross-notifications upon successful Delivery QR verification."""
+    task = database.get_pickup_task_record(task_id)
+    if not task:
+        return
+
+    don_id = task.get("donation_id")
+    don = database.get_donation_record(don_id) if don_id else None
+    donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+    org_id = task.get("organization_id")
+    org = database.get_organization_record(org_id) if org_id else None
+
+    vol_ref = volunteer_id or task.get("volunteer_id")
+    vol = database.get_volunteer_record(vol_ref) or database.get_volunteer_by_phone(vol_ref) if vol_ref else None
+    vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+    vol_phone = vol.get("phone") if vol else (vol_ref if vol_ref and str(vol_ref).isdigit() else None)
+
+    food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}" if don else "30 meal packets of Rice & Curry"
+    org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+    org_loc = org.get("location") or org.get("service_area") or task.get("delivery_location") or "Recipient Location"
+    import datetime
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    import resilient_executor
+    ext = resilient_executor._get_task_extended_metrics(task, vol)
+    est_cost = ext.get("est_cost", 350.0)
+
+    # 1. Notify Organization
+    org_phone = org.get("phone") if org else None
+    if org_phone:
+        org_user = database.get_user_by_phone(org_phone)
+        o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+        o_msg = translation_service.get_localized_message(
+            "qr_delivery_verified_org",
+            lang=o_lang,
+            food_info=food_info,
+            volunteer_name=vol_name,
+            task_id=task_id,
+            timestamp=now_str
+        )
+        try:
+            await send_whatsapp_message(to_number=org_phone, text=o_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR delivery notification to org: {e}")
+
+    # 2. Notify Donor
+    donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+    if donor_phone:
+        donor_user = database.get_user_by_phone(donor_phone)
+        d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+        d_msg = translation_service.get_localized_message(
+            "qr_delivery_verified_donor",
+            lang=d_lang,
+            org_name=org_name,
+            food_info=food_info,
+            volunteer_name=vol_name,
+            org_location=org_loc,
+            timestamp=now_str
+        )
+        try:
+            await send_whatsapp_message(to_number=donor_phone, text=d_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR delivery notification to donor: {e}")
+
+    # 3. Notify Volunteer with calculated transport reimbursement
+    if vol_phone:
+        vol_user = database.get_user_by_phone(vol_phone)
+        v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+        v_msg = translation_service.get_localized_message(
+            "qr_delivery_verified_volunteer",
+            lang=v_lang,
+            food_info=food_info,
+            org_name=org_name,
+            task_id=task_id,
+            timestamp=now_str,
+            est_cost=f"{est_cost:.2f}" if isinstance(est_cost, (int, float)) else str(est_cost)
+        )
+        try:
+            await send_whatsapp_message(to_number=vol_phone, text=v_msg)
+        except Exception as e:
+            logger.warning(f"Failed to send QR delivery confirmation to volunteer: {e}")
+
 
 
 async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

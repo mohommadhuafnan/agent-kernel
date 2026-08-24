@@ -134,3 +134,78 @@ async def test_security_cross_notifications():
     # Volunteer confirms delivery
     deliver_reply = "🎉 Delivery Completed! DELIVERED"
     await whatsapp_handler.dispatch_lifecycle_cross_notifications("Delivered", deliver_reply, from_number=vol_phone)
+
+
+def test_safe_template_formatting_no_unrendered_braces():
+    """Verify that get_localized_message never returns unrendered {placeholder} strings."""
+    import translation_service
+
+    # Test with partial kwargs
+    msg = translation_service.get_localized_message(
+        "org_matched_notify_donor",
+        lang="en",
+        donation_id="don-12345",
+        district="Kegalle",
+        org_name="Sara Food Home",
+        org_location="Zahira Rd, Hinguloya",
+    )
+    assert "don-12345" in msg
+    assert "Sara Food Home" in msg
+    assert "Kegalle" in msg
+    assert "Zahira Rd, Hinguloya" in msg
+    assert "{" not in msg, f"Found unrendered brace in: {msg}"
+    assert "}" not in msg, f"Found unrendered brace in: {msg}"
+
+
+def test_district_and_town_resolution_kegalle_hinguloya():
+    """Verify that Hinguloya and Sabaragamuwa addresses correctly resolve to Kegalle district."""
+    assert routing.resolve_district("Zahira Rd, Hinguloya, 71500, Sabaragamuwa, LK") == "Kegalle"
+    assert routing.resolve_district("Hinguloya") == "Kegalle"
+    assert routing.resolve_district("Mawanella, Kegalle") == "Kegalle"
+
+    coords = routing.geocode_location("Zahira Rd, Hinguloya, 71500, Sabaragamuwa, LK")
+    assert coords is not None
+    assert round(coords[0], 2) == 7.24
+    assert round(coords[1], 2) == 80.46
+
+
+@pytest.mark.asyncio
+async def test_volunteer_auto_dispatch_in_kegalle_district():
+    """Verify that when a donation connects with an organization in Kegalle, volunteers in Kegalle receive task offers."""
+    from unittest.mock import patch, AsyncMock
+
+    donor_phone = "94770006666"
+    org_phone = "94770007777"
+    vol_phone = "94770008888"
+
+    database.create_or_update_user(phone=donor_phone, display_name="Test Donor", preferred_language="en", onboarding_completed=True)
+    database.create_donor_record("donor-keg", "Test Donor", donor_phone, "Zahira Rd, Hinguloya, 71500, Sabaragamuwa, LK")
+    database.create_organization_record("org-keg", "Sara Food Kitchen", org_phone, "Mawanella, Kegalle", "Prepared Meals")
+    database.create_volunteer_record("vol-keg", "Mushan Courier", vol_phone, "Kegalle", "Motorbike", current_status="available")
+
+    don = database.create_donation_record("don-keg-1", "donor-keg", "Rice & Curry", 20, "portions", "Standard", "Zahira Rd, Hinguloya, 71500, Sabaragamuwa, LK", "Now", "8 PM")
+    task = database.create_pickup_task_record("task-keg-1", "don-keg-1", "org-keg", "Zahira Rd, Hinguloya, 71500, Sabaragamuwa, LK", "Mawanella, Kegalle", "8 PM")
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+        reply = "✅ **Connected with Sara Food Kitchen!**\n\nWe have sent your donation details to Sara Food Kitchen."
+        await whatsapp_handler.dispatch_lifecycle_cross_notifications("Accept", reply, from_number=donor_phone)
+
+        # Ensure volunteer was dispatched notification
+        vol_notified = any(call.kwargs.get("to_number") == vol_phone for call in mock_send.call_args_list)
+        assert vol_notified, "Volunteer in Kegalle was not dispatched notification"
+
+
+def test_api_locations_kegalle_markers_and_center():
+    """Verify /api/locations endpoint properly resolves Kegalle locations without defaulting to Colombo."""
+    database.create_organization_record("org-keg-map", "Sara Food Kitchen", "94770007777", "Mawanella, Kegalle", "Prepared Meals")
+    database.create_volunteer_record("vol-keg-map", "Mushan Courier", "94770008888", "Kegalle", "Motorbike", current_status="available")
+
+    res = client.get("/api/locations")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert len(data["markers"]) >= 2
+    # Check that center is around Kegalle (lat ~7.25, lng ~80.35 or 80.44), not Colombo (6.92)
+    assert data["center"]["lat"] > 7.0
+    assert data["center"]["lng"] > 80.0

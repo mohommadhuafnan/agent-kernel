@@ -1525,8 +1525,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             dist_vols = [
                 v
                 for v in all_vols
-                if v.get("status") in ["AVAILABLE", "ACTIVE"]
-                and routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
+                if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
+                and (
+                    routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
+                    or not v.get("service_area")
+                    or v.get("service_area") == "Sri Lanka"
+                )
             ]
 
             # If task created and volunteers available in district, offer to available volunteer(s)
@@ -1646,6 +1650,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 return translation_service.get_localized_message(
                     "org_matched_notify_donor",
                     lang=lang,
+                    donation_id=don_id,
                     district=don_dist,
                     org_name=org_name,
                     org_location=org_loc,

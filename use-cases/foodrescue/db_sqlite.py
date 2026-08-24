@@ -8,6 +8,7 @@ import sqlite3
 import os
 import datetime
 import json
+import uuid
 from typing import List, Dict, Any, Optional
 from db_base import BaseRepository
 
@@ -238,6 +239,29 @@ class SQLiteRepository(BaseRepository):
                 updated_at TEXT NOT NULL
             )
             ''')
+
+            # Physical Handover QR Codes
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS qr_codes (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                donation_id TEXT NOT NULL,
+                qr_type TEXT NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                token_hash TEXT,
+                donor_id TEXT,
+                organization_id TEXT,
+                assigned_volunteer_id TEXT,
+                status TEXT NOT NULL DEFAULT 'ACTIVE',
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                verified_at TEXT,
+                verified_by TEXT,
+                metadata TEXT
+            )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes (token)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_task ON qr_codes (task_id)')
 
             # Table migrations for existing sqlite databases
             vol_cols = [
@@ -1036,6 +1060,7 @@ class SQLiteRepository(BaseRepository):
                 "messages",
                 "pickup_location_history",
                 "reimbursements",
+                "qr_codes",
                 "pickup_tasks",
                 "notifications",
                 "donations",
@@ -2084,5 +2109,232 @@ class SQLiteRepository(BaseRepository):
             ''', (val_json, now, val_json, now))
         conn.close()
         return settings
+
+    # QR Code Handover Verification Persistence
+    def create_qr_code_record(
+        self,
+        qr_id: str,
+        task_id: str,
+        donation_id: str,
+        qr_type: str,
+        token: str,
+        token_hash: str,
+        donor_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        assigned_volunteer_id: Optional[str] = None,
+        status: str = "ACTIVE",
+        created_at: Optional[str] = None,
+        expires_at: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        conn = self._get_connection()
+        now = created_at or self._now()
+        meta_json = json.dumps(metadata) if metadata else None
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            INSERT OR REPLACE INTO qr_codes (
+                id, task_id, donation_id, qr_type, token, token_hash,
+                donor_id, organization_id, assigned_volunteer_id,
+                status, created_at, expires_at, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                qr_id, task_id, donation_id, qr_type.upper(), token, token_hash,
+                donor_id, organization_id, assigned_volunteer_id,
+                status.upper(), now, expires_at, meta_json
+            ))
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM qr_codes WHERE id = ?", (qr_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else {}
+
+    def get_qr_code_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        if not token:
+            return None
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM qr_codes WHERE token = ?", (token.strip(),))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_qr_codes_for_task(self, task_id: str) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM qr_codes WHERE task_id = ? ORDER BY created_at ASC", (task_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_qr_code_by_id(self, qr_id: str) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM qr_codes WHERE id = ?", (qr_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_all_qr_codes(
+        self,
+        status: Optional[str] = None,
+        qr_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        query = "SELECT * FROM qr_codes WHERE 1=1"
+        params = []
+        if status:
+            query += " AND status = ?"
+            params.append(status.upper())
+        if qr_type:
+            query += " AND qr_type = ?"
+            params.append(qr_type.upper())
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def verify_qr_code_record(
+        self,
+        token: str,
+        volunteer_id: Optional[str] = None,
+        gps_coords: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Atomically verify a physical handover QR code and advance task lifecycle status."""
+        qr = self.get_qr_code_by_token(token)
+        if not qr:
+            return {"success": False, "error": "INVALID_TOKEN", "message": "This FoodRescue verification code is not valid."}
+
+        qr_status = qr.get("status", "ACTIVE")
+        if qr_status == "VERIFIED":
+            return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+        if qr_status == "EXPIRED":
+            return {"success": False, "error": "EXPIRED", "message": "This QR code has expired. Please request a new verification code."}
+        if qr_status != "ACTIVE":
+            return {"success": False, "error": "INACTIVE", "message": f"This QR code is {qr_status} and cannot be verified."}
+
+        task_id = qr.get("task_id")
+        task = self.get_pickup_task_record(task_id)
+        if not task:
+            return {"success": False, "error": "TASK_NOT_FOUND", "message": "Associated pickup task not found."}
+
+        donation_id = qr.get("donation_id")
+        qr_type = qr.get("qr_type", "PICKUP").upper()
+        now = self._now()
+        effective_vol_id = volunteer_id or qr.get("assigned_volunteer_id") or task.get("volunteer_id")
+
+        # Authorization: verify volunteer matches assigned volunteer if provided
+        assigned_vol_id = task.get("volunteer_id") or qr.get("assigned_volunteer_id")
+        if volunteer_id and assigned_vol_id:
+            vol_assigned = self.get_volunteer_record(assigned_vol_id) or self.get_volunteer_by_phone(assigned_vol_id)
+            v_provided = self.get_volunteer_record(volunteer_id) or self.get_volunteer_by_phone(volunteer_id)
+            if vol_assigned and v_provided and vol_assigned.get("id") != v_provided.get("id"):
+                return {"success": False, "error": "UNAUTHORIZED_VOLUNTEER", "message": "This QR code belongs to another assigned volunteer."}
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            if qr_type == "PICKUP":
+                # Check status
+                if task.get("status") in ["COLLECTED", "IN_TRANSIT", "DELIVERED", "COMPLETED"]:
+                    return {"success": False, "error": "ALREADY_COLLECTED", "message": "This donation has already been collected."}
+
+                # 1. Update QR Code status
+                cursor.execute('''
+                UPDATE qr_codes
+                SET status = 'VERIFIED', verified_at = ?, verified_by = ?
+                WHERE token = ? AND status = 'ACTIVE'
+                ''', (now, effective_vol_id, token.strip()))
+
+                if cursor.rowcount == 0:
+                    return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
+                # 2. Update Pickup Task to COLLECTED
+                cursor.execute('''
+                UPDATE pickup_tasks
+                SET status = 'COLLECTED', delivery_status = 'IN_TRANSIT', food_collected_at = ?, updated_at = ?
+                WHERE id = ?
+                ''', (now, now, task_id))
+
+                # 3. Update Donation to COLLECTED
+                if donation_id:
+                    cursor.execute('''
+                    UPDATE donations
+                    SET status = 'COLLECTED', updated_at = ?
+                    WHERE id = ?
+                    ''', (now, donation_id))
+
+                # 4. Audit Log
+                audit_id = f"aud-{uuid.uuid4().hex[:8]}"
+                cursor.execute('''
+                INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at)
+                VALUES (?, 'PICKUP_QR_VERIFIED', ?, ?, ?, ?)
+                ''', (audit_id, str(effective_vol_id or 'volunteer'), task_id, json.dumps({"token": token, "gps": gps_coords}), now))
+
+            elif qr_type == "DELIVERY":
+                # Check that pickup was already done
+                if task.get("status") not in ["COLLECTED", "IN_TRANSIT"]:
+                    if task.get("status") in ["DELIVERED", "COMPLETED"]:
+                        return {"success": False, "error": "ALREADY_DELIVERED", "message": "This delivery has already been completed."}
+                    return {"success": False, "error": "NOT_YET_COLLECTED", "message": "Cannot verify delivery before the food has been collected from the donor."}
+
+                # 1. Update QR Code status
+                cursor.execute('''
+                UPDATE qr_codes
+                SET status = 'VERIFIED', verified_at = ?, verified_by = ?
+                WHERE token = ? AND status = 'ACTIVE'
+                ''', (now, effective_vol_id, token.strip()))
+
+                if cursor.rowcount == 0:
+                    return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
+                # 2. Update Pickup Task to DELIVERED & COMPLETED
+                cursor.execute('''
+                UPDATE pickup_tasks
+                SET status = 'COMPLETED', delivery_status = 'DELIVERED', food_delivered_at = ?, updated_at = ?
+                WHERE id = ?
+                ''', (now, now, task_id))
+
+                # 3. Update Donation to DELIVERED
+                if donation_id:
+                    cursor.execute('''
+                    UPDATE donations
+                    SET status = 'DELIVERED', updated_at = ?
+                    WHERE id = ?
+                    ''', (now, donation_id))
+
+                # 4. Release Volunteer back to AVAILABLE
+                if effective_vol_id:
+                    cursor.execute('''
+                    UPDATE volunteers
+                    SET current_status = 'available', availability_status = 'AVAILABLE'
+                    WHERE id = ? OR phone = ?
+                    ''', (effective_vol_id, effective_vol_id))
+
+                # 5. Audit Log
+                audit_id = f"aud-{uuid.uuid4().hex[:8]}"
+                cursor.execute('''
+                INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at)
+                VALUES (?, 'DELIVERY_QR_VERIFIED', ?, ?, ?, ?)
+                ''', (audit_id, str(effective_vol_id or 'volunteer'), task_id, json.dumps({"token": token, "gps": gps_coords}), now))
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        updated_task = self.get_pickup_task_record(task_id)
+        return {
+            "success": True,
+            "qr_type": qr_type,
+            "task_id": task_id,
+            "donation_id": donation_id,
+            "verified_at": now,
+            "verified_by": effective_vol_id,
+            "task": updated_task,
+        }
+
 
 

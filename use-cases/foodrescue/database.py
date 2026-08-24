@@ -620,12 +620,71 @@ def update_transport_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     return get_repository().update_transport_settings(settings=settings)
 
 
-def reset_database_data(wipe_all: bool = False) -> None:
-    return get_repository().reset_database_data(wipe_all=wipe_all)
+# QR Code Handover Verification Persistence
+def create_qr_code_record(
+    qr_id: str,
+    task_id: str,
+    donation_id: str,
+    qr_type: str,
+    token: str,
+    token_hash: str,
+    donor_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
+    assigned_volunteer_id: Optional[str] = None,
+    status: str = "ACTIVE",
+    created_at: Optional[str] = None,
+    expires_at: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    return get_repository().create_qr_code_record(
+        qr_id=qr_id,
+        task_id=task_id,
+        donation_id=donation_id,
+        qr_type=qr_type,
+        token=token,
+        token_hash=token_hash,
+        donor_id=donor_id,
+        organization_id=organization_id,
+        assigned_volunteer_id=assigned_volunteer_id,
+        status=status,
+        created_at=created_at,
+        expires_at=expires_at,
+        metadata=metadata
+    )
 
 
-def seed_test_data() -> None:
-    return get_repository().seed_test_data()
+def get_qr_code_by_token(token: str) -> Optional[Dict[str, Any]]:
+    return get_repository().get_qr_code_by_token(token=token)
+
+
+def get_qr_codes_for_task(task_id: str) -> List[Dict[str, Any]]:
+    return get_repository().get_qr_codes_for_task(task_id=task_id)
+
+
+def get_qr_code_by_id(qr_id: str) -> Optional[Dict[str, Any]]:
+    return get_repository().get_qr_code_by_id(qr_id=qr_id)
+
+
+def verify_qr_code_record(
+    token: str,
+    volunteer_id: Optional[str] = None,
+    gps_coords: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    return get_repository().verify_qr_code_record(
+        token=token,
+        volunteer_id=volunteer_id,
+        gps_coords=gps_coords
+    )
+
+
+def get_all_qr_codes(
+    status: Optional[str] = None,
+    qr_type: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    return get_repository().get_all_qr_codes(
+        status=status,
+        qr_type=qr_type
+    )
 
 
 # SQLite backwards-compatibility helpers
@@ -640,3 +699,5 @@ def get_connection():
         return repo._get_connection()
     from db_sqlite import SQLiteRepository
     return SQLiteRepository()._get_connection()
+
+

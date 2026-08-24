@@ -9,6 +9,8 @@ Provides:
 import os
 import re
 import json
+import string
+import collections
 import logging
 import requests
 from typing import Optional, Dict, Any, List
@@ -982,37 +984,22 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
     "donation_ask_food_type": {
         "en": (
-            "🍱 *What type of Food do you have for Donation?*\n\n"
-            "1️⃣ Rice & Curry\n"
-            "2️⃣ Bread & Bakery\n"
-            "3️⃣ Vegetarian Meals\n"
-            "4️⃣ Biryani\n"
-            "5️⃣ Other\n\n"
-            "Reply with a number or simply describe the food."
+            "🍱 **What type of Food do you have for Donation?**\n\n"
+            "Please enter the food type and details (e.g. *Rice & Curry*, *Cooked Meals*, *Bakery items*, *Biryani*, etc.)."
         ),
         "si": (
-            "🍱 *ඔබ සතුව පරිත්‍යාගය සඳහා ඇති ආහාර වර්ගය කුමක්ද?*\n\n"
-            "1️⃣ බත් සහ ව්‍යංජන\n"
-            "2️⃣ පාන් සහ බේකරි නිෂ්පාදන\n"
-            "3️⃣ නිර්මාංශ ආහාර\n"
-            "4️⃣ බිරියානි\n"
-            "5️⃣ වෙනත්\n\n"
-            "අංකය හෝ ආහාර පිළිබඳ විස්තරය එවන්න."
+            "🍱 **ඔබ සතුව පරිත්‍යාගය සඳහා ඇති ආහාර වර්ගය කුමක්ද?**\n\n"
+            "කරුණාකර ආහාර වර්ගය සහ විස්තරය ඇතුළත් කරන්න (උදා: *බත් සහ ව්‍යංජන*, *පිසූ ආහාර*, *බේකරි නිෂ්පාදන*, *බිරියානි* ආදිය)."
         ),
         "ta": (
-            "🍱 *தானம் செய்ய உங்களிடம் என்ன வகை உணவு உள்ளது?*\n\n"
-            "1️⃣ சோறும் கறியும்\n"
-            "2️⃣ ரொட்டி & பேக்கரி\n"
-            "3️⃣ சைவ உணவுகள்\n"
-            "4️⃣ பிரியாணி\n"
-            "5️⃣ மற்றவை\n\n"
-            "எண்ணை உள்ளிடவும் அல்லது உணவை விவரிக்கவும்."
+            "🍱 **தானம் செய்ய உங்களிடம் என்ன வகை உணவு உள்ளது?**\n\n"
+            "உணவு வகை மற்றும் விபரங்களை உள்ளிடவும் (எ.கா: *சோறும் கறியும்*, *சமைத்த உணவு*, *பேக்கரி பொருட்கள்*, *பிரியாணி* போன்றவை)."
         ),
     },
     "donation_ask_food_type_simple": {
-        "en": "🍱 *What type of food do you have available?* (e.g. Rice, Bread, Vegetarian Meals)",
-        "si": "🍱 *ඔබ සතුව ඇති ආහාර වර්ගය කුමක්ද?* (උදා: බත්, පාන්, නිර්මාංශ ආහාර)",
-        "ta": "🍱 *உங்களிடம் என்ன வகை உணவு உள்ளது?* (எ.கா: சோறு, ரொட்டி, சைவ உணவு)",
+        "en": "🍱 **What type of food do you have available?** (e.g. Rice & Curry, Cooked Meals, Bakery items)",
+        "si": "🍱 **ඔබ සතුව ඇති ආහාර වර්ගය කුමක්ද?** (උදා: බත් සහ ව්‍යංජන, පිසූ ආහාර, බේකරි නිෂ්පාදන)",
+        "ta": "🍱 **உங்களிடம் என்ன வகை உணவு உள்ளது?** (எ.கா: சோறும் கறியும், சமைத்த உணவு, பேக்கரி பொருட்கள்)",
     },
     # 12. Organization Support Progressive Slot-Filling
     "org_ask_name": {
@@ -1329,12 +1316,323 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "3️⃣ **'Send your current location'** 📍 என்பதை அழுத்தவும்"
         ),
     },
+    "donor_pickup_qr_instructions": {
+        "en": (
+            "📦 **Pickup Verification**\n\n"
+            "Your volunteer ({volunteer_name}) has been assigned to collect your donation!\n\n"
+            "Please show the **Pickup QR Code** below to the volunteer. The volunteer will scan this QR code to securely confirm that the food has been handed over. 🔐\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "🚚 **Volunteer:** {volunteer_name} ({transport_mode})\n"
+            "🆔 **Task ID:** {task_id}\n\n"
+            "🔗 *Verification Link:* {verification_url}"
+        ),
+        "si": (
+            "📦 **ආහාර ලබාගැනීම තහවුරු කිරීම (Pickup QR)**\n\n"
+            "ඔබගේ පරිත්‍යාගය ලබාගැනීමට ස්වේච්ඡා සාමාජික {volunteer_name} පැමිණෙමින් සිටී!\n\n"
+            "ස්වේච්ඡා සාමාජිකයා පැමිණි පසු කරුණාකර පහත **Pickup QR Code** එක පෙන්වන්න. ආහාර භාරදීම තහවුරු කිරීමට ඔවුන් මෙය ස්කෑන් කරනු ඇත. 🔐\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "🚚 **ස්වේච්ඡා සාමාජික:** {volunteer_name} ({transport_mode})\n"
+            "🆔 **කාර්ය අංකය:** {task_id}"
+        ),
+        "ta": (
+            "📦 **உணவு ஒப்படைப்பு சரிபார்ப்பு (Pickup QR)**\n\n"
+            "உங்கள் உணவுப் பங்களிப்பைப் பெற தன்னார்வலர் {volunteer_name} நியமிக்கப்பட்டுள்ளார்!\n\n"
+            "தன்னார்வலர் வந்தவுடன் தயவுசெய்து கீழே உள்ள **Pickup QR Code** ஐக் காண்பிக்கவும். உணவு பாதுகாப்பாக ஒப்படைக்கப்பட்டதை உறுதிப்படுத்த அவர்கள் இதை ஸ்கேன் செய்வார்கள். 🔐\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "🚚 **தன்னார்வலர்:** {volunteer_name} ({transport_mode})\n"
+            "🆔 **பணி எண்:** {task_id}"
+        ),
+    },
+    "org_delivery_qr_instructions": {
+        "en": (
+            "📦 **Delivery Verification**\n\n"
+            "Your FoodRescue AI volunteer ({volunteer_name}) has arrived with your donation!\n\n"
+            "Please show the **Delivery QR Code** below to the volunteer. The volunteer will scan it after the food has been handed over. 🔐\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "🚚 **Volunteer:** {volunteer_name}\n"
+            "🆔 **Task ID:** {task_id}\n\n"
+            "🔗 *Verification Link:* {verification_url}"
+        ),
+        "si": (
+            "📦 **ආහාර භාරගැනීම තහවුරු කිරීම (Delivery QR)**\n\n"
+            "ඔබගේ සංවිධානයට පරිත්‍යාගය රැගෙන ස්වේච්ඡා සාමාජික {volunteer_name} පැමිණ ඇත!\n\n"
+            "ආහාර භාරගත් පසු කරුණාකර පහත **Delivery QR Code** එක ස්වේච්ඡා සාමාජිකයාට පෙන්වන්න. ඔවුන් මෙය ස්කෑන් කර භාරදීම සම්පූර්ණ කරනු ඇත. 🔐\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "🚚 **ස්වේච්ඡා සාමාජික:** {volunteer_name}\n"
+            "🆔 **කාර්ය අංකය:** {task_id}"
+        ),
+        "ta": (
+            "📦 **டெலிவரி சரிபார்ப்பு (Delivery QR)**\n\n"
+            "உங்கள் அமைப்பிற்கான உணவுப் பங்களிப்புடன் தன்னார்வலர் {volunteer_name} வந்துள்ளார்!\n\n"
+            "உணவைப் பெற்ற பிறகு கீழே உள்ள **Delivery QR Code** ஐத் தன்னார்வலரிடம் காண்பிக்கவும். அவர்கள் இதை ஸ்கேன் செய்து டெலிவரியை முடிப்பார்கள். 🔐\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "🚚 **தன்னார்வலர்:** {volunteer_name}\n"
+            "🆔 **பணி எண்:** {task_id}"
+        ),
+    },
+    "volunteer_ask_pickup_qr": {
+        "en": (
+            "📦 **Pickup Verification Instructions**\n\n"
+            "When you arrive at the donor location, please ask the donor to show their **Pickup QR Code** on their phone.\n"
+            "Scan the QR code with your phone camera to securely confirm food collection! 📸"
+        ),
+        "si": (
+            "📦 **ආහාර ලබාගැනීම තහවුරු කිරීම**\n\n"
+            "පරිත්‍යාගශීලියා වෙත ළඟා වූ පසු, ඔවුන්ගේ දුරකථනයේ ඇති **Pickup QR Code** එක පෙන්වන්නැයි ඉල්ලා සිටින්න.\n"
+            "ඔබගේ දුරකථන කැමරාවෙන් එය ස්කෑන් කර ලබාගැනීම තහවුරු කරන්න! 📸"
+        ),
+        "ta": (
+            "📦 **உணவு பெறுதல் சரிபார்ப்பு**\n\n"
+            "உணவு வழங்குபவரிடம் சென்றடைந்ததும், அவரது தொலைபேசியில் உள்ள **Pickup QR Code** ஐக் காண்பிக்குமாறு கேட்கவும்.\n"
+            "உங்கள் மொபைல் கேமரா மூலம் அதை ஸ்கேன் செய்து உறுதிப்படுத்தவும்! 📸"
+        ),
+    },
+    "volunteer_ask_delivery_qr": {
+        "en": (
+            "📦 **Delivery Verification Instructions**\n\n"
+            "You have arrived at the recipient organization! 🏢\n\n"
+            "Please ask the organization representative to show their **Delivery QR Code**.\n"
+            "Scan the QR code with your phone camera after handing over the food to complete the delivery."
+        ),
+        "si": (
+            "📦 **බෙදාහැරීම තහවුරු කිරීම**\n\n"
+            "ඔබ ලබන්නාගේ සංවිධානය වෙත ළඟා වී ඇත! 🏢\n\n"
+            "ආහාර භාරදීමෙන් පසු සංවිධාන නියෝජිතයාගෙන් ඔවුන්ගේ **Delivery QR Code** එක පෙන්වන්නැයි ඉල්ලා සිටින්න.\n"
+            "එය ස්කෑන් කර මෙම කාර්යය සම්පූර්ණ කරන්න."
+        ),
+        "ta": (
+            "📦 **டெலிவரி சரிபார்ப்பு**\n\n"
+            "நீங்கள் உணவு பெறும் அமைப்பை அடைந்துவிட்டீர்கள்! 🏢\n\n"
+            "உணவை ஒப்படைத்த பிறகு அமைப்பின் பிரதிநிதியிடம் அவர்களின் **Delivery QR Code** ஐக் காண்பிக்குமாறு கேட்கவும்.\n"
+            "அதை ஸ்கேன் செய்து பணியை நிறைவு செய்யவும்."
+        ),
+    },
+    "qr_pickup_verified_donor": {
+        "en": (
+            "✅ **Food Pickup Confirmed**\n\n"
+            "Your donation has been successfully handed over to the volunteer.\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "👤 **Volunteer:** {volunteer_name}\n"
+            "🆔 **Task:** {task_id}\n"
+            "📍 **Pickup:** {donor_location}\n"
+            "⏰ **Collected:** {timestamp}\n\n"
+            "The food is now on its way to the recipient organization. 🚚\n\n"
+            "Thank you for helping rescue surplus food! ❤️"
+        ),
+        "si": (
+            "✅ **ආහාර ලබාගැනීම තහවුරුයි**\n\n"
+            "ඔබගේ පරිත්‍යාගය ස්වේච්ඡා සාමාජිකයා වෙත සාර්ථකව භාරදෙන ලදී.\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "👤 **ස්වේච්ඡා සාමාජික:** {volunteer_name}\n"
+            "🆔 **කාර්ය අංකය:** {task_id}\n"
+            "📍 **ස්ථානය:** {donor_location}\n"
+            "⏰ **වේලාව:** {timestamp}\n\n"
+            "ආහාර දැන් ලබන්නාගේ සංවිධානය වෙත ප්‍රවාහනය කරමින් පවතී. 🚚\n\n"
+            "අතිරික්ත ආහාර සුරැකීමට දායක වීම පිළිබඳව ඔබට ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "✅ **உணவு பெறப்பட்டது உறுதி செய்யப்பட்டது**\n\n"
+            "உங்கள் உணவுப் பங்களிப்பு தன்னார்வலரிடம் வெற்றிகரமாக ஒப்படைக்கப்பட்டது.\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "👤 **தன்னார்வலர்:** {volunteer_name}\n"
+            "🆔 **பணி எண்:** {task_id}\n"
+            "📍 **இடம்:** {donor_location}\n"
+            "⏰ **நேரம்:** {timestamp}\n\n"
+            "உணவு இப்போது பெறும் அமைப்பிற்கு கொண்டு செல்லப்படுகிறது. 🚚\n\n"
+            "உணவை மீட்க உதவியதற்கு நன்றி! ❤️"
+        ),
+    },
+    "qr_pickup_verified_org": {
+        "en": (
+            "📦 **Food Collected & On the Way**\n\n"
+            "The volunteer has successfully collected your matched donation.\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "👤 **Volunteer:** {volunteer_name}\n"
+            "📍 **From:** {donor_location}\n"
+            "🏢 **Delivering to:** {org_name}\n"
+            "🆔 **Task:** {task_id}\n\n"
+            "The food is now on the way to your organization. 🚚\n\n"
+            "Please show the Delivery QR Code to the volunteer when they arrive."
+        ),
+        "si": (
+            "📦 **ආහාර ලබාගෙන ප්‍රවාහනය වෙමින් පවතී**\n\n"
+            "ස්වේච්ඡා සාමාජිකයා ඔබ වෙනුවෙන් පරිත්‍යාගය ලබාගෙන ඇත.\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "👤 **ස්වේච්ඡා සාමාජික:** {volunteer_name}\n"
+            "📍 **පිටත්වූ ස්ථානය:** {donor_location}\n"
+            "🏢 **ලබන්නා:** {org_name}\n"
+            "🆔 **කාර්ය අංකය:** {task_id}\n\n"
+            "ආහාර දැන් ඔබගේ සංවිධානය වෙත රැගෙන එමින් පවතී. 🚚"
+        ),
+        "ta": (
+            "📦 **உணவு பெறப்பட்டு கொண்டுவரப்படுகிறது**\n\n"
+            "தன்னார்வலர் உங்களுக்கான உணவைப் பெற்றுக்கொண்டுள்ளார்.\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "👤 **தன்னார்வலர்:** {volunteer_name}\n"
+            "📍 **புறப்பட்ட இடம்:** {donor_location}\n"
+            "🏢 **பெறுநர்:** {org_name}\n"
+            "🆔 **பணி எண்:** {task_id}\n\n"
+            "உணவு இப்போது உங்கள் அமைப்பிற்கு கொண்டுவரப்படுகிறது. 🚚"
+        ),
+    },
+    "qr_pickup_verified_volunteer": {
+        "en": (
+            "✅ **Pickup Verified Successfully**\n\n"
+            "The donor's QR code was successfully verified.\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "🏢 **Deliver to:** {org_name}\n"
+            "📍 **Destination:** {org_location}\n"
+            "🗺️ **Route Navigation:** {directions_link}\n\n"
+            "Please proceed to the organization and complete the delivery using the organization's Delivery QR Code. 🚚"
+        ),
+        "si": (
+            "✅ **ලබාගැනීම සාර්ථකව තහවුරු විය**\n\n"
+            "පරිත්‍යාගශීලියාගේ QR කේතය සාර්ථකව තහවුරු කරගන්නා ලදී.\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "🏢 **භාරදිය යුතු සංවිධානය:** {org_name}\n"
+            "📍 **ගමනාන්තය:** {org_location}\n"
+            "🗺️ **මාර්ගය:** {directions_link}\n\n"
+            "කරුණාකර සංවිධානය වෙත ගොස් ඔවුන්ගේ Delivery QR Code එක ස්කෑන් කර භාරදීම සම්පූර්ණ කරන්න. 🚚"
+        ),
+        "ta": (
+            "✅ **பெறப்பட்டது வெற்றிகரமாக சரிபார்க்கப்பட்டது**\n\n"
+            "உணவு வழங்குபவரின் QR குறியீடு வெற்றிகரமாக சரிபார்க்கப்பட்டது.\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "🏢 **ஒப்படைக்க வேண்டிய அமைப்பு:** {org_name}\n"
+            "📍 **சேருமிடம்:** {org_location}\n"
+            "🗺️ **வழிப்பாதை:** {directions_link}\n\n"
+            "தயவுசெய்து அமைப்பிற்குச் சென்று அவர்களின் Delivery QR Code ஐ ஸ்கேன் செய்து டெலிவரியை முடிக்கவும். 🚚"
+        ),
+    },
+    "qr_delivery_verified_org": {
+        "en": (
+            "🎉 **Delivery Successfully Completed**\n\n"
+            "Your food donation has been successfully received.\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "👤 **Volunteer:** {volunteer_name}\n"
+            "🆔 **Task:** {task_id}\n"
+            "⏰ **Delivered:** {timestamp}\n\n"
+            "Thank you for helping distribute food to people in need! ❤️"
+        ),
+        "si": (
+            "🎉 **ආහාර බෙදාහැරීම සාර්ථකව අවසන් විය**\n\n"
+            "ඔබගේ සංවිධානයට ආහාර පරිත්‍යාගය සාර්ථකව ලැබී ඇත.\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "👤 **ස්වේච්ඡා සාමාජික:** {volunteer_name}\n"
+            "🆔 **කාර්ය අංකය:** {task_id}\n"
+            "⏰ **වේලාව:** {timestamp}\n\n"
+            "අවශ්‍යතා ඇති ජනතාවට ආහාර බෙදාදීමට සහාය වීම පිළිබඳව ඔබට ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "🎉 **டெலிவரி வெற்றிகரமாக நிறைவடைந்தது**\n\n"
+            "உங்கள் அமைப்பிற்கு உணவு வெற்றிகரமாகக் கிடைத்துவிட்டது.\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "👤 **தன்னார்வலர்:** {volunteer_name}\n"
+            "🆔 **பணி எண்:** {task_id}\n"
+            "⏰ **நேரம்:** {timestamp}\n\n"
+            "தேவைப்படுவோருக்கு உணவளிக்க உதவியதற்கு நன்றி! ❤️"
+        ),
+    },
+    "qr_delivery_verified_donor": {
+        "en": (
+            "🎉 **Your Donation Has Been Delivered**\n\n"
+            "Your donated food has safely reached:\n"
+            "🏢 **{org_name}**\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "👤 **Volunteer:** {volunteer_name}\n"
+            "📍 **Destination:** {org_location}\n"
+            "⏰ **Delivered:** {timestamp}\n\n"
+            "Thank you for helping rescue food and feed people in need! ❤️"
+        ),
+        "si": (
+            "🎉 **ඔබගේ පරිත්‍යාගය සාර්ථකව බෙදාහරින ලදී**\n\n"
+            "ඔබ ලබාදුන් ආහාර පහත ස්ථානයට සාර්ථකව ලැබී ඇත:\n"
+            "🏢 **{org_name}**\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "👤 **ස්වේච්ඡා සාමාජික:** {volunteer_name}\n"
+            "📍 **ගමනාන්තය:** {org_location}\n"
+            "⏰ **වේලාව:** {timestamp}\n\n"
+            "ආහාර සුරැකීමට සහ මිනිසුන්ගේ කුසගින්න නිවීමට සහාය වීම පිළිබඳව ස්තූතියි! ❤️"
+        ),
+        "ta": (
+            "🎉 **உங்கள் உணவு டெலிவரி செய்யப்பட்டது**\n\n"
+            "நீங்கள் வழங்கிய உணவு பாதுகாப்பாக சென்றடைந்தது:\n"
+            "🏢 **{org_name}**\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "👤 **தன்னார்வலர்:** {volunteer_name}\n"
+            "📍 **சேருமிடம்:** {org_location}\n"
+            "⏰ **நேரம்:** {timestamp}\n\n"
+            "உணவை மீட்டு மக்களின் பசியைப் போக்க உதவியதற்கு நன்றி! ❤️"
+        ),
+    },
+    "qr_delivery_verified_volunteer": {
+        "en": (
+            "🎉 **Delivery Verified Successfully**\n\n"
+            "The organization's Delivery QR Code has been successfully verified.\n\n"
+            "🍱 **Food:** {food_info}\n"
+            "🏢 **Organization:** {org_name}\n"
+            "🆔 **Task:** {task_id}\n"
+            "⏰ **Completed:** {timestamp}\n\n"
+            "Your delivery is now officially completed.\n"
+            "Thank you for volunteering with FoodRescue AI! ❤️\n\n"
+            "💰 **Transport Support:**\n"
+            "LKR {est_cost}"
+        ),
+        "si": (
+            "🎉 **බෙදාහැරීම සාර්ථකව තහවුරු විය**\n\n"
+            "සංවිධානයේ Delivery QR Code එක සාර්ථකව තහවුරු කරගන්නා ලදී.\n\n"
+            "🍱 **ආහාර:** {food_info}\n"
+            "🏢 **සංවිධානය:** {org_name}\n"
+            "🆔 **කාර්ය අංකය:** {task_id}\n"
+            "⏰ **වේලාව:** {timestamp}\n\n"
+            "ඔබගේ බෙදාහැරීමේ කාර්යය දැන් සාර්ථකව අවසන්.\n"
+            "FoodRescue AI සමඟ ස්වේච්ඡාවෙන් එක්වීම පිළිබඳව ස්තූතියි! ❤️\n\n"
+            "💰 **ප්‍රවාහන වියදම් ගෙවීම:**\n"
+            "LKR {est_cost}"
+        ),
+        "ta": (
+            "🎉 **டெலிவரி வெற்றிகரமாக சரிபார்க்கப்பட்டது**\n\n"
+            "அமைப்பின் Delivery QR Code வெற்றிகரமாக சரிபார்க்கப்பட்டது.\n\n"
+            "🍱 **உணவு:** {food_info}\n"
+            "🏢 **அமைப்பு:** {org_name}\n"
+            "🆔 **பணி எண்:** {task_id}\n"
+            "⏰ **நேரம்:** {timestamp}\n\n"
+            "உங்கள் டெலிவரி பணி இப்போது நிறைவுற்றது.\n"
+            "FoodRescue AI உடன் இணைந்ததற்கு நன்றி! ❤️\n\n"
+            "💰 **போக்குவரத்து கட்டணம்:**\n"
+            "LKR {est_cost}"
+        ),
+    },
 }
+
+
+
+class _SafeMessageFormatter(string.Formatter):
+    """Custom string formatter that gracefully handles missing keys and specifiers without crashing."""
+
+    def __init__(self, default: str = ""):
+        super().__init__()
+        self.default = default
+
+    def get_value(self, key, args, kwargs):
+        if isinstance(key, str):
+            val = kwargs.get(key, self.default)
+            return self.default if val is None else val
+        return super().get_value(key, args, kwargs)
+
+    def format_field(self, value, format_spec):
+        if value == self.default and format_spec:
+            return str(self.default)
+        try:
+            return super().format_field(value, format_spec)
+        except Exception:
+            return str(value)
 
 
 def get_localized_message(key: str, lang: str = "en", **kwargs) -> str:
     """Retrieve and format a localized message string for the given language.
-    Falls back to English if the translation key or language is missing."""
+    Falls back to English if the translation key or language is missing.
+    Gracefully substitutes any missing keys with sensible defaults to avoid exposing raw template braces."""
     norm_lang = lang.lower().strip() if lang else DEFAULT_LANGUAGE
     if norm_lang not in SUPPORTED_LANGUAGES:
         norm_lang = DEFAULT_LANGUAGE
@@ -1345,10 +1643,23 @@ def get_localized_message(key: str, lang: str = "en", **kwargs) -> str:
     if not template:
         return ""
 
+    # Clean None values in kwargs
+    clean_kwargs = {
+        k: ("" if v is None else v)
+        for k, v in kwargs.items()
+    }
+
     try:
-        return template.format(**kwargs)
-    except KeyError:
-        return template
+        formatter = _SafeMessageFormatter(default="")
+        formatted = formatter.vformat(template, (), clean_kwargs)
+        # Extra safety check: if any unformatted placeholder remaining like {xyz}, clean it up
+        return formatted
+    except Exception as exc:
+        logger.warning(f"Formatting error in localized message '{key}': {exc}. Falling back to default format.")
+        try:
+            return template.format_map(collections.defaultdict(str, clean_kwargs))
+        except Exception:
+            return template
 
 
 # =============================================================================

@@ -123,6 +123,11 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "hettimulla": "Kegalle",
     "pinnawala": "Kegalle",
     "nelundeniya": "Kegalle",
+    "hinguloya": "Kegalle",
+    "zahira rd": "Kegalle",
+    "zahira": "Kegalle",
+    "71500": "Kegalle",
+    "sabaragamuwa": "Kegalle",
     # Kandy District
     "kandy": "Kandy",
     "peradeniya": "Kandy",
@@ -558,6 +563,10 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "hettimulla": (7.2167, 80.3667),
     "pinnawala": (7.3014, 80.3853),
     "nelundeniya": (7.2167, 80.2167),
+    "hinguloya": (7.2405, 80.4639),
+    "zahira rd": (7.2405, 80.4639),
+    "zahira": (7.2405, 80.4639),
+    "sabaragamuwa": (7.2520, 80.3464),
     # Kandy District
     "kandy": (7.2906, 80.6337),
     "peradeniya": (7.2660, 80.5970),

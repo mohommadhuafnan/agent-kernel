@@ -6,6 +6,7 @@ CRUD operations, and proximity/dietary ranking algorithms.
 
 import os
 import datetime
+import uuid
 from typing import List, Dict, Any, Optional
 import pymongo
 from pymongo.collection import Collection
@@ -118,12 +119,21 @@ class MongoRepository(BaseRepository):
     def system_settings_col(self) -> Collection:
         return self._get_db()["system_settings"]
 
+    @property
+    def qr_codes_col(self) -> Collection:
+        return self._get_db()["qr_codes"]
+
     def setup_database(self) -> None:
         """Create necessary indexes on all collections."""
         try:
             # Donors indexes
             self.donors_col.create_index([("id", pymongo.ASCENDING)], unique=True)
-            self.donors_col.create_index([("location", pymongo.ASCENDING)])
+            self.donors_col.create_index([("phone", pymongo.ASCENDING)])
+
+            # QR codes indexes
+            self.qr_codes_col.create_index([("token", pymongo.ASCENDING)], unique=True)
+            self.qr_codes_col.create_index([("task_id", pymongo.ASCENDING)])
+            self.qr_codes_col.create_index([("id", pymongo.ASCENDING)], unique=True)
             self.audit_events_col.create_index([("id", pymongo.ASCENDING)], unique=True)
             self.audit_events_col.create_index([("related_id", pymongo.ASCENDING)])
             self.users_col.create_index([("phone_number", pymongo.ASCENDING)], unique=True)
@@ -789,6 +799,7 @@ class MongoRepository(BaseRepository):
         """Reset donations, pickup tasks, and notifications for demo resets."""
         self.pickup_location_history_col.delete_many({})
         self.reimbursements_col.delete_many({})
+        self.qr_codes_col.delete_many({})
         self.pickup_tasks_col.delete_many({})
         self.notifications_col.delete_many({})
         self.donations_col.delete_many({})
@@ -1578,5 +1589,182 @@ class MongoRepository(BaseRepository):
             upsert=True
         )
         return settings
+
+    # QR Code Handover Verification Persistence
+    def create_qr_code_record(
+        self,
+        qr_id: str,
+        task_id: str,
+        donation_id: str,
+        qr_type: str,
+        token: str,
+        token_hash: str,
+        donor_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        assigned_volunteer_id: Optional[str] = None,
+        status: str = "ACTIVE",
+        created_at: Optional[str] = None,
+        expires_at: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        now = created_at or self._now()
+        doc = {
+            "id": qr_id,
+            "task_id": task_id,
+            "donation_id": donation_id,
+            "qr_type": qr_type.upper(),
+            "token": token,
+            "token_hash": token_hash,
+            "donor_id": donor_id,
+            "organization_id": organization_id,
+            "assigned_volunteer_id": assigned_volunteer_id,
+            "status": status.upper(),
+            "created_at": now,
+            "expires_at": expires_at,
+            "verified_at": None,
+            "verified_by": None,
+            "metadata": metadata or {}
+        }
+        self.qr_codes_col.update_one({"id": qr_id}, {"$set": doc}, upsert=True)
+        res = self.qr_codes_col.find_one({"id": qr_id})
+        return self._clean_doc(res) or {}
+
+    def get_qr_code_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        if not token:
+            return None
+        doc = self.qr_codes_col.find_one({"token": token.strip()})
+        return self._clean_doc(doc)
+
+    def get_qr_codes_for_task(self, task_id: str) -> List[Dict[str, Any]]:
+        docs = list(self.qr_codes_col.find({"task_id": task_id}).sort("created_at", pymongo.ASCENDING))
+        return self._clean_docs(docs)
+
+    def get_qr_code_by_id(self, qr_id: str) -> Optional[Dict[str, Any]]:
+        doc = self.qr_codes_col.find_one({"id": qr_id})
+        return self._clean_doc(doc)
+
+    def get_all_qr_codes(
+        self,
+        status: Optional[str] = None,
+        qr_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        q: Dict[str, Any] = {}
+        if status:
+            q["status"] = status.upper()
+        if qr_type:
+            q["qr_type"] = qr_type.upper()
+        docs = list(self.qr_codes_col.find(q).sort("created_at", pymongo.DESCENDING))
+        return self._clean_docs(docs)
+
+    def verify_qr_code_record(
+        self,
+        token: str,
+        volunteer_id: Optional[str] = None,
+        gps_coords: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Atomically verify a physical handover QR code and advance task lifecycle status."""
+        qr = self.get_qr_code_by_token(token)
+        if not qr:
+            return {"success": False, "error": "INVALID_TOKEN", "message": "This FoodRescue verification code is not valid."}
+
+        qr_status = qr.get("status", "ACTIVE")
+        if qr_status == "VERIFIED":
+            return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+        if qr_status == "EXPIRED":
+            return {"success": False, "error": "EXPIRED", "message": "This QR code has expired. Please request a new verification code."}
+        if qr_status != "ACTIVE":
+            return {"success": False, "error": "INACTIVE", "message": f"This QR code is {qr_status} and cannot be verified."}
+
+        task_id = qr.get("task_id")
+        task = self.get_pickup_task_record(task_id)
+        if not task:
+            return {"success": False, "error": "TASK_NOT_FOUND", "message": "Associated pickup task not found."}
+
+        donation_id = qr.get("donation_id")
+        qr_type = qr.get("qr_type", "PICKUP").upper()
+        now = self._now()
+        effective_vol_id = volunteer_id or qr.get("assigned_volunteer_id") or task.get("volunteer_id")
+
+        # Authorization: verify volunteer matches assigned volunteer if provided
+        assigned_vol_id = task.get("volunteer_id") or qr.get("assigned_volunteer_id")
+        if volunteer_id and assigned_vol_id:
+            vol_assigned = self.get_volunteer_record(assigned_vol_id) or self.get_volunteer_by_phone(assigned_vol_id)
+            v_provided = self.get_volunteer_record(volunteer_id) or self.get_volunteer_by_phone(volunteer_id)
+            if vol_assigned and v_provided and vol_assigned.get("id") != v_provided.get("id"):
+                return {"success": False, "error": "UNAUTHORIZED_VOLUNTEER", "message": "This QR code belongs to another assigned volunteer."}
+
+        if qr_type == "PICKUP":
+            if task.get("status") in ["COLLECTED", "IN_TRANSIT", "DELIVERED", "COMPLETED"]:
+                return {"success": False, "error": "ALREADY_COLLECTED", "message": "This donation has already been collected."}
+
+            res = self.qr_codes_col.find_one_and_update(
+                {"token": token.strip(), "status": "ACTIVE"},
+                {"$set": {"status": "VERIFIED", "verified_at": now, "verified_by": effective_vol_id}},
+                return_document=pymongo.ReturnDocument.AFTER
+            )
+            if not res:
+                return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
+            self.pickup_tasks_col.update_one(
+                {"id": task_id},
+                {"$set": {"status": "COLLECTED", "delivery_status": "IN_TRANSIT", "food_collected_at": now, "updated_at": now}}
+            )
+            if donation_id:
+                self.donations_col.update_one({"id": donation_id}, {"$set": {"status": "COLLECTED", "updated_at": now}})
+
+            self.create_audit_event_record(
+                event_id=f"aud-{now}",
+                event_type="PICKUP_QR_VERIFIED",
+                actor=str(effective_vol_id or "volunteer"),
+                related_id=task_id,
+                metadata={"token": token, "gps": gps_coords}
+            )
+
+        elif qr_type == "DELIVERY":
+            if task.get("status") not in ["COLLECTED", "IN_TRANSIT"]:
+                if task.get("status") in ["DELIVERED", "COMPLETED"]:
+                    return {"success": False, "error": "ALREADY_DELIVERED", "message": "This delivery has already been completed."}
+                return {"success": False, "error": "NOT_YET_COLLECTED", "message": "Cannot verify delivery before the food has been collected from the donor."}
+
+            res = self.qr_codes_col.find_one_and_update(
+                {"token": token.strip(), "status": "ACTIVE"},
+                {"$set": {"status": "VERIFIED", "verified_at": now, "verified_by": effective_vol_id}},
+                return_document=pymongo.ReturnDocument.AFTER
+            )
+            if not res:
+                return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
+            self.pickup_tasks_col.update_one(
+                {"id": task_id},
+                {"$set": {"status": "COMPLETED", "delivery_status": "DELIVERED", "food_delivered_at": now, "updated_at": now}}
+            )
+            if donation_id:
+                self.donations_col.update_one({"id": donation_id}, {"$set": {"status": "DELIVERED", "updated_at": now}})
+
+            if effective_vol_id:
+                self.volunteers_col.update_one(
+                    {"$or": [{"id": effective_vol_id}, {"phone": effective_vol_id}]},
+                    {"$set": {"current_status": "available", "availability_status": "AVAILABLE"}}
+                )
+
+            self.create_audit_event_record(
+                event_id=f"aud-{now}",
+                event_type="DELIVERY_QR_VERIFIED",
+                actor=str(effective_vol_id or "volunteer"),
+                related_id=task_id,
+                metadata={"token": token, "gps": gps_coords}
+            )
+
+        updated_task = self.get_pickup_task_record(task_id)
+        return {
+            "success": True,
+            "qr_type": qr_type,
+            "task_id": task_id,
+            "donation_id": donation_id,
+            "verified_at": now,
+            "verified_by": effective_vol_id,
+            "task": updated_task,
+        }
+
 
 

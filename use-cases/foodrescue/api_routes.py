@@ -294,10 +294,15 @@ async def get_live_operations_endpoint():
         }
         info = stage_map.get(status, {"step": 1, "label": status, "badge": "pending"})
 
-        # Enrich entities
+        # Enrich entities & QR statuses
         donor = database.get_donor_record(don.get("donor_id", ""))
         org = database.get_organization_record(task.get("organization_id", "")) if task else None
         vol = database.get_volunteer_record(task.get("volunteer_id", "")) if task else None
+
+        task_id = task.get("id")
+        qrs = database.get_qr_codes_for_task(task_id) if task_id else []
+        pk_q = next((q for q in qrs if q.get("qr_type") == "PICKUP"), None)
+        dl_q = next((q for q in qrs if q.get("qr_type") == "DELIVERY"), None)
 
         operations.append({
             "donation_id": don_id,
@@ -321,6 +326,10 @@ async def get_live_operations_endpoint():
             "estimated_distance_km": task.get("total_distance_km", 4.8),
             "estimated_duration_mins": task.get("pickup_duration_minutes", 15) + task.get("delivery_duration_minutes", 20),
             "estimated_transport_cost": task.get("estimated_transport_cost", 350.0),
+            "pickup_qr_status": pk_q.get("status") if pk_q else ("VERIFIED" if info["step"] >= 5 else ("ACTIVE" if info["step"] >= 3 else "PENDING")),
+            "pickup_qr_token": pk_q.get("token") if pk_q else None,
+            "delivery_qr_status": dl_q.get("status") if dl_q else ("VERIFIED" if info["step"] >= 7 else ("ACTIVE" if info["step"] >= 5 else "PENDING")),
+            "delivery_qr_token": dl_q.get("token") if dl_q else None,
             "created_at": don.get("created_at"),
             "updated_at": don.get("updated_at") or don.get("created_at")
         })
@@ -354,47 +363,59 @@ async def get_map_locations_endpoint():
         lat = o.get("latitude")
         lng = o.get("longitude")
         if lat is None or lng is None:
-            loc_str = str(o.get("location", "Colombo 7"))
-            coords = routing.geocode_location(loc_str) or (6.9069, 79.8708)
-            lat, lng = coords
+            loc_str = str(o.get("location") or o.get("service_area") or "")
+            coords = routing.geocode_location(loc_str)
+            if not coords and loc_str:
+                dist = routing.resolve_district(loc_str)
+                if dist and dist.lower() in routing.KNOWN_COORDINATES:
+                    coords = routing.KNOWN_COORDINATES[dist.lower()]
+            if coords:
+                lat, lng = coords
 
-        lats.append(lat)
-        lngs.append(lng)
-        markers.append({
-            "id": f"org-{o.get('id')}",
-            "type": "organization",
-            "title": o.get("name"),
-            "subtitle": f"Accepted: {str(o.get('accepted_food_types', 'Meals'))[:40]}...",
-            "latitude": round(lat, 6),
-            "longitude": round(lng, 6),
-            "location_name": o.get("location"),
-            "status": "active"
-        })
+        if lat is not None and lng is not None:
+            lats.append(lat)
+            lngs.append(lng)
+            markers.append({
+                "id": f"org-{o.get('id')}",
+                "type": "organization",
+                "title": o.get("name"),
+                "subtitle": f"Accepted: {str(o.get('accepted_food_types', 'Meals'))[:40]}...",
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
+                "location_name": o.get("location") or "Organization Hub",
+                "status": "active"
+            })
 
     # 2. Volunteer couriers
     for v in all_vols:
         lat = v.get("current_latitude") or v.get("latitude")
         lng = v.get("current_longitude") or v.get("longitude")
         if lat is None or lng is None:
-            loc_str = str(v.get("current_location") or v.get("service_area") or v.get("location") or "Colombo 3")
-            coords = routing.geocode_location(loc_str) or (6.9056, 79.8519)
-            lat, lng = coords
-            # Jitter slightly for visual distinction
-            lat += (hash(str(v.get("id", ""))) % 10 - 5) * 0.002
-            lng += (hash(str(v.get("id", ""))[::-1]) % 10 - 5) * 0.002
+            loc_str = str(v.get("current_location") or v.get("service_area") or v.get("location") or "")
+            coords = routing.geocode_location(loc_str)
+            if not coords and loc_str:
+                dist = routing.resolve_district(loc_str)
+                if dist and dist.lower() in routing.KNOWN_COORDINATES:
+                    coords = routing.KNOWN_COORDINATES[dist.lower()]
+            if coords:
+                lat, lng = coords
+                # Jitter slightly for visual distinction
+                lat += (hash(str(v.get("id", ""))) % 10 - 5) * 0.002
+                lng += (hash(str(v.get("id", ""))[::-1]) % 10 - 5) * 0.002
 
-        lats.append(lat)
-        lngs.append(lng)
-        markers.append({
-            "id": f"vol-{v.get('id')}",
-            "type": "volunteer",
-            "title": v.get("name"),
-            "subtitle": f"Status: {v.get('current_status', 'available').title()} • {v.get('transport_mode', 'Motorbike')}",
-            "latitude": round(lat, 6),
-            "longitude": round(lng, 6),
-            "location_name": v.get("service_area") or v.get("location"),
-            "status": v.get("current_status", "available")
-        })
+        if lat is not None and lng is not None:
+            lats.append(lat)
+            lngs.append(lng)
+            markers.append({
+                "id": f"vol-{v.get('id')}",
+                "type": "volunteer",
+                "title": v.get("name"),
+                "subtitle": f"Status: {v.get('current_status', 'available').title()} • {v.get('transport_mode', 'Motorbike')}",
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
+                "location_name": v.get("service_area") or v.get("location") or "Courier Location",
+                "status": v.get("current_status", "available")
+            })
 
     # 3. Active pickups & Tasks
     for t in all_tasks:
@@ -402,21 +423,28 @@ async def get_map_locations_endpoint():
             lat = t.get("pickup_latitude")
             lng = t.get("pickup_longitude")
             if lat is None or lng is None:
-                p_loc = str(t.get("pickup_location", "Colombo"))
-                coords = routing.geocode_location(p_loc) or (6.9344, 79.8428)
-                lat, lng = coords
-            lats.append(lat)
-            lngs.append(lng)
-            markers.append({
-                "id": f"pickup-{t.get('id')}",
-                "type": "pickup_point",
-                "title": f"Pickup Task {t.get('id')}",
-                "subtitle": f"Deliver to: {t.get('delivery_location')}",
-                "latitude": round(lat, 6),
-                "longitude": round(lng, 6),
-                "location_name": t.get("pickup_location"),
-                "status": t.get("status")
-            })
+                p_loc = str(t.get("pickup_location") or "")
+                coords = routing.geocode_location(p_loc)
+                if not coords and p_loc:
+                    dist = routing.resolve_district(p_loc)
+                    if dist and dist.lower() in routing.KNOWN_COORDINATES:
+                        coords = routing.KNOWN_COORDINATES[dist.lower()]
+                if coords:
+                    lat, lng = coords
+
+            if lat is not None and lng is not None:
+                lats.append(lat)
+                lngs.append(lng)
+                markers.append({
+                    "id": f"pickup-{t.get('id')}",
+                    "type": "pickup_point",
+                    "title": f"Pickup Task {t.get('id')}",
+                    "subtitle": f"Deliver to: {t.get('delivery_location')}",
+                    "latitude": round(lat, 6),
+                    "longitude": round(lng, 6),
+                    "location_name": t.get("pickup_location") or "Pickup Location",
+                    "status": t.get("status")
+                })
 
     # 4. Available donations
     for d in all_dons:
@@ -424,25 +452,32 @@ async def get_map_locations_endpoint():
             lat = d.get("latitude")
             lng = d.get("longitude")
             if lat is None or lng is None:
-                d_loc = str(d.get("pickup_location", "Colombo"))
-                coords = routing.geocode_location(d_loc) or (6.9344, 79.8428)
-                lat, lng = coords
-            lats.append(lat)
-            lngs.append(lng)
-            markers.append({
-                "id": f"don-{d.get('id')}",
-                "type": "donation",
-                "title": f"{d.get('food_type', 'Food')} ({d.get('quantity', 0)} {d.get('unit', 'portions')})",
-                "subtitle": f"Location: {d.get('pickup_location')} • Status: {d.get('status')}",
-                "latitude": round(lat, 6),
-                "longitude": round(lng, 6),
-                "location_name": d.get("pickup_location"),
-                "status": d.get("status")
-            })
+                d_loc = str(d.get("pickup_location") or "")
+                coords = routing.geocode_location(d_loc)
+                if not coords and d_loc:
+                    dist = routing.resolve_district(d_loc)
+                    if dist and dist.lower() in routing.KNOWN_COORDINATES:
+                        coords = routing.KNOWN_COORDINATES[dist.lower()]
+                if coords:
+                    lat, lng = coords
 
-    # Dynamic Sri Lanka center
-    center_lat = round(sum(lats) / len(lats), 4) if lats else 6.9271
-    center_lng = round(sum(lngs) / len(lngs), 4) if lngs else 79.8612
+            if lat is not None and lng is not None:
+                lats.append(lat)
+                lngs.append(lng)
+                markers.append({
+                    "id": f"don-{d.get('id')}",
+                    "type": "donation",
+                    "title": f"{d.get('food_type', 'Food')} ({d.get('quantity', 0)} {d.get('unit', 'portions')})",
+                    "subtitle": f"Location: {d.get('pickup_location')} • Status: {d.get('status')}",
+                    "latitude": round(lat, 6),
+                    "longitude": round(lng, 6),
+                    "location_name": d.get("pickup_location") or "Donation Location",
+                    "status": d.get("status")
+                })
+
+    # Dynamic center calculation
+    center_lat = round(sum(lats) / len(lats), 4) if lats else 7.2520
+    center_lng = round(sum(lngs) / len(lngs), 4) if lngs else 80.3464
 
     return JSONResponse(content={
         "status": "success",
@@ -892,7 +927,410 @@ async def reset_all_data():
         raise HTTPException(status_code=500, detail=f"Reset operation failed: {exc}")
 
 
+from fastapi.responses import Response
+import qr_service
+import whatsapp_handler
+
+
+def _render_verification_html(
+    title: str,
+    qr_type: str,
+    token: str,
+    food_info: str,
+    quantity_info: str,
+    party_a_label: str,
+    party_a_name: str,
+    party_b_label: str,
+    party_b_name: str,
+    location_label: str,
+    location_val: str,
+    task_id: str,
+    is_valid: bool = True,
+    error_title: str = "",
+    error_message: str = "",
+    already_verified: bool = False,
+    verified_time: str = ""
+) -> str:
+    """Generate responsive, mobile-first HTML interface for physical handover verification."""
+    is_pickup = qr_type.upper() == "PICKUP"
+    btn_text = "Confirm Food Pickup" if is_pickup else "Confirm Food Delivery"
+    btn_icon = "🍱" if is_pickup else "🎉"
+    theme_color = "#10b981" if is_pickup else "#3b82f6"
+
+    if not is_valid:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodRescue AI — Verification Error</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }}
+    .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 1.25rem; max-width: 440px; width: 100%; padding: 2rem; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }}
+    .icon {{ font-size: 3.5rem; margin-bottom: 1rem; }}
+    h1 {{ font-size: 1.35rem; color: #ef4444; margin-bottom: 0.75rem; font-weight: 700; }}
+    p {{ color: #94a3b8; font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem; }}
+    .btn {{ display: inline-block; width: 100%; background: #334155; color: #f8fafc; text-decoration: none; padding: 0.85rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.95rem; transition: background 0.2s; }}
+    .btn:hover {{ background: #475569; }}
+    .tag {{ display: inline-block; background: #292524; color: #f97316; font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 0.5rem; margin-bottom: 1rem; font-family: monospace; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <span class="tag">TOKEN: {token[:18]}...</span>
+    <h1>{error_title or "Verification Failed"}</h1>
+    <p>{error_message or "This QR verification code is invalid, expired, or belongs to another task."}</p>
+    <a href="/" class="btn">Return to FoodRescue Dashboard</a>
+  </div>
+</body>
+</html>"""
+
+    if already_verified:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodRescue AI — Handover Verified</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }}
+    .card {{ background: #1e293b; border: 1px solid #10b98140; border-radius: 1.25rem; max-width: 440px; width: 100%; padding: 2.25rem 2rem; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }}
+    .icon {{ font-size: 3.5rem; margin-bottom: 1rem; }}
+    h1 {{ font-size: 1.4rem; color: #10b981; margin-bottom: 0.75rem; font-weight: 700; }}
+    p {{ color: #94a3b8; font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem; }}
+    .time-badge {{ display: inline-block; background: #064e3b; color: #34d399; font-size: 0.8rem; padding: 0.35rem 0.75rem; border-radius: 9999px; margin-bottom: 1.5rem; font-weight: 600; }}
+    .btn {{ display: inline-block; width: 100%; background: #10b981; color: #0f172a; text-decoration: none; padding: 0.9rem; border-radius: 0.75rem; font-weight: 700; font-size: 0.95rem; transition: transform 0.1s, background 0.2s; }}
+    .btn:hover {{ background: #34d399; transform: translateY(-1px); }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✅</div>
+    <span class="time-badge">Verified: {verified_time or 'Just now'}</span>
+    <h1>{'Pickup Confirmed!' if is_pickup else 'Delivery Completed!'}</h1>
+    <p>{'The food has been marked as COLLECTED and is en route to the recipient organization.' if is_pickup else 'The food donation has been successfully handed over to the organization and marked as DELIVERED.'}</p>
+    <a href="/" class="btn">View Live Operations</a>
+  </div>
+</body>
+</html>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodRescue AI — {title}</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.25rem; }}
+    .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 1.25rem; max-width: 440px; width: 100%; overflow: hidden; box-shadow: 0 25px 35px -5px rgba(0,0,0,0.6); }}
+    .header {{ background: linear-gradient(135deg, #0f172a, #1e293b); padding: 1.5rem; text-align: center; border-bottom: 1px solid #334155; position: relative; }}
+    .logo {{ font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; color: #10b981; text-transform: uppercase; margin-bottom: 0.35rem; }}
+    .title {{ font-size: 1.3rem; font-weight: 800; color: #f8fafc; }}
+    .badge {{ display: inline-block; background: {theme_color}25; color: {theme_color}; font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.65rem; border-radius: 9999px; border: 1px solid {theme_color}50; margin-top: 0.5rem; text-transform: uppercase; }}
+    .body {{ padding: 1.5rem; }}
+    .info-group {{ background: #0f172a80; border: 1px solid #33415560; border-radius: 0.85rem; padding: 1rem; margin-bottom: 1.25rem; }}
+    .row {{ display: flex; justify-content: space-between; align-items: flex-start; padding: 0.5rem 0; border-bottom: 1px solid #33415540; }}
+    .row:last-child {{ border-bottom: none; }}
+    .label {{ color: #94a3b8; font-size: 0.82rem; font-weight: 500; }}
+    .val {{ color: #f8fafc; font-size: 0.88rem; font-weight: 600; text-align: right; max-width: 60%; }}
+    .val-highlight {{ color: #34d399; font-weight: 700; }}
+    .btn-confirm {{ display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; padding: 1rem; border-radius: 0.85rem; font-size: 1.05rem; font-weight: 800; cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; box-shadow: 0 10px 15px -3px rgba(16,185,129,0.4); }}
+    .btn-confirm:hover {{ transform: translateY(-1px); box-shadow: 0 15px 20px -3px rgba(16,185,129,0.5); }}
+    .btn-confirm:active {{ transform: translateY(1px); }}
+    .btn-confirm:disabled {{ opacity: 0.6; cursor: not-allowed; }}
+    .notice {{ text-align: center; color: #64748b; font-size: 0.75rem; margin-top: 1rem; line-height: 1.4; }}
+    .task-id {{ font-family: monospace; font-size: 0.75rem; color: #64748b; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="logo">🌿 FoodRescue AI</div>
+      <h1 class="title">{title}</h1>
+      <span class="badge">🔐 Physical Handover Proof</span>
+    </div>
+    <div class="body">
+      <div class="info-group">
+        <div class="row">
+          <span class="label">🍱 Food Type</span>
+          <span class="val val-highlight">{food_info}</span>
+        </div>
+        <div class="row">
+          <span class="label">📦 Quantity</span>
+          <span class="val">{quantity_info}</span>
+        </div>
+        <div class="row">
+          <span class="label">{party_a_label}</span>
+          <span class="val">{party_a_name}</span>
+        </div>
+        <div class="row">
+          <span class="label">{party_b_label}</span>
+          <span class="val">{party_b_name}</span>
+        </div>
+        <div class="row">
+          <span class="label">{location_label}</span>
+          <span class="val">{location_val}</span>
+        </div>
+        <div class="row">
+          <span class="label">🆔 Task ID</span>
+          <span class="val task-id">{task_id}</span>
+        </div>
+      </div>
+
+      <button id="confirmBtn" class="btn-confirm" onclick="confirmHandover()">
+        <span>{btn_icon}</span>
+        <span>{btn_text}</span>
+      </button>
+
+      <p class="notice">
+        By confirming, you certify that the physical handover of this food donation has taken place.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    async function confirmHandover() {{
+      const btn = document.getElementById('confirmBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span><span>Verifying Handover...</span>';
+
+      let coords = null;
+      if (navigator.geolocation) {{
+        try {{
+          const pos = await new Promise((resolve, reject) => {{
+            navigator.geolocation.getCurrentPosition(resolve, reject, {{ timeout: 3000 }});
+          }});
+          coords = {{ latitude: pos.coords.latitude, longitude: pos.coords.longitude }};
+        }} catch(e) {{}}
+      }}
+
+      try {{
+        const resp = await fetch('/verify/{qr_type.lower()}/{token}', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ gps: coords }})
+        }});
+        const data = await resp.json();
+        if (data.status === 'success' || data.success) {{
+          window.location.reload();
+        }} else {{
+          alert('Verification Failed: ' + (data.message || data.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.innerHTML = '<span>{btn_icon}</span><span>{btn_text}</span>';
+        }}
+      }} catch(err) {{
+        alert('Network error connecting to verification service.');
+        btn.disabled = false;
+        btn.innerHTML = '<span>{btn_icon}</span><span>{btn_text}</span>';
+      }}
+    }}
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/api/qr/{token}.png")
+async def get_qr_png_image(token: str):
+    """Generate and stream high-resolution PNG image of the handover QR code with zero third-party dependencies."""
+    clean_tok = token.strip()
+    qr_type = "pickup" if "pk" in clean_tok.lower() else "delivery"
+    verif_url = qr_service.build_verification_url(qr_type, clean_tok)
+    try:
+        png_bytes = qr_service.generate_qr_png_bytes(verif_url, box_size=10, border=3)
+        return Response(content=png_bytes, media_type="image/png")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR PNG: {exc}")
+
+
+@router.get("/verify/pickup/{token}", response_class=HTMLResponse)
+async def view_pickup_verification_page(token: str):
+    """Serve the mobile-first Pickup Handover verification interface."""
+    clean_tok = token.strip()
+    qr_rec = database.get_qr_code_by_token(clean_tok)
+    if not qr_rec or qr_rec.get("qr_type", "").upper() != "PICKUP":
+        html = _render_verification_html(
+            title="Pickup Verification", qr_type="PICKUP", token=clean_tok,
+            food_info="", quantity_info="", party_a_label="", party_a_name="",
+            party_b_label="", party_b_name="", location_label="", location_val="",
+            task_id="", is_valid=False, error_title="Invalid Pickup QR Code",
+            error_message="This QR code was not recognized or is not a valid FoodRescue pickup token."
+        )
+        return HTMLResponse(content=html, status_code=400)
+
+    task_id = qr_rec.get("task_id", "")
+    task = database.get_pickup_task_record(task_id) or {}
+    don = database.get_donation_record(qr_rec.get("donation_id", "")) if qr_rec.get("donation_id") else {}
+    donor = database.get_donor_record(don.get("donor_id", "")) if don else {}
+    vol = database.get_volunteer_record(task.get("volunteer_id", "")) or database.get_volunteer_by_phone(task.get("volunteer_id", "")) if task.get("volunteer_id") else {}
+
+    food_name = don.get("food_type", "Prepared Meals") if don else "Prepared Meals"
+    raw_qty = don.get('quantity', 30) if don else 30
+    disp_qty = int(raw_qty) if isinstance(raw_qty, (int, float)) and raw_qty == int(raw_qty) else raw_qty
+    qty = f"{disp_qty} {don.get('unit', 'meal packets') if don else 'meal packets'}"
+    donor_name = (donor.get("name") if donor else None) or (don.get("donor_name") if don else "Local Food Donor")
+    vol_name = (vol.get("name") if vol else None) or "Assigned Courier"
+    pickup_loc = don.get("pickup_location") or don.get("location") or task.get("pickup_location") or "Pickup Address"
+
+    # Check status
+    if qr_rec.get("status") == "VERIFIED" or task.get("status") in ["COLLECTED", "IN_TRANSIT", "DELIVERED", "COMPLETED"]:
+        html = _render_verification_html(
+            title="Pickup Verified", qr_type="PICKUP", token=clean_tok,
+            food_info=food_name, quantity_info=qty, party_a_label="Donor", party_a_name=donor_name,
+            party_b_label="Volunteer", party_b_name=vol_name, location_label="Pickup Location",
+            location_val=pickup_loc, task_id=task_id, is_valid=True, already_verified=True,
+            verified_time=qr_rec.get("verified_at", "Verified")
+        )
+        return HTMLResponse(content=html, status_code=200)
+
+    html = _render_verification_html(
+        title="Pickup Verification", qr_type="PICKUP", token=clean_tok,
+        food_info=food_name, quantity_info=qty, party_a_label="Donor", party_a_name=donor_name,
+        party_b_label="Assigned Volunteer", party_b_name=vol_name, location_label="Pickup Location",
+        location_val=pickup_loc, task_id=task_id, is_valid=True
+    )
+    return HTMLResponse(content=html, status_code=200)
+
+
+@router.post("/verify/pickup/{token}")
+async def confirm_pickup_verification(token: str, request: Request):
+    """Atomically confirm physical food pickup handover and dispatch real-time cross-notifications."""
+    clean_tok = token.strip()
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    gps_coords = body.get("gps") if isinstance(body, dict) else None
+    volunteer_id = body.get("volunteer_id") if isinstance(body, dict) else None
+
+    result = database.verify_qr_code_record(clean_tok, volunteer_id=volunteer_id, gps_coords=gps_coords)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content={"status": "error", "error": result.get("error"), "message": result.get("message")})
+
+    task_id = result.get("task_id", "")
+    # Trigger real-time 3-way WhatsApp notifications & generate delivery QR
+    try:
+        await whatsapp_handler.dispatch_qr_pickup_success_notifications(task_id, volunteer_id=volunteer_id)
+    except Exception as exc:
+        pass
+
+    return JSONResponse(content={
+        "status": "success",
+        "message": "Food pickup verified and recorded as COLLECTED.",
+        "task_id": task_id,
+        "verified_at": result.get("verified_at")
+    })
+
+
+@router.get("/verify/delivery/{token}", response_class=HTMLResponse)
+async def view_delivery_verification_page(token: str):
+    """Serve the mobile-first Delivery Handover verification interface."""
+    clean_tok = token.strip()
+    qr_rec = database.get_qr_code_by_token(clean_tok)
+    if not qr_rec or qr_rec.get("qr_type", "").upper() != "DELIVERY":
+        html = _render_verification_html(
+            title="Delivery Verification", qr_type="DELIVERY", token=clean_tok,
+            food_info="", quantity_info="", party_a_label="", party_a_name="",
+            party_b_label="", party_b_name="", location_label="", location_val="",
+            task_id="", is_valid=False, error_title="Invalid Delivery QR Code",
+            error_message="This QR code was not recognized or is not a valid FoodRescue delivery token."
+        )
+        return HTMLResponse(content=html, status_code=400)
+
+    task_id = qr_rec.get("task_id", "")
+    task = database.get_pickup_task_record(task_id) or {}
+    don = database.get_donation_record(qr_rec.get("donation_id", "")) if qr_rec.get("donation_id") else {}
+    org = database.get_organization_record(task.get("organization_id", "")) if task.get("organization_id") else {}
+    vol = database.get_volunteer_record(task.get("volunteer_id", "")) or database.get_volunteer_by_phone(task.get("volunteer_id", "")) if task.get("volunteer_id") else {}
+
+    food_name = don.get("food_type", "Prepared Meals") if don else "Prepared Meals"
+    raw_qty = don.get('quantity', 30) if don else 30
+    disp_qty = int(raw_qty) if isinstance(raw_qty, (int, float)) and raw_qty == int(raw_qty) else raw_qty
+    qty = f"{disp_qty} {don.get('unit', 'meal packets') if don else 'meal packets'}"
+    org_name = (org.get("name") if org else None) or "Recipient Organization"
+    vol_name = (vol.get("name") if vol else None) or "Assigned Courier"
+    deliv_loc = org.get("location") or org.get("service_area") or task.get("delivery_location") or "Delivery Address"
+
+    # Check status
+    if qr_rec.get("status") == "VERIFIED" or task.get("status") in ["DELIVERED", "COMPLETED"]:
+        html = _render_verification_html(
+            title="Delivery Completed", qr_type="DELIVERY", token=clean_tok,
+            food_info=food_name, quantity_info=qty, party_a_label="Organization", party_a_name=org_name,
+            party_b_label="Volunteer", party_b_name=vol_name, location_label="Destination",
+            location_val=deliv_loc, task_id=task_id, is_valid=True, already_verified=True,
+            verified_time=qr_rec.get("verified_at", "Delivered")
+        )
+        return HTMLResponse(content=html, status_code=200)
+
+    html = _render_verification_html(
+        title="Delivery Verification", qr_type="DELIVERY", token=clean_tok,
+        food_info=food_name, quantity_info=qty, party_a_label="Recipient Organization", party_a_name=org_name,
+        party_b_label="Delivering Volunteer", party_b_name=vol_name, location_label="Delivery Location",
+        location_val=deliv_loc, task_id=task_id, is_valid=True
+    )
+    return HTMLResponse(content=html, status_code=200)
+
+
+@router.post("/verify/delivery/{token}")
+async def confirm_delivery_verification(token: str, request: Request):
+    """Atomically confirm physical food delivery handover and dispatch 3-way cross-notifications."""
+    clean_tok = token.strip()
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    gps_coords = body.get("gps") if isinstance(body, dict) else None
+    volunteer_id = body.get("volunteer_id") if isinstance(body, dict) else None
+
+    result = database.verify_qr_code_record(clean_tok, volunteer_id=volunteer_id, gps_coords=gps_coords)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content={"status": "error", "error": result.get("error"), "message": result.get("message")})
+
+    task_id = result.get("task_id", "")
+    # Trigger real-time 3-way WhatsApp notifications & transport reimbursement confirmation
+    try:
+        await whatsapp_handler.dispatch_qr_delivery_success_notifications(task_id, volunteer_id=volunteer_id)
+    except Exception as exc:
+        pass
+
+    return JSONResponse(content={
+        "status": "success",
+        "message": "Food delivery verified and recorded as DELIVERED & COMPLETED.",
+        "task_id": task_id,
+        "verified_at": result.get("verified_at")
+    })
+
+
+@router.get("/api/tasks/{task_id}/qr")
+async def get_task_qr_status(task_id: str):
+    """Retrieve all QR handover verification records and live statuses for a pickup task."""
+    clean_id = task_id.strip()
+    qrs = database.get_qr_codes_for_task(clean_id)
+    enriched = []
+    for q in qrs:
+        token = q.get("token", "")
+        qr_type = q.get("qr_type", "PICKUP")
+        enriched.append({
+            **q,
+            "verification_url": qr_service.build_verification_url(qr_type, token),
+            "qr_image_url": f"{qr_service.get_base_url()}/api/qr/{token}.png"
+        })
+    return JSONResponse(content={
+        "status": "success",
+        "task_id": clean_id,
+        "qr_codes": enriched
+    })
+
+
 def get_router() -> APIRouter:
     """Return the configured APIRouter for Agent Kernel RESTAPI registration."""
     return router
+
 

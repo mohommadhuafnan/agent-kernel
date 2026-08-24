@@ -474,11 +474,13 @@ const App = (function () {
 
           <!-- 7-Step Visual Stepper -->
           <div class="pipeline-stepper">
-            ${[1, 2, 3, 4, 5, 6, 7].map(sNum => `
-              <div class="stepper-step ${sNum < step ? 'completed' : (sNum === step ? (step === 7 ? 'completed active' : 'active') : '')}">
-                ${sNum < step || (sNum === 7 && step === 7) ? '✓' : sNum}
-              </div>
-            `).join('')}
+            ${[1, 2, 3, 4, 5, 6, 7].map(sNum => {
+              const isCompleted = (step >= 7 ? sNum <= 7 : sNum < step);
+              const isActive = (step < 7 && sNum === step);
+              const cls = isCompleted ? 'completed' : (isActive ? 'active' : '');
+              const icon = isCompleted ? '✓' : sNum;
+              return `<div class="stepper-step ${cls}">${icon}</div>`;
+            }).join('')}
           </div>
 
           <div class="op-card-details">
@@ -487,6 +489,14 @@ const App = (function () {
             <div class="detail-k">Recipient Org:</div><div class="detail-v">${escapeHtml(op.organization_name)}</div>
             <div class="detail-k">Assigned Courier:</div><div class="detail-v">${escapeHtml(op.volunteer_name)}</div>
             <div class="detail-k">Distance & Cost:</div><div class="detail-v">${op.estimated_distance_km} km • LKR ${op.estimated_transport_cost}</div>
+            <div class="detail-k">Pickup QR:</div>
+            <div class="detail-v">
+              ${op.pickup_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.pickup_qr_status === 'ACTIVE' && op.pickup_qr_token ? `<a href="/verify/pickup/${op.pickup_qr_token}" target="_blank" class="badge badge-amber" style="text-decoration:none">⏳ Waiting for Scan ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
+            </div>
+            <div class="detail-k">Delivery QR:</div>
+            <div class="detail-v">
+              ${op.delivery_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.delivery_qr_status === 'ACTIVE' && op.delivery_qr_token ? `<a href="/verify/delivery/${op.delivery_qr_token}" target="_blank" class="badge badge-blue" style="text-decoration:none">⏳ Waiting for Delivery ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
+            </div>
           </div>
         </div>
       `;
@@ -862,7 +872,7 @@ const App = (function () {
     if (!mapElem || typeof L === 'undefined') return;
 
     if (!state.map) {
-      state.map = L.map('operations-leaflet-map').setView([6.9271, 79.8612], 13);
+      state.map = L.map('operations-leaflet-map').setView([7.2520, 80.3464], 11);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(state.map);
@@ -898,6 +908,13 @@ const App = (function () {
 
           state.mapMarkers.push(marker);
         });
+
+        if (state.mapMarkers.length > 0) {
+          const group = L.featureGroup(state.mapMarkers);
+          state.map.fitBounds(group.getBounds().pad(0.15));
+        } else if (data.center && data.center.lat && data.center.lng) {
+          state.map.setView([data.center.lat, data.center.lng], data.center.zoom || 11);
+        }
       })
       .catch(err => console.warn('Map locations error:', err));
   }
