@@ -960,6 +960,25 @@
     </div>
   </div>
 
+  <!-- 4. QR Code Display & Scan Modal -->
+  <div class="modal-backdrop" id="modal-view-qr">
+    <div class="modal-dialog" style="max-width: 420px; text-align: center;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-qr-title">Handover QR Code</h3>
+        <button class="modal-close" onclick="App.closeModal('modal-view-qr')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 24px 20px;">
+        <div style="background: #ffffff; padding: 16px; border-radius: 16px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-bottom: 16px;">
+          <img id="modal-qr-img" src="" alt="Handover QR Code" style="width: 220px; height: 220px; display: block;" />
+        </div>
+        <div id="modal-qr-desc" style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px; line-height: 1.5;"></div>
+        <a id="modal-qr-link" href="#" target="_blank" class="btn btn-primary" style="width: 100%;">
+          <span>📱</span><span>Open Handover Verification Page ↗</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
   <!-- Mobile Bottom Navigation Bar (Thumb-Friendly Mobile UX) -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
     <button class="bottom-nav-btn active" data-tab="dashboard" id="bnav-dashboard" aria-label="Dashboard">

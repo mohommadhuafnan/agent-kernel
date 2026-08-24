@@ -490,12 +490,12 @@ const App = (function () {
             <div class="detail-k">Assigned Courier:</div><div class="detail-v">${escapeHtml(op.volunteer_name)}</div>
             <div class="detail-k">Distance & Cost:</div><div class="detail-v">${op.estimated_distance_km} km • LKR ${op.estimated_transport_cost}</div>
             <div class="detail-k">Pickup QR:</div>
-            <div class="detail-v">
-              ${op.pickup_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.pickup_qr_status === 'ACTIVE' && op.pickup_qr_token ? `<a href="/verify/pickup/${op.pickup_qr_token}" target="_blank" class="badge badge-amber" style="text-decoration:none">⏳ Waiting for Scan ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
+            <div class="detail-v" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              ${op.pickup_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.pickup_qr_token ? `<button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:11px;" onclick="App.showQrModal('${op.pickup_qr_token}', 'PICKUP', '${escapeHtml(op.food_type)}')">📷 Show QR</button><a href="/verify/pickup/${op.pickup_qr_token}" target="_blank" class="badge badge-amber" style="text-decoration:none">Scan ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
             </div>
             <div class="detail-k">Delivery QR:</div>
-            <div class="detail-v">
-              ${op.delivery_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.delivery_qr_status === 'ACTIVE' && op.delivery_qr_token ? `<a href="/verify/delivery/${op.delivery_qr_token}" target="_blank" class="badge badge-blue" style="text-decoration:none">⏳ Waiting for Delivery ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
+            <div class="detail-v" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              ${op.delivery_qr_status === 'VERIFIED' ? '<span class="badge badge-emerald">✅ QR Verified</span>' : (op.delivery_qr_token ? `<button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:11px;" onclick="App.showQrModal('${op.delivery_qr_token}', 'DELIVERY', '${escapeHtml(op.food_type)}')">📷 Show QR</button><a href="/verify/delivery/${op.delivery_qr_token}" target="_blank" class="badge badge-blue" style="text-decoration:none">Delivery ↗</a>` : '<span class="badge badge-slate">Pending</span>')}
             </div>
           </div>
         </div>
@@ -732,6 +732,50 @@ const App = (function () {
     await loadConversationMessages(phone, true);
   }
 
+  function formatChatMessageContent(text) {
+    if (!text) return '';
+
+    // Check if message contains QR code token or image link
+    const qrMatch = text.match(/\/api\/qr\/(FR-[A-Z0-9\-_]+)\.png/i) || text.match(/\/verify\/(pickup|delivery)\/(FR-[A-Z0-9\-_]+)/i);
+    let qrCardHtml = '';
+
+    if (qrMatch) {
+      const token = qrMatch[1].startsWith('FR-') ? qrMatch[1] : qrMatch[2];
+      const isPickup = token.toUpperCase().includes('-PK-');
+      const verifUrl = `/verify/${isPickup ? 'pickup' : 'delivery'}/${token}`;
+      const imgUrl = `/api/qr/${token}.png`;
+      const title = isPickup ? '📦 Donor Pickup QR Code' : '🏢 Organization Delivery QR Code';
+
+      qrCardHtml = `
+        <div class="chat-qr-card">
+          <div class="chat-qr-header">
+            <span>${title}</span>
+            <span class="badge ${isPickup ? 'badge-emerald' : 'badge-blue'}">${isPickup ? 'Pickup Proof' : 'Delivery Proof'}</span>
+          </div>
+          <div class="chat-qr-img-wrapper">
+            <img src="${imgUrl}" alt="Handover QR Code" class="chat-qr-img" />
+          </div>
+          <a href="${verifUrl}" target="_blank" class="chat-qr-btn">
+            <span>📱</span><span>Open Handover Verification Page ↗</span>
+          </a>
+        </div>
+      `;
+    }
+
+    let escaped = escapeHtml(text);
+    // Replace markdown bold **text** or *text*
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    escaped = escaped.replace(/(^|[^*])\*([^*]+)\*/g, '$1<strong>$2</strong>');
+    // Replace newlines
+    escaped = escaped.replace(/\n/g, '<br>');
+    // Replace markdown links [label](url)
+    escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+|\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" style="color: #0284c7; text-decoration: underline; font-weight: 600;">$1</a>');
+    // Replace plain URLs
+    escaped = escaped.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" style="color: #0284c7; text-decoration: underline;">$2</a>');
+
+    return escaped + qrCardHtml;
+  }
+
   async function loadConversationMessages(phone, scrollBottom = true) {
     try {
       const res = await fetch(`/api/conversations/${encodeURIComponent(phone)}/messages`).then(r => r.json());
@@ -764,7 +808,7 @@ const App = (function () {
         return `
           <div class="message-bubble ${isUser ? 'bubble-user' : 'bubble-agent'}">
             ${m.is_voice ? `<div class="voice-badge-tag">🎤 Voice Note (${m.transcript ? 'Transcribed' : 'Audio'})</div>` : ''}
-            <div>${escapeHtml(m.message_text)}</div>
+            <div>${formatChatMessageContent(m.message_text)}</div>
             <div class="bubble-time">${formatTimeShort(m.timestamp)}</div>
           </div>
         `;
@@ -1382,6 +1426,23 @@ const App = (function () {
     }
   }
 
+  function showQrModal(token, type, foodType) {
+    const isPickup = (type || '').toUpperCase() === 'PICKUP' || token.toUpperCase().includes('-PK-');
+    const title = isPickup ? '📦 Donor Pickup QR Code' : '🏢 Organization Delivery QR Code';
+    const desc = isPickup
+      ? `Display this Pickup QR code to the volunteer courier to verify physical handover of ${foodType || 'food donation'}.`
+      : `Display this Delivery QR code to the volunteer courier to verify final delivery of ${foodType || 'food donation'}.`;
+
+    setText('modal-qr-title', title);
+    setText('modal-qr-desc', desc);
+    const img = document.getElementById('modal-qr-img');
+    if (img) img.src = `/api/qr/${token}.png`;
+    const link = document.getElementById('modal-qr-link');
+    if (link) link.href = `/verify/${isPickup ? 'pickup' : 'delivery'}/${token}`;
+
+    openModal('modal-view-qr');
+  }
+
   // Public Interface
   return {
     init,
@@ -1406,6 +1467,7 @@ const App = (function () {
     handleCreateVolunteer,
     handleTriggerSimulateModal,
     handleResetAllData,
+    showQrModal,
     openModal,
     closeModal,
     approveReimbursement,

@@ -1137,6 +1137,63 @@ html {
   user-select: none;
 }
 
+/* Chat QR Code Card */
+.chat-qr-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.chat-qr-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.chat-qr-img-wrapper {
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #f1f5f9;
+}
+
+.chat-qr-img {
+  width: 160px;
+  height: 160px;
+  display: block;
+}
+
+.chat-qr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff !important;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  width: 100%;
+  transition: transform 0.1s;
+}
+
+.chat-qr-btn:hover {
+  transform: translateY(-1px);
+}
+
 /* Grids for Partners & Volunteers */
 .partners-grid, .volunteers-grid {
   display: grid;

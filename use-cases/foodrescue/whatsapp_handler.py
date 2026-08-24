@@ -227,7 +227,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
     clean_p = prompt_text.strip().lower()
 
     # 1. Volunteer Accepts Task ("Accept", "1", "I'll take it", etc.)
-    if any(
+    conv_state = database.get_user_conversation_state(from_number) or {}
+    is_accept_state = conv_state.get("current_question") == "ACCEPT_TASK"
+    is_accept_text = any(
         m in clean_p
         for m in [
             "accept",
@@ -240,33 +242,48 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             "i can do it",
             "accept task",
             "claim",
+            "agree",
+            "start",
+            "on the way",
             "පිළිගන්නවා",
             "භාරගන්නවා",
             "ஏற்றுக்கொள்கிறேன்",
         ]
-    ) and any(
+    )
+    has_accept_reply = any(
         w in reply_text.lower()
-        for w in ["assigned", "accepted", "claimed", "task accepted", "en route", "coordinating", "on the way", "delivery approved"]
-    ):
+        for w in ["assigned", "accepted", "claimed", "task accepted", "en route", "coordinating", "on the way", "delivery approved", "thank you", "proceed"]
+    )
+
+    if (is_accept_state and is_accept_text) or (is_accept_text and has_accept_reply):
         vol = database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
         vol_phone = from_number
 
         target_task = None
-        if vol:
+        state_task_id = conv_state.get("task_id")
+        if state_task_id:
+            target_task = database.get_pickup_task_record(state_task_id)
+
+        if not target_task and vol:
             v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
-            assigned_v_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED"]]
+            assigned_v_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED", "OFFERED", "PENDING"]]
             if assigned_v_tasks:
                 target_task = assigned_v_tasks[-1]
 
         if not target_task:
             all_tasks = database.get_all_pickup_tasks()
-            assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED"]]
+            assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED", "OFFERED", "PENDING"]]
             if assigned_tasks:
                 target_task = assigned_tasks[-1]
 
         if target_task:
+            task_id = target_task["id"]
+            if vol:
+                database.assign_volunteer_record(task_id, vol["id"])
+            database.clear_user_conversation_state(from_number)
+
             don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
             donor = database.get_donor_record(don.get("donor_id", "")) if don else None
@@ -281,13 +298,13 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
             # Generate or retrieve active Pickup QR for this task
             import qr_service
-            task_qrs = database.get_qr_codes_for_task(target_task["id"])
+            task_qrs = database.get_qr_codes_for_task(task_id)
             pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
             if not pk_qr:
                 pk_token = qr_service.generate_secure_token("PK")
                 pk_qr = database.create_qr_code_record(
-                    qr_id=f"qr-pk-{target_task['id']}",
-                    task_id=target_task["id"],
+                    qr_id=f"qr-pk-{task_id}",
+                    task_id=task_id,
                     donation_id=don_id or "don-unknown",
                     qr_type="PICKUP",
                     token=pk_token,
@@ -301,7 +318,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             verif_url = qr_service.build_verification_url("PICKUP", pk_token)
             qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
 
-            # Notify Donor with Pickup QR Image & Instructions
+            # 1. Notify Donor with Pickup QR Image & Instructions
             donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
             if donor_phone and donor_phone != from_number:
                 donor_user = database.get_user_by_phone(donor_phone)
@@ -312,15 +329,23 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     volunteer_name=vol_name,
                     transport_mode=vol_mode,
                     food_info=food_info,
-                    task_id=target_task["id"],
+                    task_id=task_id,
                     verification_url=verif_url
                 )
                 try:
                     await send_whatsapp_image(to_number=donor_phone, image_url=qr_img_url, caption=d_msg)
                 except Exception as e:
                     logger.warning(f"Failed to send WhatsApp donor QR assignment notification: {e}")
+                try:
+                    database.record_message(
+                        phone=donor_phone,
+                        sender="agent",
+                        text=f"{d_msg}\n\n📷 [Pickup QR Code Image]({qr_img_url})\n🔐 Verification: {verif_url}"
+                    )
+                except Exception:
+                    pass
 
-            # Notify Recipient Organization
+            # 2. Notify Recipient Organization
             org_phone = org.get("phone") if org else None
             if org_phone and org_phone != from_number:
                 org_user = database.get_user_by_phone(org_phone)
@@ -337,8 +362,12 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
                     logger.warning(f"Failed to send WhatsApp organization assignment notification: {e}")
+                try:
+                    database.record_message(phone=org_phone, sender="agent", text=o_msg)
+                except Exception:
+                    pass
 
-            # Send Pickup QR scanning instructions to Volunteer
+            # 3. Send Pickup QR scanning instructions to Volunteer
             if vol_phone:
                 vol_user = database.get_user_by_phone(vol_phone)
                 v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
@@ -347,6 +376,10 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     await send_whatsapp_message(to_number=vol_phone, text=v_instr)
                 except Exception as e:
                     logger.warning(f"Failed to send volunteer pickup scan instructions: {e}")
+                try:
+                    database.record_message(phone=vol_phone, sender="agent", text=v_instr)
+                except Exception:
+                    pass
 
     # 2. Volunteer Confirms Collection ("Collected", "Got the food")
     elif any(
@@ -703,6 +736,10 @@ async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: O
             await send_whatsapp_message(to_number=donor_phone, text=d_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR pickup notification to donor: {e}")
+        try:
+            database.record_message(phone=donor_phone, sender="agent", text=d_msg)
+        except Exception:
+            pass
 
     # 2. Notify Organization with Delivery QR Image
     org_phone = org.get("phone") if org else None
@@ -721,6 +758,14 @@ async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: O
             await send_whatsapp_image(to_number=org_phone, image_url=dl_qr_img, caption=o_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR delivery instructions to org: {e}")
+        try:
+            database.record_message(
+                phone=org_phone,
+                sender="agent",
+                text=f"{o_msg}\n\n📷 [Delivery QR Code Image]({dl_qr_img})\n🔐 Verification: {dl_verif_url}"
+            )
+        except Exception:
+            pass
 
     # 3. Notify Volunteer with route navigation to Recipient Organization
     if vol_phone:
@@ -740,6 +785,10 @@ async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: O
             await send_whatsapp_message(to_number=vol_phone, text=v_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR pickup confirmation to volunteer: {e}")
+        try:
+            database.record_message(phone=vol_phone, sender="agent", text=v_msg)
+        except Exception:
+            pass
 
 
 async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id: Optional[str] = None) -> None:
@@ -786,6 +835,10 @@ async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id:
             await send_whatsapp_message(to_number=org_phone, text=o_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR delivery notification to org: {e}")
+        try:
+            database.record_message(phone=org_phone, sender="agent", text=o_msg)
+        except Exception:
+            pass
 
     # 2. Notify Donor
     donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
@@ -805,6 +858,10 @@ async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id:
             await send_whatsapp_message(to_number=donor_phone, text=d_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR delivery notification to donor: {e}")
+        try:
+            database.record_message(phone=donor_phone, sender="agent", text=d_msg)
+        except Exception:
+            pass
 
     # 3. Notify Volunteer with calculated transport reimbursement
     if vol_phone:
@@ -823,6 +880,10 @@ async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id:
             await send_whatsapp_message(to_number=vol_phone, text=v_msg)
         except Exception as e:
             logger.warning(f"Failed to send QR delivery confirmation to volunteer: {e}")
+        try:
+            database.record_message(phone=vol_phone, sender="agent", text=v_msg)
+        except Exception:
+            pass
 
 
 
