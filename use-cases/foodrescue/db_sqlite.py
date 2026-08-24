@@ -1389,11 +1389,59 @@ class SQLiteRepository(BaseRepository):
         row = cursor.fetchone()
         conn.close()
         if not row:
+            vol_rec = self.get_volunteer_by_phone(norm)
+            if vol_rec and vol_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": vol_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "volunteer",
+                    "onboarding_completed": True,
+                    "default_location": vol_rec.get("service_area") or vol_rec.get("location"),
+                    "created_at": vol_rec.get("created_at") or self._now(),
+                    "last_seen_at": vol_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
+            org_rec = self.get_organization_by_phone(norm)
+            if org_rec and org_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": org_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "organization",
+                    "onboarding_completed": True,
+                    "default_location": org_rec.get("location") or org_rec.get("service_area"),
+                    "created_at": org_rec.get("created_at") or self._now(),
+                    "last_seen_at": org_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
+            donor_rec = self.get_donor_by_phone(norm)
+            if donor_rec and donor_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": donor_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "donor",
+                    "onboarding_completed": True,
+                    "default_location": donor_rec.get("location"),
+                    "created_at": donor_rec.get("created_at") or self._now(),
+                    "last_seen_at": donor_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
             return None
         d = dict(row)
         d["onboarding_completed"] = bool(d.get("onboarding_completed", 0))
         d["preferred_response_mode"] = d.get("preferred_response_mode") or "text"
-        
+
         # Parse JSON columns safely
         for json_col in ["metadata", "conversation_state", "active_draft"]:
             if d.get(json_col):
@@ -1410,16 +1458,19 @@ class SQLiteRepository(BaseRepository):
             if donor_rec and donor_rec.get("name"):
                 d["display_name"] = donor_rec["name"]
                 d["user_role"] = "donor"
+                d["onboarding_completed"] = True
             else:
                 vol_rec = self.get_volunteer_by_phone(norm)
                 if vol_rec and vol_rec.get("name"):
                     d["display_name"] = vol_rec["name"]
                     d["user_role"] = "volunteer"
+                    d["onboarding_completed"] = True
                 else:
                     org_rec = self.get_organization_by_phone(norm)
                     if org_rec and org_rec.get("name"):
                         d["display_name"] = org_rec["name"]
                         d["user_role"] = "organization"
+                        d["onboarding_completed"] = True
 
         return d
 
@@ -1432,18 +1483,42 @@ class SQLiteRepository(BaseRepository):
         user_role: str = "unknown",
         onboarding_completed: bool = False,
         default_location: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
         conn = self._get_connection()
         now = self._now()
         meta_json = json.dumps(metadata) if metadata else None
+
+        if not display_name or display_name.startswith("User_") or user_role in ["unknown", None, ""]:
+            vol_rec = self.get_volunteer_by_phone(norm)
+            if vol_rec and vol_rec.get("name"):
+                display_name = display_name if (display_name and not display_name.startswith("User_")) else vol_rec["name"]
+                user_role = "volunteer"
+                onboarding_completed = True
+                default_location = default_location or vol_rec.get("service_area") or vol_rec.get("location")
+            else:
+                org_rec = self.get_organization_by_phone(norm)
+                if org_rec and org_rec.get("name"):
+                    display_name = display_name if (display_name and not display_name.startswith("User_")) else org_rec["name"]
+                    user_role = "organization"
+                    onboarding_completed = True
+                    default_location = default_location or org_rec.get("location") or org_rec.get("service_area")
+                else:
+                    donor_rec = self.get_donor_by_phone(norm)
+                    if donor_rec and donor_rec.get("name"):
+                        display_name = display_name if (display_name and not display_name.startswith("User_")) else donor_rec["name"]
+                        user_role = "donor"
+                        onboarding_completed = True
+                        default_location = default_location or donor_rec.get("location")
+
         with conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE phone_number = ?", (norm,))
             existing = cursor.fetchone()
             if existing:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET
                     display_name = COALESCE(?, display_name),
                     preferred_language = COALESCE(?, preferred_language),
@@ -1454,33 +1529,39 @@ class SQLiteRepository(BaseRepository):
                     last_seen_at = ?,
                     metadata = COALESCE(?, metadata)
                 WHERE phone_number = ?
-                ''', (
-                    display_name,
-                    preferred_language,
-                    preferred_response_mode,
-                    user_role, user_role,
-                    1 if onboarding_completed else 0,
-                    default_location,
-                    now,
-                    meta_json,
-                    norm
-                ))
+                """,
+                    (
+                        display_name,
+                        preferred_language,
+                        preferred_response_mode,
+                        user_role,
+                        user_role,
+                        1 if onboarding_completed else 0,
+                        default_location,
+                        now,
+                        meta_json,
+                        norm,
+                    ),
+                )
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, user_role, onboarding_completed, default_location, first_seen_at, last_seen_at, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    norm,
-                    display_name or f"User_{norm[-4:]}",
-                    preferred_language or "en",
-                    preferred_response_mode or "text",
-                    user_role,
-                    1 if onboarding_completed else 0,
-                    default_location,
-                    now,
-                    now,
-                    meta_json
-                ))
+                """,
+                    (
+                        norm,
+                        display_name or f"User_{norm[-4:]}",
+                        preferred_language or "en",
+                        preferred_response_mode or "text",
+                        user_role,
+                        1 if onboarding_completed else 0,
+                        default_location,
+                        now,
+                        now,
+                        meta_json,
+                    ),
+                )
         conn.close()
         return self.get_user_by_phone(norm) or {}
 
@@ -1694,8 +1775,11 @@ class SQLiteRepository(BaseRepository):
         rows = cursor.fetchall()
         conn.close()
         users = []
+        seen_phones = set()
         for r in rows:
             d = dict(r)
+            norm = d["phone_number"]
+            seen_phones.add(norm)
             d["onboarding_completed"] = bool(d.get("onboarding_completed", 0))
             d["preferred_response_mode"] = d.get("preferred_response_mode") or "text"
             for json_col in ["metadata", "conversation_state", "active_draft"]:
@@ -1706,7 +1790,88 @@ class SQLiteRepository(BaseRepository):
                         d[json_col] = {}
                 else:
                     d[json_col] = {}
+
+            # Enrich display_name and user_role from volunteer/org/donor
+            if not d.get("display_name") or d.get("display_name", "").startswith("User_") or d.get("user_role") in ["unknown", None, ""]:
+                vol_rec = self.get_volunteer_by_phone(norm)
+                if vol_rec and vol_rec.get("name"):
+                    d["display_name"] = vol_rec["name"]
+                    d["user_role"] = "volunteer"
+                    d["onboarding_completed"] = True
+                else:
+                    org_rec = self.get_organization_by_phone(norm)
+                    if org_rec and org_rec.get("name"):
+                        d["display_name"] = org_rec["name"]
+                        d["user_role"] = "organization"
+                        d["onboarding_completed"] = True
+                    else:
+                        donor_rec = self.get_donor_by_phone(norm)
+                        if donor_rec and donor_rec.get("name"):
+                            d["display_name"] = donor_rec["name"]
+                            d["user_role"] = "donor"
+                            d["onboarding_completed"] = True
             users.append(d)
+
+        # Include registered volunteers not explicitly in users table
+        for vol in self.get_all_volunteers():
+            v_phone = self._normalize_phone(vol.get("phone", ""))
+            if v_phone and v_phone not in seen_phones:
+                users.append({
+                    "phone_number": v_phone,
+                    "display_name": vol.get("name", "Volunteer"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "volunteer",
+                    "onboarding_completed": True,
+                    "default_location": vol.get("service_area") or vol.get("location"),
+                    "created_at": vol.get("created_at") or self._now(),
+                    "last_seen_at": vol.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(v_phone)
+
+        # Include registered organizations not explicitly in users table
+        for org in self.get_all_organizations():
+            o_phone = self._normalize_phone(org.get("phone", ""))
+            if o_phone and o_phone not in seen_phones:
+                users.append({
+                    "phone_number": o_phone,
+                    "display_name": org.get("name", "Organization"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "organization",
+                    "onboarding_completed": True,
+                    "default_location": org.get("location") or org.get("service_area"),
+                    "created_at": org.get("created_at") or self._now(),
+                    "last_seen_at": org.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(o_phone)
+
+        # Include registered donors not explicitly in users table
+        for don in self.get_all_donors():
+            d_phone = self._normalize_phone(don.get("phone", ""))
+            if d_phone and d_phone not in seen_phones:
+                users.append({
+                    "phone_number": d_phone,
+                    "display_name": don.get("name", "Donor"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "donor",
+                    "onboarding_completed": True,
+                    "default_location": don.get("location"),
+                    "created_at": don.get("created_at") or self._now(),
+                    "last_seen_at": don.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(d_phone)
+
         return users
 
     def get_all_donors(self) -> List[Dict[str, Any]]:

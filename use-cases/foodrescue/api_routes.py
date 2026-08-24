@@ -275,13 +275,20 @@ async def get_live_operations_endpoint():
         # Compute pipeline step (1 to 7)
         stage_map = {
             "AVAILABLE": {"step": 1, "label": "Donation Available", "badge": "available"},
+            "LOGGED": {"step": 1, "label": "Donation Logged", "badge": "available"},
             "MATCHED": {"step": 2, "label": "Organization Matched", "badge": "matched"},
+            "NOTIFIED": {"step": 3, "label": "Volunteer Dispatched", "badge": "assigned"},
             "ASSIGNED": {"step": 3, "label": "Volunteer Assigned", "badge": "assigned"},
+            "ACCEPTED": {"step": 3, "label": "Volunteer Assigned", "badge": "assigned"},
+            "PICKUP_ASSIGNED": {"step": 3, "label": "Volunteer Assigned", "badge": "assigned"},
+            "PICKUP_PENDING": {"step": 3, "label": "Volunteer Assigned", "badge": "assigned"},
             "EN_ROUTE": {"step": 4, "label": "Pickup In Progress", "badge": "in_transit"},
             "COLLECTED": {"step": 5, "label": "Food Collected", "badge": "collected"},
             "PICKED_UP": {"step": 5, "label": "Food Collected", "badge": "collected"},
+            "IN_TRANSIT": {"step": 6, "label": "Out for Delivery", "badge": "delivering"},
             "DELIVERING": {"step": 6, "label": "Out for Delivery", "badge": "delivering"},
             "DELIVERED": {"step": 7, "label": "Delivered & Rescued", "badge": "completed"},
+            "DISTRIBUTED": {"step": 7, "label": "Delivered & Rescued", "badge": "completed"},
             "COMPLETED": {"step": 7, "label": "Delivered & Rescued", "badge": "completed"},
             "CANCELLED": {"step": 0, "label": "Cancelled", "badge": "cancelled"},
         }

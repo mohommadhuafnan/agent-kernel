@@ -1036,6 +1036,54 @@ class MongoRepository(BaseRepository):
         norm = self._normalize_phone(phone)
         doc = self.users_col.find_one({"phone_number": norm})
         if not doc:
+            vol_rec = self.get_volunteer_by_phone(norm)
+            if vol_rec and vol_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": vol_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "volunteer",
+                    "onboarding_completed": True,
+                    "default_location": vol_rec.get("service_area") or vol_rec.get("location"),
+                    "created_at": vol_rec.get("created_at") or self._now(),
+                    "last_seen_at": vol_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
+            org_rec = self.get_organization_by_phone(norm)
+            if org_rec and org_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": org_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "organization",
+                    "onboarding_completed": True,
+                    "default_location": org_rec.get("location") or org_rec.get("service_area"),
+                    "created_at": org_rec.get("created_at") or self._now(),
+                    "last_seen_at": org_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
+            donor_rec = self.get_donor_by_phone(norm)
+            if donor_rec and donor_rec.get("name"):
+                return {
+                    "phone_number": norm,
+                    "display_name": donor_rec["name"],
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "donor",
+                    "onboarding_completed": True,
+                    "default_location": donor_rec.get("location"),
+                    "created_at": donor_rec.get("created_at") or self._now(),
+                    "last_seen_at": donor_rec.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                }
             return None
         res = self._clean_doc(doc)
         if res:
@@ -1050,20 +1098,23 @@ class MongoRepository(BaseRepository):
 
             # Enrich display_name and user_role from donor/volunteer/org records if fallback
             if not res.get("display_name") or res.get("display_name", "").startswith("User_") or res.get("user_role") in ["unknown", None, ""]:
-                donor_rec = self.get_donor_by_phone(norm)
-                if donor_rec and donor_rec.get("name"):
-                    res["display_name"] = donor_rec["name"]
-                    res["user_role"] = "donor"
+                vol_rec = self.get_volunteer_by_phone(norm)
+                if vol_rec and vol_rec.get("name"):
+                    res["display_name"] = vol_rec["name"]
+                    res["user_role"] = "volunteer"
+                    res["onboarding_completed"] = True
                 else:
-                    vol_rec = self.get_volunteer_by_phone(norm)
-                    if vol_rec and vol_rec.get("name"):
-                        res["display_name"] = vol_rec["name"]
-                        res["user_role"] = "volunteer"
+                    org_rec = self.get_organization_by_phone(norm)
+                    if org_rec and org_rec.get("name"):
+                        res["display_name"] = org_rec["name"]
+                        res["user_role"] = "organization"
+                        res["onboarding_completed"] = True
                     else:
-                        org_rec = self.get_organization_by_phone(norm)
-                        if org_rec and org_rec.get("name"):
-                            res["display_name"] = org_rec["name"]
-                            res["user_role"] = "organization"
+                        donor_rec = self.get_donor_by_phone(norm)
+                        if donor_rec and donor_rec.get("name"):
+                            res["display_name"] = donor_rec["name"]
+                            res["user_role"] = "donor"
+                            res["onboarding_completed"] = True
 
         return res
 
@@ -1076,10 +1127,32 @@ class MongoRepository(BaseRepository):
         user_role: str = "unknown",
         onboarding_completed: bool = False,
         default_location: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
         now = self._now()
+
+        if not display_name or display_name.startswith("User_") or user_role in ["unknown", None, ""]:
+            vol_rec = self.get_volunteer_by_phone(norm)
+            if vol_rec and vol_rec.get("name"):
+                display_name = display_name if (display_name and not display_name.startswith("User_")) else vol_rec["name"]
+                user_role = "volunteer"
+                onboarding_completed = True
+                default_location = default_location or vol_rec.get("service_area") or vol_rec.get("location")
+            else:
+                org_rec = self.get_organization_by_phone(norm)
+                if org_rec and org_rec.get("name"):
+                    display_name = display_name if (display_name and not display_name.startswith("User_")) else org_rec["name"]
+                    user_role = "organization"
+                    onboarding_completed = True
+                    default_location = default_location or org_rec.get("location") or org_rec.get("service_area")
+                else:
+                    donor_rec = self.get_donor_by_phone(norm)
+                    if donor_rec and donor_rec.get("name"):
+                        display_name = display_name if (display_name and not display_name.startswith("User_")) else donor_rec["name"]
+                        user_role = "donor"
+                        onboarding_completed = True
+                        default_location = default_location or donor_rec.get("location")
         existing = self.users_col.find_one({"phone_number": norm})
         
         if existing:
@@ -1260,9 +1333,13 @@ class MongoRepository(BaseRepository):
     def get_all_users(self) -> List[Dict[str, Any]]:
         docs = list(self.users_col.find({}).sort("last_seen_at", pymongo.DESCENDING))
         users = []
+        seen_phones = set()
         for doc in docs:
             c = self._clean_doc(doc)
             if c:
+                norm = c.get("phone_number", "")
+                if norm:
+                    seen_phones.add(norm)
                 c["onboarding_completed"] = bool(c.get("onboarding_completed", False))
                 c["preferred_response_mode"] = c.get("preferred_response_mode") or "text"
                 if not isinstance(c.get("metadata"), dict):
@@ -1271,7 +1348,89 @@ class MongoRepository(BaseRepository):
                     c["conversation_state"] = {}
                 if not isinstance(c.get("active_draft"), dict):
                     c["active_draft"] = {}
+
+                # Enrich display_name and user_role
+                if not c.get("display_name") or c.get("display_name", "").startswith("User_") or c.get("user_role") in ["unknown", None, ""]:
+                    vol_rec = self.get_volunteer_by_phone(norm)
+                    if vol_rec and vol_rec.get("name"):
+                        c["display_name"] = vol_rec["name"]
+                        c["user_role"] = "volunteer"
+                        c["onboarding_completed"] = True
+                    else:
+                        org_rec = self.get_organization_by_phone(norm)
+                        if org_rec and org_rec.get("name"):
+                            c["display_name"] = org_rec["name"]
+                            c["user_role"] = "organization"
+                            c["onboarding_completed"] = True
+                        else:
+                            donor_rec = self.get_donor_by_phone(norm)
+                            if donor_rec and donor_rec.get("name"):
+                                c["display_name"] = donor_rec["name"]
+                                c["user_role"] = "donor"
+                                c["onboarding_completed"] = True
+
                 users.append(c)
+
+        # Include registered volunteers not explicitly in users collection
+        for vol in self.get_all_volunteers():
+            v_phone = self._normalize_phone(vol.get("phone", ""))
+            if v_phone and v_phone not in seen_phones:
+                users.append({
+                    "phone_number": v_phone,
+                    "display_name": vol.get("name", "Volunteer"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "volunteer",
+                    "onboarding_completed": True,
+                    "default_location": vol.get("service_area") or vol.get("location"),
+                    "created_at": vol.get("created_at") or self._now(),
+                    "last_seen_at": vol.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(v_phone)
+
+        # Include registered organizations not explicitly in users collection
+        for org in self.get_all_organizations():
+            o_phone = self._normalize_phone(org.get("phone", ""))
+            if o_phone and o_phone not in seen_phones:
+                users.append({
+                    "phone_number": o_phone,
+                    "display_name": org.get("name", "Organization"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "organization",
+                    "onboarding_completed": True,
+                    "default_location": org.get("location") or org.get("service_area"),
+                    "created_at": org.get("created_at") or self._now(),
+                    "last_seen_at": org.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(o_phone)
+
+        # Include registered donors not explicitly in users collection
+        for don in self.get_all_donors():
+            d_phone = self._normalize_phone(don.get("phone", ""))
+            if d_phone and d_phone not in seen_phones:
+                users.append({
+                    "phone_number": d_phone,
+                    "display_name": don.get("name", "Donor"),
+                    "preferred_language": "en",
+                    "preferred_response_mode": "text",
+                    "user_role": "donor",
+                    "onboarding_completed": True,
+                    "default_location": don.get("location"),
+                    "created_at": don.get("created_at") or self._now(),
+                    "last_seen_at": don.get("created_at") or self._now(),
+                    "active_draft": {},
+                    "conversation_state": {},
+                    "metadata": {},
+                })
+                seen_phones.add(d_phone)
+
         return users
 
     def get_all_donors(self) -> List[Dict[str, Any]]:

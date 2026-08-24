@@ -1361,6 +1361,98 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     existing_draft = (database.get_draft_donation(phone) if phone else {}) or {}
     donor = database.get_donor_by_phone(phone) if phone else None
     user = database.get_user_by_phone(phone) if phone else None
+    vol_rec = database.get_volunteer_by_phone(phone) if phone else None
+    org_rec = database.get_organization_by_phone(phone) if phone else None
+
+    # Role guard for registered volunteer: Never prompt for food donations or create drafts
+    if (vol_rec or (user and user.get("user_role") == "volunteer")) and curr_state.get("workflow") != "DONATION":
+        is_explicit_donate = any(w in clean_p for w in ["i want to donate", "donate food", "i have food to donate", "පරිත්‍යාග", "தானம்"])
+        if not is_explicit_donate:
+            vol_name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
+            vol_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "Sri Lanka")
+            vol_dist = routing.resolve_district(vol_area) or "Kegalle"
+
+            pending = database.get_all_pickup_tasks()
+            available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+            dist_tasks = [t for t in available_tasks if routing.resolve_district(t.get("pickup_location") or "") == vol_dist]
+            candidate_tasks = dist_tasks if dist_tasks else available_tasks
+
+            if candidate_tasks:
+                top_task = candidate_tasks[0]
+                task_id = top_task["id"]
+                don_id = top_task.get("donation_id", "")
+                don = database.get_donation_record(don_id) if don_id else None
+                food_info = (
+                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
+                    if don
+                    else "30 meal packets — Rice & Curry"
+                )
+                total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
+
+                tools.set_session_context(key="current_task_id", value=task_id)
+                if vol_rec:
+                    tools.set_session_context(key="current_volunteer_id", value=vol_rec["id"])
+                if phone:
+                    database.set_user_conversation_state(
+                        phone, {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id}
+                    )
+
+                return (
+                    f"🚚 **Food Pickup Opportunity in {vol_dist}!**\n\n"
+                    f"Hi {vol_name}! A food rescue task is available:\n\n"
+                    f"• 🆔 **Task ID**: `{task_id}`\n"
+                    f"• 🍱 **Food**: {food_info}\n"
+                    f"• 📍 **Pickup**: {p_area}\n"
+                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
+                    f"• 📏 **Distance**: ~{total_dist} km\n"
+                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
+                    f"*Reply **Accept** or **Reject***"
+                )
+            else:
+                return (
+                    f"🚚 **Volunteer Courier Portal ({vol_dist})**\n\n"
+                    f"Hi {vol_name}! You are registered as an active courier in **{vol_dist}** and marked **AVAILABLE**.\n\n"
+                    f"There are currently 0 unassigned pickups waiting in {vol_dist}.\n\n"
+                    f"Reply with:\n"
+                    f"1️⃣ Search active pickups\n"
+                    f"2️⃣ Check active delivery status\n"
+                    f"3️⃣ Mark myself as free / update vehicle\n"
+                    f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                    f"Our coordinator will message you immediately once a local pickup is ready! 🚚"
+                )
+
+    # Role guard for registered organization: Never prompt for food donations or create drafts
+    if (org_rec or (user and user.get("user_role") == "organization")) and curr_state.get("workflow") != "DONATION":
+        is_explicit_donate = any(w in clean_p for w in ["i want to donate", "donate food", "i have food to donate", "පරිත්‍යාග", "தானம்"])
+        if not is_explicit_donate:
+            org_name = (org_rec.get("name") if org_rec else None) or (user.get("display_name") if user else "Recipient Organization")
+            org_area = (org_rec.get("location") if org_rec else None) or (user.get("default_location") if user else "Sri Lanka")
+            org_dist = routing.resolve_district(org_area) or "Kegalle"
+
+            all_dons = database.get_all_donations()
+            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING"]]
+            dist_dons = [d for d in active_dons if routing.resolve_district(d.get("pickup_location") or "") == org_dist]
+            match_dons = dist_dons if dist_dons else active_dons
+
+            if match_dons:
+                lines = [
+                    f"• **{d.get('quantity')} {d.get('unit', 'portions')} — {d.get('food_type')}** (📍 {d.get('pickup_location', org_dist)})"
+                    for d in match_dons[:3]
+                ]
+                avail_str = "\n".join(lines)
+                return (
+                    f"🏢 **Recipient Organization Portal ({org_dist})**\n\n"
+                    f"Hi {org_name}! Available surplus food in network:\n\n"
+                    f"{avail_str}\n\n"
+                    f"📍 Please share your organization's delivery location pin (Tap ➕ → Location → Send your current location 📍) to receive food!"
+                )
+            else:
+                return (
+                    f"🏢 **Recipient Organization Portal ({org_dist})**\n\n"
+                    f"Hi {org_name}! We have **{org_name}** registered on our priority food distribution list for **{org_dist} District**.\n\n"
+                    f"There are currently 0 active surplus food donations available right now.\n\n"
+                    f"You don't need to keep asking; our AI coordinator will automatically notify you on WhatsApp the moment fresh surplus food is donated in your district! 🍱"
+                )
 
     # 9a. Handle Donor Accepting/Rejecting Matched Organization
     if curr_q == "ACCEPT_ORGANIZATION" or expected_type == "ACCEPT_ORGANIZATION":

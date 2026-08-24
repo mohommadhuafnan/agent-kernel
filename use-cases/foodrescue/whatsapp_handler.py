@@ -595,11 +595,48 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
     # 1. User Profile Lookup & New User Onboarding Tracking
     user = database.get_user_by_phone(from_number)
-    is_new_user = user is None or not user.get("onboarding_completed")
+    vol_rec = database.get_volunteer_by_phone(from_number)
+    org_rec = database.get_organization_by_phone(from_number)
+    donor_rec = database.get_donor_by_phone(from_number)
+
     if not user:
-        user = database.create_or_update_user(
-            phone=from_number, display_name=f"User_{from_number[-4:]}", preferred_language="en", user_role="unknown", onboarding_completed=False
-        )
+        if vol_rec:
+            user = database.create_or_update_user(
+                phone=from_number,
+                display_name=vol_rec.get("name", "Volunteer"),
+                preferred_language="en",
+                user_role="volunteer",
+                onboarding_completed=True,
+                default_location=vol_rec.get("service_area") or vol_rec.get("location"),
+            )
+        elif org_rec:
+            user = database.create_or_update_user(
+                phone=from_number,
+                display_name=org_rec.get("name", "Organization"),
+                preferred_language="en",
+                user_role="organization",
+                onboarding_completed=True,
+                default_location=org_rec.get("location") or org_rec.get("service_area"),
+            )
+        elif donor_rec:
+            user = database.create_or_update_user(
+                phone=from_number,
+                display_name=donor_rec.get("name", "Donor"),
+                preferred_language="en",
+                user_role="donor",
+                onboarding_completed=True,
+                default_location=donor_rec.get("location"),
+            )
+        else:
+            user = database.create_or_update_user(
+                phone=from_number,
+                display_name=f"User_{from_number[-4:]}",
+                preferred_language="en",
+                user_role="unknown",
+                onboarding_completed=False,
+            )
+
+    is_new_user = user is None or (not user.get("onboarding_completed") and not vol_rec and not org_rec and not donor_rec)
 
     preferred_language = user.get("preferred_language", "en") if user else "en"
 
@@ -798,10 +835,34 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
         # Returning user explicit greeting or menu request
         if not is_new_user and is_greeting and not has_active_food_draft and not is_voice_message:
-            donor = database.get_donor_by_phone(from_number)
-            if donor:
+            if vol_rec or (user and user.get("user_role") == "volunteer"):
+                name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
+                s_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "your area")
+                reply_text = (
+                    f"🚚 *Welcome back, {name}!* (Volunteer Courier — {s_area})\n\n"
+                    f"Reply with:\n"
+                    f"1️⃣ Search active pickups in {s_area}\n"
+                    f"2️⃣ Check my active delivery status\n"
+                    f"3️⃣ Mark myself as free / update location\n"
+                    f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                    f"*Or ask any question about your volunteer tasks!*"
+                )
+            elif org_rec or (user and user.get("user_role") == "organization"):
+                name = (org_rec.get("name") if org_rec else None) or (user.get("display_name") if user else "Organization")
+                s_area = (org_rec.get("location") if org_rec else None) or (user.get("default_location") if user else "your area")
+                reply_text = (
+                    f"🏢 *Welcome back, {name}!* (Recipient Organization — {s_area})\n\n"
+                    f"Reply with:\n"
+                    f"1️⃣ Request surplus food donation\n"
+                    f"2️⃣ Track incoming food deliveries\n"
+                    f"3️⃣ Update daily portion capacity\n"
+                    f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+                    f"*Or ask any question about available food donations!*"
+                )
+            elif donor_rec or (user and user.get("user_role") == "donor"):
+                name = (donor_rec.get("name") if donor_rec else None) or (user.get("display_name") if user else "Donor Partner")
                 reply_text = translation_service.get_localized_message(
-                    "returning_donor_welcome", lang=preferred_language, name=donor.get("name", "Friend")
+                    "returning_donor_welcome", lang=preferred_language, name=name
                 )
             else:
                 reply_text = translation_service.get_localized_message("returning_welcome", lang=preferred_language)
@@ -887,17 +948,26 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
         active_don_id = cache.get("current_donation_id") if cache.has("current_donation_id") else None
         active_task_id = cache.get("current_task_id") if cache.has("current_task_id") else None
 
-        is_vol = bool(
-            user_role == "volunteer"
-            or database.get_volunteer_by_phone(from_number) is not None
-            or conv_state.get("workflow") in ["VOLUNTEER", "VOLUNTEER_REGISTRATION"]
-            or conv_state.get("expected_input_type") in ["VOL_LIVE_LOCATION", "VOL_LOCATION", "VOL_NAME", "VOL_VEHICLE", "VOL_DISTRICT"]
+        active_draft = database.get_draft_donation(from_number)
+        has_active_food_draft = bool(active_draft and active_draft.get("food_type"))
+        in_donation_workflow = bool(
+            conv_state.get("workflow") == "DONATION"
+            or has_active_food_draft
+            or conv_state.get("current_question") == "WHATSAPP_LOCATION"
+            or conv_state.get("expected_input_type") == "LOCATION"
         )
-        is_org = bool(
-            user_role == "organization"
-            or database.get_organization_by_phone(from_number) is not None
-            or conv_state.get("workflow") in ["RECIPIENT_REQUEST", "RECIPIENT", "ORGANIZATION"]
+
+        is_vol = not in_donation_workflow and bool(
+            conv_state.get("workflow") in ["VOLUNTEER", "VOLUNTEER_REGISTRATION"]
+            or conv_state.get("expected_input_type") in ["VOL_LIVE_LOCATION", "VOL_LOCATION", "VOL_NAME", "VOL_VEHICLE", "VOL_DISTRICT"]
+            or user_role == "volunteer"
+            or database.get_volunteer_by_phone(from_number) is not None
+        )
+        is_org = not in_donation_workflow and not is_vol and bool(
+            conv_state.get("workflow") in ["RECIPIENT_REQUEST", "RECIPIENT", "ORGANIZATION"]
             or conv_state.get("expected_input_type") in ["ORG_LIVE_LOCATION", "ORG_LOCATION", "ORG_NAME", "ORG_DISTRICT"]
+            or user_role == "organization"
+            or database.get_organization_by_phone(from_number) is not None
         )
 
         import routing

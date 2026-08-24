@@ -453,7 +453,7 @@ const App = (function () {
 
     if (filter === 'in_transit') ops = ops.filter(o => ['EN_ROUTE', 'COLLECTED', 'DELIVERING'].includes(o.status));
     else if (filter === 'available') ops = ops.filter(o => o.status === 'AVAILABLE');
-    else if (filter === 'completed') ops = ops.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED');
+    else if (filter === 'completed') ops = ops.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'DISTRIBUTED');
 
     if (!ops || ops.length === 0) {
       grid.innerHTML = '<div class="empty-state">No operations match the selected filter.</div>';
@@ -475,8 +475,8 @@ const App = (function () {
           <!-- 7-Step Visual Stepper -->
           <div class="pipeline-stepper">
             ${[1, 2, 3, 4, 5, 6, 7].map(sNum => `
-              <div class="stepper-step ${sNum < step ? 'completed' : (sNum === step ? 'active' : '')}">
-                ${sNum < step ? '✓' : sNum}
+              <div class="stepper-step ${sNum < step ? 'completed' : (sNum === step ? (step === 7 ? 'completed active' : 'active') : '')}">
+                ${sNum < step || (sNum === 7 && step === 7) ? '✓' : sNum}
               </div>
             `).join('')}
           </div>
@@ -649,7 +649,7 @@ const App = (function () {
           <td><span class="badge badge-emerald">${langLabel}</span></td>
           <td><span class="badge badge-blue">${(u.preferred_response_mode || 'text').toUpperCase()}</span></td>
           <td>${u.onboarding_completed ? '✅ Completed' : '⏳ In Progress'}</td>
-          <td>${u.active_draft && Object.keys(u.active_draft).length ? '📝 Active Draft' : 'None'}</td>
+          <td>${u.active_draft && (u.active_draft.food_type || (u.active_draft.quantity && u.active_draft.quantity > 0)) ? '📝 Active Draft' : 'None'}</td>
           <td>${formatDate(u.last_seen_at)}</td>
           <td>
             <button class="btn btn-secondary btn-sm" onclick="App.openUserConversation('${u.phone_number}')">Open Chat</button>
@@ -1318,8 +1318,12 @@ const App = (function () {
       'AVAILABLE': 'emerald',
       'MATCHED': 'blue',
       'PICKUP_ASSIGNED': 'purple',
+      'ASSIGNED': 'purple',
+      'EN_ROUTE': 'blue',
       'COLLECTED': 'amber',
       'DELIVERED': 'emerald',
+      'DISTRIBUTED': 'emerald',
+      'COMPLETED': 'emerald',
       'CANCELLED': 'rose'
     };
     return map[status] || 'slate';

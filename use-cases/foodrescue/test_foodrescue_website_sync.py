@@ -6,6 +6,7 @@ and settings configuration.
 
 import os
 import sys
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -272,3 +273,104 @@ def test_whatsapp_conversation_simulator_endpoint():
     assert len(data["messages"]) >= 2
     assert data["messages"][0]["sender"] == "user"
     assert data["messages"][1]["sender"] == "agent"
+
+
+def test_distributed_donation_pipeline_step_7():
+    """Verify DISTRIBUTED status maps to stage_step 7 in live operations pipeline."""
+    don = database.create_donation_record(
+        donation_id="don-dist-test-1",
+        donor_id="d1",
+        food_type="Rice & Curry",
+        quantity=10,
+        unit="packets",
+        dietary_info="Standard",
+        location="Kegalle, Sabaragamuwa, LK",
+        available_from="Now",
+        deadline="Before 8 PM"
+    )
+    database.update_donation_status_record("don-dist-test-1", "DISTRIBUTED")
+
+    ops_res = client.get("/api/live-operations")
+    assert ops_res.status_code == 200
+    ops = ops_res.json()["operations"]
+    found_op = next((o for o in ops if o["donation_id"] == "don-dist-test-1"), None)
+    assert found_op is not None
+    assert found_op["status"] == "DISTRIBUTED"
+    assert found_op["stage_step"] == 7
+    assert found_op["stage_badge"] == "completed"
+    assert found_op["stage_label"] == "Delivered & Rescued"
+
+
+def test_registered_volunteer_multi_turn_and_user_directory():
+    """Verify registered volunteer messaging multiple times gets volunteer responses and no donor drafts."""
+    import tools
+    vol_res = json.loads(tools.register_volunteer(
+        name="a volunteer",
+        service_area="Kegalle",
+        phone="+94772117131",
+        transport_mode="Car"
+    ))
+    assert vol_res["status"] == "success"
+
+    # Simulate volunteer messaging
+    res1 = client.post("/api/conversations/+94772117131/simulate", json={
+        "message": "Hi",
+        "is_voice": False
+    })
+    assert res1.status_code == 200
+    r1_text = res1.json()["reply"]
+    assert "Volunteer Courier" in r1_text or "a volunteer" in r1_text or "Volunteer" in r1_text
+
+    # Ask about food / pickups
+    res2 = client.post("/api/conversations/+94772117131/simulate", json={
+        "message": "any food available?",
+        "is_voice": False
+    })
+    assert res2.status_code == 200
+    r2_text = res2.json()["reply"]
+    assert "Volunteer" in r2_text or "pickup" in r2_text.lower() or "AVAILABLE" in r2_text
+
+    # Verify user directory
+    users_res = client.get("/api/users")
+    assert users_res.status_code == 200
+    users = {u["phone_number"]: u for u in users_res.json()["users"]}
+    assert "94772117131" in users
+    vol_user = users["94772117131"]
+    assert vol_user["display_name"] == "a volunteer"
+    assert vol_user["user_role"] == "volunteer"
+    assert vol_user["onboarding_completed"] is True
+    # Draft should be empty / not active
+    assert not vol_user.get("active_draft") or not vol_user["active_draft"].get("food_type")
+
+
+def test_registered_organization_multi_turn_reassurance():
+    """Verify registered recipient organization gets appropriate reassurance without donor drafts."""
+    import tools
+    org_res = json.loads(tools.register_organization(
+        name="Jeya orphanage",
+        location="Kegalle",
+        service_area="Kegalle",
+        accepted_food_types="Meals",
+        phone="+94760552483",
+        capacity="50 portions"
+    ))
+    assert org_res["status"] == "success"
+
+    res = client.post("/api/conversations/+94760552483/simulate", json={
+        "message": "do you have food available?",
+        "is_voice": False
+    })
+    assert res.status_code == 200
+    reply = res.json()["reply"]
+    assert "organization" in reply.lower() or "orphanage" in reply.lower() or "priority" in reply.lower() or "surplus" in reply.lower()
+
+    # Verify user directory
+    users_res = client.get("/api/users")
+    assert users_res.status_code == 200
+    users = {u["phone_number"]: u for u in users_res.json()["users"]}
+    assert "94760552483" in users
+    org_user = users["94760552483"]
+    assert org_user["display_name"] == "Jeya orphanage"
+    assert org_user["user_role"] == "organization"
+    assert org_user["onboarding_completed"] is True
+
