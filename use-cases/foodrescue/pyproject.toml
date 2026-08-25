@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "agentkernel[cli,adk,api,whatsapp]>=0.8.1",
     "pymongo>=4.17.0",
+    "mcp>=1.0.0",
     "pyreadline3; sys_platform == 'win32'",
 ]
 

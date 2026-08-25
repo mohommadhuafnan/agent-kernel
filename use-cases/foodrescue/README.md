@@ -5,8 +5,8 @@
 [![Google Gemini](https://img.shields.io/badge/LLM-Gemini-orange.svg)](https://deepmind.google/technologies/gemini/)
 [![Vercel Deployment](https://img.shields.io/badge/Deployed-Vercel%20Production-black.svg)](https://foodrescue-ai-ten.vercel.app)
 [![MongoDB Atlas](https://img.shields.io/badge/Database-MongoDB%20Atlas-green.svg)](https://www.mongodb.com/atlas)
-[![WhatsApp Cloud API](https://img.shields.io/badge/Channel-Meta%20WhatsApp-25D366.svg)](https://business.facebook.com/)
-[![Tests Passing](https://img.shields.io/badge/Tests-170%20Passed-brightgreen.svg)](#23-testing)
+[![Tests Passing](https://img.shields.io/badge/Tests-255%20Passed-brightgreen.svg)](#23-testing)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Official%20Python%20SDK-purple.svg)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
 > **Live Production Dashboard**: [https://foodrescue-ai-ten.vercel.app](https://foodrescue-ai-ten.vercel.app)  
@@ -699,21 +699,84 @@ Turn 1: "We need 25 dinner packets for our children's home in Kandy"
 
 ---
 
-## 28. UN Sustainable Development Goals (SDG) Alignment
+## 28. Model Context Protocol (MCP) Server Integration
+
+FoodRescue AI includes a dedicated, custom **Model Context Protocol (MCP) Server** built using the official MCP Python SDK (`mcp`). The MCP server provides a standardized, schema-validated tool-access layer allowing external AI assistants, Agent Kernel agents, and client applications to interact with FoodRescue operations.
+
+### Architecture & Relationship to Agent Kernel
+
+```text
+                         FOODRESCUE AI
+                              │
+                ┌─────────────┴─────────────┐
+                │                           │
+             WhatsApp                    Web App
+                │                           │
+                └─────────────┬─────────────┘
+                              │
+                        Agent Kernel
+                  (Reasoning & Orchestration)
+                              │
+                         MCP Client
+                              │
+                    FoodRescue MCP Server
+                     (Standardized Tools)
+                              │
+          ┌───────────────────┼────────────────────┐
+          │                   │                    │
+       Location            Routing               QR
+        Tools              Tools                Tools
+          │                   │                    │
+          ↓                   ↓                    ↓
+     MongoDB/SQLite       Routing API         QR Service
+          │                   │                    │
+          └───────────────────┼────────────────────┘
+                              │
+                    Unified Persistence &
+                    Core Business Logic
+```
+
+> **Key Architectural Principle**: Agent Kernel serves as the AI reasoning and workflow orchestration engine, while the FoodRescue MCP Server acts as the standardized capability gateway. MCP tools call real underlying services without duplicating business logic or introducing fake/mock data.
+
+### Discovered MCP Tools Catalog
+
+| Category | MCP Tool Name | Description | Source Service |
+|---|---|---|---|
+| **Location** | `get_live_location` | Retrieve a user's most recent GPS coordinates, address, and Google Maps pin. | User profile, conversation state, or protected GPS records |
+| **Matching** | `find_nearby_organizations` | Search registered recipient organizations near GPS coordinates matching food type and quantity. | MongoDB/SQLite organization repository + Haversine distance ranking |
+| **Matching** | `find_nearby_volunteers` | Search available, registered volunteer couriers filtered by vehicle mode. | Volunteer records + availability status |
+| **Matching** | `match_donation` | End-to-end matching returning compatible organizations and candidate couriers for a specific donation. | Unified matching engine |
+| **Logistics** | `calculate_route` | Compute real road distance, duration, and navigation links between two GPS points. | GraphHopper Routing API + spherical road curve fallback |
+| **Logistics** | `calculate_transport_support` | Calculate dynamic volunteer fuel/travel reimbursement using configured rates. | Dynamic vehicle settings (`database.get_transport_settings()`) |
+| **Logistics** | `calculate_task_metrics` | Combined metrics computation (pickup coords, delivery coords, road distance, duration, LKR support). | Dynamic routing + transport rates |
+| **Handover** | `generate_handover_qr` | Generate cryptographically secure pickup or delivery handover verification token and QR image URL. | `qr_service.py` + QR persistence |
+| **Handover** | `verify_handover_qr` | Verify and consume a physical QR token at pickup or delivery doorstep, advancing task lifecycle. | Atomic database state transition |
+| **Tasks & Health** | `get_task_status` | Retrieve complete task card, linked parties, and active QR tokens. | Pickup task repository |
+| **Tasks & Health** | `get_donation` | Look up surplus food donation record. | Donation repository |
+| **Tasks & Health** | `get_foodrescue_system_status` | Comprehensive health check across MCP server, Database, Routing API, QR engine, and WhatsApp integration. | Real subsystem diagnostics |
+
+### Running the MCP Server
+
+#### Standard I/O (CLI / Agent Mode)
+```bash
+# Run over stdio transport
+python -m mcp_server.server
+```
+
+#### Running MCP Tests
+```bash
+# Run dedicated MCP test suite
+pytest test_foodrescue_mcp_server.py -v
+```
+
+---
+
+## 29. UN Sustainable Development Goals (SDG) Alignment
 
 * 🎯 **SDG 2: Zero Hunger (Target 2.1 & 2.2)**: Rapidly channels nutritious, safe surplus food to vulnerable communities, orphanages, and elder care homes.
 * ♻️ **SDG 12: Responsible Consumption & Production (Target 12.3)**: Directly targets halving per-capita global food waste along commercial supply chains and hospitality operations.
 * 🌿 **SDG 13: Climate Action**: Prevents organic waste decomposition in open landfills, significantly reducing methane ($CH_4$) greenhouse gas emissions.
 * 🤝 **SDG 17: Partnerships for the Goals**: Creates collaborative digital infrastructure connecting commercial businesses, non-profit charities, and civic volunteer couriers.
-
----
-
-## 29. Future Enhancements
-
-* 📦 **Multi-Stop Route Optimization**: Multi-order pickup chaining allowing single couriers to collect from 2–3 nearby restaurants in one route.
-* 📊 **Predictive Surplus Analytics**: Machine learning models forecasting surplus food trends per day of the week for hotels and supermarkets.
-* 📱 **Additional Channels**: Expansion to Telegram and SMS for low-connectivity rural communities.
-* 🌡️ **Cold-Chain Logistics Verification**: IoT temperature sensor integration for perishable dairy and meat donations.
 
 ---
 
@@ -723,24 +786,31 @@ Turn 1: "We need 25 dinner packets for our children's home in Kandy"
 use-cases/foodrescue/
 ├── api/
 │   └── index.py                           # Vercel Serverless ASGI entrypoint
+├── mcp_server/                            # Custom Model Context Protocol (MCP) Server
+│   ├── __init__.py                        # Package exports & server singleton
+│   ├── server.py                          # MCPServer instance, logging, transport runners
+│   ├── location_tools.py                  # GPS lookup tools
+│   ├── matching_tools.py                  # Organization & courier proximity matching tools
+│   ├── routing_tools.py                   # Road distance, duration & transport reimbursement tools
+│   ├── qr_tools.py                        # Handover QR generation & mobile scan verification tools
+│   └── task_tools.py                      # Task queries, donation lookups & system health checks
 ├── static/
 │   └── index.html                         # Operations dashboard (Vanilla HTML/CSS/JS)
-├── .vercel/
-│   └── project.json                       # Vercel project linkage
 ├── app.py                                 # Agent Kernel coordinator definition & tool bindings
 ├── api_routes.py                          # FastAPI REST endpoints & operations router
 ├── database.py                            # Database factory & repository delegation layer
 ├── db_base.py                             # Abstract BaseRepository interface
 ├── db_sqlite.py                           # SQLite repository (local & test persistence)
 ├── db_mongo.py                            # MongoDB Atlas repository (cloud persistence)
+├── qr_service.py                          # Zero-dependency QR generator & QRCoder V4 integration
 ├── resilient_executor.py                  # Multi-model pool & deterministic offline fallback
-├── routing.py                             # Distance calculation, Google Routes & transport rates
+├── routing.py                             # Distance calculation, GraphHopper Routes & transport rates
 ├── server.py                              # Local ASGI server entrypoint
 ├── tools.py                               # 48+ domain tools bound to the Agent
 ├── translation_service.py                 # Localized message catalog (en, si, ta)
 ├── voice_service.py                       # Valsea AI speech-to-text & entity extraction
 ├── whatsapp_handler.py                    # Meta WhatsApp Cloud API webhook handler
-├── verify_production.py                   # Production smoke test verification suite
+├── test_foodrescue_mcp_server.py          # Dedicated MCP Server test suite
 ├── test_foodrescue.py                     # Core coordinator & lifecycle tests
 ├── test_foodrescue_donor_upgrade.py       # 31 acceptance criteria donor flow test suite
 ├── test_foodrescue_conversational_upgrade.py # Multi-turn conversation & webhook tests
@@ -749,13 +819,11 @@ use-cases/foodrescue/
 ├── test_foodrescue_mongodb.py             # MongoDB Atlas integration tests
 ├── test_foodrescue_multilingual_voice.py  # Sinhala/Tamil/English voice & language tests
 ├── test_foodrescue_stateful_coordination.py # Zero-repetition & stateful coordination tests
+├── test_foodrescue_role_location_qr.py    # Role isolation, GPS validation & QR delivery tests
 ├── test_foodrescue_website_sync.py        # Dashboard & REST sync tests
 ├── test_foodrescue_whatsapp.py            # WhatsApp webhook & idempotency tests
 ├── vercel.json                            # Vercel deployment configuration
-├── requirements.txt                       # Python dependencies
-├── pyproject.toml                         # Project metadata
-├── SPEC.md                                # Technical specification
-├── AGENTS.md                              # Agent development guidelines
+├── pyproject.toml                         # Project metadata & dependencies
 └── README.md                              # Comprehensive project documentation
 ```
 
