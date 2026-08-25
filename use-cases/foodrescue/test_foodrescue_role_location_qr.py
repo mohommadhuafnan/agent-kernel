@@ -116,12 +116,12 @@ async def test_donor_location_pin_gate_prevents_premature_confirmation():
 
 
 # =============================================================================
-# 3. QR CODE URL & IMAGE DELIVERY TO VOLUNTEER UPON TASK ACCEPTANCE
+# 3. DONOR QR CODE DELIVERY & VOLUNTEER SCANNER LINK ON TASK ACCEPTANCE
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_volunteer_receives_qr_code_and_verification_url_on_acceptance():
-    """Verify that volunteer assignment response contains QR image URL, verification link, and WhatsApp image is sent."""
+async def test_donor_receives_pickup_qr_image_and_volunteer_receives_scan_verification_link():
+    """Verify that Donor receives the Pickup QR code image to show, and Volunteer receives verification link and instructions to scan."""
     donor_phone = "94771122334"
     org_phone = "94775566778"
     vol_phone = "94779900112"
@@ -154,12 +154,11 @@ async def test_volunteer_receives_qr_code_and_verification_url_on_acceptance():
         assert res["status"] == "processed"
         reply = res["reply"]
 
-        # 1. Returned message to volunteer contains QR Code Image URL and Mobile Verification URL
-        assert "/api/qr/FR-PK-" in reply
+        # 1. Returned message to volunteer contains route details and Mobile Verification Link to scan/verify
         assert "/verify/pickup/FR-PK-" in reply
         assert "Task ID" in reply or "task-vqr" in reply
 
-        # 2. Donor received WhatsApp image message containing the Pickup QR Code
+        # 2. Donor received WhatsApp image message containing the Pickup QR Code to display on screen
         donor_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == donor_phone]
         assert len(donor_img_calls) >= 1
         assert "/api/qr/FR-PK-" in donor_img_calls[0].kwargs.get("image_url")

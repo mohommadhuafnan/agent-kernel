@@ -377,25 +377,21 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception:
                     pass
 
-            # 3. Send Pickup QR Code image & scanning instructions directly to Volunteer (if dispatched as cross-notification)
+            # 3. Send Pickup QR scanning instructions directly to Volunteer (if dispatched as cross-notification)
             if vol_phone and vol_phone != from_number:
                 vol_user = database.get_user_by_phone(vol_phone)
                 v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
                 v_instr = translation_service.get_localized_message("volunteer_ask_pickup_qr", lang=v_lang)
-                v_caption = f"🔐 *Pickup Verification QR Code* (Task: `{task_id}`)\n\n{v_instr}\n\n🔗 Link: {verif_url}"
+                v_caption = f"🔐 *Pickup Verification* (Task: `{task_id}`)\n\n{v_instr}\n\n🔗 Scanner Link: {verif_url}"
                 try:
-                    await send_whatsapp_image(to_number=vol_phone, image_url=qr_img_url, caption=v_caption)
+                    await send_whatsapp_message(to_number=vol_phone, text=v_caption)
                 except Exception as e:
-                    logger.warning(f"Failed to send volunteer pickup QR image: {e}")
-                    try:
-                        await send_whatsapp_message(to_number=vol_phone, text=v_caption)
-                    except Exception:
-                        pass
+                    logger.warning(f"Failed to send volunteer pickup scan instructions: {e}")
                 try:
                     database.record_message(
                         phone=vol_phone,
                         sender="agent",
-                        text=f"{v_instr}\n\n📷 [Pickup QR Code Image]({qr_img_url})\n🔐 Verification: {verif_url}"
+                        text=f"{v_instr}\n\n🔐 Verification Link: {verif_url}"
                     )
                 except Exception:
                     pass

@@ -831,10 +831,10 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "📏 **Total Route**: ~{total_dist} km\n"
             "💰 **Estimated Transport Support**: LKR {est_cost}\n"
             "🗺️ **Complete Route Navigation**: {directions_link}\n\n"
-            "🔐 **PICKUP HANDOVER QR CODE:**\n"
-            "• 📷 **QR Image**: {qr_img_link}\n"
-            "• 📱 **Verification Link**: {verification_url}\n\n"
-            "📍 Please proceed to collect the food from the donor. Show/scan the QR code at handover, and once collected reply *'Collected'*."
+            "🔐 **HANDOVER VERIFICATION (SCAN AT DONOR):**\n"
+            "• 📸 Ask the donor to show the **Pickup QR Code** on their phone screen.\n"
+            "• 📱 Scan their QR code with your camera or tap: {verification_url}\n\n"
+            "📍 Please proceed to collect the food from the donor. Scan the donor's QR code at handover, and once collected reply *'Collected'*."
         ),
         "si": (
             "✅ **ආහාර බෙදාහැරීමේ කාර්යය භාරගන්නා ලදී (Assigned)!**\n\n"
@@ -855,9 +855,9 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "📏 **මුළු දුර**: ~{total_dist} km\n"
             "💰 **ප්‍රවාහන සහාය මුදල**: LKR {est_cost}\n"
             "🗺️ **සම්පූර්ණ මාර්ග සිතියම**: {directions_link}\n\n"
-            "🔐 **ආහාර ලබාගැනීමේ QR කේතය (Pickup QR):**\n"
-            "• 📷 **QR පින්තූරය**: {qr_img_link}\n"
-            "• 📱 **තහවුරු කිරීමේ සබැඳිය**: {verification_url}\n\n"
+            "🔐 **ආහාර ලබාගැනීම තහවුරු කිරීම (පරිත්‍යාගශීලියාගෙන් ස්කෑන් කරන්න):**\n"
+            "• 📸 පරිත්‍යාගශීලියාගේ දුරකථනයේ ඇති **Pickup QR Code** එක පෙන්වන්නැයි ඉල්ලා සිටින්න.\n"
+            "• 📱 ඔබගේ කැමරාවෙන් එය ස්කෑන් කරන්න හෝ මෙතැනින් තහවුරු කරන්න: {verification_url}\n\n"
             "📍 කරුණාකර ආහාර ලබාගැනීමට ගමන් කරන්න. ලබාගත් පසු *'Collected'* ලෙස එවන්න."
         ),
         "ta": (
@@ -879,9 +879,9 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "📏 **மொத்த தூரம்**: ~{total_dist} கி.மீ\n"
             "💰 **போக்குவரத்து ஆதரவுத் தொகை**: LKR {est_cost}\n"
             "🗺️ **முழு வழிசெலுத்தல் வரைபடம்**: {directions_link}\n\n"
-            "🔐 **உணவு ஒப்படைப்பு QR குறியீடு:**\n"
-            "• 📷 **QR படம்**: {qr_img_link}\n"
-            "• 📱 **சரிபார்ப்பு இணைப்பு**: {verification_url}\n\n"
+            "🔐 **உணவு ஒப்படைப்பு சரிபார்ப்பு (நன்கொடையாளரிடம் ஸ்கேன் செய்யவும்):**\n"
+            "• 📸 நன்கொடையாளரின் தொலைபேசியில் உள்ள **Pickup QR Code** ஐக் காண்பிக்குமாறு கேட்கவும்.\n"
+            "• 📱 உங்கள் கேமரா மூலம் ஸ்கேன் செய்யவும் அல்லது சரிபார்க்கவும்: {verification_url}\n\n"
             "📍 தயவுசெய்து உணவை சேகரிக்க செல்லவும். சேகரித்த பிறகு *'Collected'* என பதிலளிக்கவும்."
         ),
     },
