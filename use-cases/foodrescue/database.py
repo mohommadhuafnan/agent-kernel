@@ -21,8 +21,18 @@ def get_repository() -> BaseRepository:
 
     backend = os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite").strip().lower()
     if backend == "mongodb":
-        from db_mongo import MongoRepository
-        _CURRENT_REPO = MongoRepository()
+        try:
+            from db_mongo import MongoRepository
+            mongo_repo = MongoRepository()
+            mongo_repo._get_db().command("ping")
+            _CURRENT_REPO = mongo_repo
+            return _CURRENT_REPO
+        except Exception as exc:
+            import logging
+            logging.getLogger("foodrescue.db").warning(f"MongoDB connection failed ({exc}); falling back to SQLite.")
+            from db_sqlite import SQLiteRepository
+            _CURRENT_REPO = SQLiteRepository()
+            return _CURRENT_REPO
     else:
         from db_sqlite import SQLiteRepository
         _CURRENT_REPO = SQLiteRepository()
