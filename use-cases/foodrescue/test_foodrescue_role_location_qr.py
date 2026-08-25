@@ -162,3 +162,39 @@ async def test_donor_receives_pickup_qr_image_and_volunteer_receives_scan_verifi
         donor_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == donor_phone]
         assert len(donor_img_calls) >= 1
         assert "/api/qr/FR-PK-" in donor_img_calls[0].kwargs.get("image_url")
+
+
+@pytest.mark.asyncio
+async def test_organization_receives_delivery_qr_image_on_food_collection():
+    """Verify that Organization receives the Delivery QR code image to show, when food is collected."""
+    donor_phone = "94772233445"
+    org_phone = "94776677889"
+    vol_phone = "94779988776"
+
+    database.create_or_update_user(donor_phone, display_name="City Cafe", user_role="donor")
+    database.create_or_update_user(org_phone, display_name="Elder Care Home", user_role="organization")
+    database.create_or_update_user(vol_phone, display_name="Ravi Courier", user_role="volunteer")
+
+    d = database.create_donor_record("d-dqr", "City Cafe", donor_phone, "Kegalle")
+    o = database.create_organization_record("org-dqr", "Elder Care Home", org_phone, "Mawanella", "Meals")
+    v = database.create_volunteer_record("vol-dqr", "Ravi Courier", vol_phone, "Kegalle", "Motorbike", current_status="busy")
+
+    don = database.create_donation_record("don-dqr", "d-dqr", "Fried Rice", 25, "packets", "Halal", "Kegalle", "Now", "8 PM")
+    task = database.create_pickup_task_record("task-dqr", "don-dqr", "org-dqr", "Kegalle", "Mawanella", "8 PM")
+    database.assign_volunteer_record("task-dqr", "vol-dqr")
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
+         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+        mock_msg.return_value = {"status": "sent"}
+        mock_img.return_value = {"status": "sent"}
+
+        vol_payload = {"from": vol_phone, "id": "msg_vol_col_1", "type": "text", "text": {"body": "Collected"}}
+        res = await whatsapp_handler.process_incoming_whatsapp_message(vol_payload)
+
+        assert res["status"] == "processed"
+
+        # Organization received WhatsApp image message containing the Delivery QR Code to display on screen
+        org_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == org_phone]
+        assert len(org_img_calls) >= 1
+        assert "/api/qr/FR-DL-" in org_img_calls[0].kwargs.get("image_url")
+

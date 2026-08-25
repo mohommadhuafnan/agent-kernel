@@ -384,9 +384,6 @@ def get_base_url() -> str:
     custom = os.environ.get("VERIFICATION_BASE_URL") or os.environ.get("FOODRESCUE_BASE_URL")
     if custom:
         return custom.rstrip("/")
-    vercel = os.environ.get("VERCEL_URL")
-    if vercel:
-        return f"https://{vercel.rstrip('/')}"
     return "https://foodrescue-ai-ten.vercel.app"
 
 
