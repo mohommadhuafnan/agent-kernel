@@ -1105,11 +1105,80 @@ async def compute_two_leg_route(
 GoogleRoutesProvider = GraphHopperRouteProvider
 
 
-def generate_map_link(latitude: float, longitude: float) -> str:
-    """Generate a map search link for a single coordinate pin."""
-    return f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"
+def generate_map_link(*args, **kwargs) -> str:
+    """Generate a map search link for coordinates or a location query string."""
+    import urllib.parse
+    if len(args) == 2:
+        lat, lng = args
+        return f"https://www.google.com/maps/search/?api=1&query={float(lat):.6f},{float(lng):.6f}"
+    if len(args) == 1:
+        loc = args[0]
+        if isinstance(loc, (tuple, list)) and len(loc) >= 2:
+            return f"https://www.google.com/maps/search/?api=1&query={float(loc[0]):.6f},{float(loc[1]):.6f}"
+        if isinstance(loc, dict) and (loc.get("latitude") or loc.get("lat")):
+            lat = loc.get("latitude", loc.get("lat"))
+            lng = loc.get("longitude", loc.get("lng"))
+            return f"https://www.google.com/maps/search/?api=1&query={float(lat):.6f},{float(lng):.6f}"
+        coords = geocode_location(str(loc))
+        if coords:
+            return f"https://www.google.com/maps/search/?api=1&query={coords[0]:.6f},{coords[1]:.6f}"
+        return f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(str(loc).strip())}"
+    lat = kwargs.get("latitude") or kwargs.get("lat")
+    lng = kwargs.get("longitude") or kwargs.get("lng")
+    if lat is not None and lng is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={float(lat):.6f},{float(lng):.6f}"
+    return "https://maps.google.com"
 
 
-def generate_directions_link(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> str:
-    """Generate a turn-by-turn directions URL between two coordinates."""
-    return f"https://www.google.com/maps/dir/?api=1&origin={origin_lat:.6f},{origin_lng:.6f}&destination={dest_lat:.6f},{dest_lng:.6f}"
+def generate_directions_link(*args, **kwargs) -> str:
+    """Generate a turn-by-turn Google Maps directions URL between two locations.
+    
+    Supports:
+    - 4 floats: generate_directions_link(origin_lat, origin_lng, dest_lat, dest_lng)
+    - 2 arguments (strings/coords/dicts): generate_directions_link(origin, destination)
+    """
+    import urllib.parse
+
+    if len(args) == 4:
+        o_lat, o_lng, d_lat, d_lng = args
+        return f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
+    
+    if len(args) == 2:
+        orig, dest = args
+        # Check if orig/dest are coords
+        o_coords = None
+        d_coords = None
+        if isinstance(orig, (tuple, list)) and len(orig) >= 2:
+            o_coords = (float(orig[0]), float(orig[1]))
+        elif isinstance(orig, dict) and (orig.get("latitude") or orig.get("lat")):
+            lat = orig.get("latitude", orig.get("lat"))
+            lng = orig.get("longitude", orig.get("lng"))
+            o_coords = (float(lat), float(lng))
+        elif isinstance(orig, str):
+            o_coords = geocode_location(orig)
+
+        if isinstance(dest, (tuple, list)) and len(dest) >= 2:
+            d_coords = (float(dest[0]), float(dest[1]))
+        elif isinstance(dest, dict) and (dest.get("latitude") or dest.get("lat")):
+            lat = dest.get("latitude", dest.get("lat"))
+            lng = dest.get("longitude", dest.get("lng"))
+            d_coords = (float(lat), float(lng))
+        elif isinstance(dest, str):
+            d_coords = geocode_location(dest)
+
+        if o_coords and d_coords:
+            return f"https://www.google.com/maps/dir/?api=1&origin={o_coords[0]:.6f},{o_coords[1]:.6f}&destination={d_coords[0]:.6f},{d_coords[1]:.6f}"
+        
+        orig_str = urllib.parse.quote(str(orig).strip(), safe="")
+        dest_str = urllib.parse.quote(str(dest).strip(), safe="")
+        return f"https://www.google.com/maps/dir/?api=1&origin={orig_str}&destination={dest_str}"
+
+    # Fallback to kwargs
+    o_lat = kwargs.get("origin_lat") or kwargs.get("origin_latitude")
+    o_lng = kwargs.get("origin_lng") or kwargs.get("origin_longitude")
+    d_lat = kwargs.get("dest_lat") or kwargs.get("dest_latitude")
+    d_lng = kwargs.get("dest_lng") or kwargs.get("dest_longitude")
+    if o_lat is not None and o_lng is not None and d_lat is not None and d_lng is not None:
+        return f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
+
+    return "https://maps.google.com"

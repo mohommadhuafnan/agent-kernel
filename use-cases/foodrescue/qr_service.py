@@ -394,6 +394,16 @@ def build_verification_url(qr_type: str, token: str, base_url: Optional[str] = N
     return f"{root}/verify/{type_slug}/{token}"
 
 
+def build_scanner_url(qr_type: str = "pickup", task_id: Optional[str] = None, base_url: Optional[str] = None) -> str:
+    """Construct camera scanner interface URL for volunteer mobile devices."""
+    root = (base_url or get_base_url()).rstrip("/")
+    type_slug = "pickup" if str(qr_type).upper() == "PICKUP" else "delivery"
+    if task_id:
+        import urllib.parse
+        return f"{root}/scanner?type={type_slug}&task_id={urllib.parse.quote(str(task_id))}"
+    return f"{root}/scanner?type={type_slug}"
+
+
 # =============================================================================
 # QRCODER V4 API INTEGRATION & IMAGE CACHING ENGINE
 # =============================================================================

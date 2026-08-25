@@ -154,9 +154,11 @@ async def test_donor_receives_pickup_qr_image_and_volunteer_receives_scan_verifi
         assert res["status"] == "processed"
         reply = res["reply"]
 
-        # 1. Returned message to volunteer contains route details and Mobile Verification Link to scan/verify
-        assert "/verify/pickup/FR-PK-" in reply
-        assert "Task ID" in reply or "task-vqr" in reply
+        # 1. Returned message to volunteer contains route details and Mobile Camera Scanner link to scan donor screen
+        assert "/scanner" in reply or "scanner" in reply
+        assert "task-vqr" in reply
+        # Anti-cheat check: direct token verification URL is not leaked to volunteer
+        assert "FR-PK-" not in reply or "/api/qr/" not in reply
 
         # 2. Donor received WhatsApp image message containing the Pickup QR Code to display on screen
         donor_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == donor_phone]

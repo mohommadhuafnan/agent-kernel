@@ -601,3 +601,139 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         assert "Mushan" in disp_text
         assert vol_phone in disp_text
 
+
+# =============================================================================
+# 9. MOBILE CAMERA SCANNER & VOLUNTEER AVAILABILITY TESTS
+# =============================================================================
+
+def test_scanner_endpoint_serves_mobile_camera_ui():
+    """Verify that /scanner and /scan endpoints render the mobile camera QR scanner interface."""
+    resp_pickup = client.get("/scanner?type=pickup&task_id=task-test-123")
+    assert resp_pickup.status_code == 200
+    assert "text/html" in resp_pickup.headers.get("content-type", "")
+    assert "Pickup Verification" in resp_pickup.text
+    assert "html5-qrcode" in resp_pickup.text
+    assert 'id="reader"' in resp_pickup.text
+    assert "Point your camera" in resp_pickup.text
+    assert "/verify/" in resp_pickup.text
+
+    resp_delivery = client.get("/scan/delivery?task_id=task-test-123")
+    assert resp_delivery.status_code == 200
+    assert "Delivery Verification" in resp_delivery.text
+    assert "Scan Organization's Screen" in resp_delivery.text
+
+    resp_short = client.get("/scan")
+    assert resp_short.status_code == 200
+    assert "FoodRescue AI" in resp_short.text
+
+
+@pytest.mark.asyncio
+async def test_volunteer_availability_chat_success():
+    """Verify that when a volunteer says 'I am available' or 'available', their status is updated and no error occurs."""
+    vol_phone = "94773344556"
+    database.create_or_update_user(vol_phone, display_name="Kasun Perera", user_role="volunteer", default_location="Colombo")
+    database.create_volunteer_record("vol-avail-1", "Kasun Perera", vol_phone, "Colombo", "Motorbike", current_status="busy")
+
+    payload = {"from": vol_phone, "id": "msg_vol_avail", "type": "text", "text": {"body": "I am available"}}
+    res = await whatsapp_handler.process_incoming_whatsapp_message(payload)
+
+    assert res["status"] == "processed"
+    reply = res["reply"]
+
+    # Verify not error message and not donor food donation prompt
+    assert "trouble processing" not in reply.lower()
+    assert "what type of food" not in reply.lower()
+    assert "marked as AVAILABLE" in reply or "AVAILABLE" in reply
+
+    # Verify database status is updated
+    updated_vol = database.get_volunteer_by_phone(vol_phone)
+    assert updated_vol is not None
+    assert updated_vol.get("current_status") == "available"
+
+
+def test_routing_directions_link_generation():
+    """Verify that routing.generate_directions_link constructs valid Google Maps turn-by-turn navigation URLs."""
+    import routing
+
+    # Test coordinate inputs
+    url_coords = routing.generate_directions_link(6.9271, 79.8612, 6.9350, 79.8500)
+    assert "https://www.google.com/maps/dir/?api=1" in url_coords
+    assert "origin=6.9271%2C79.8612" in url_coords or "origin=6.9271,79.8612" in url_coords or "6.9271" in url_coords
+    assert "destination=6.935" in url_coords
+
+    # Test named location inputs (geocoded into Google Maps directions coordinates)
+    url_names = routing.generate_directions_link("Colombo Fort", "Mawanella")
+    assert "https://www.google.com/maps/dir/?api=1" in url_names
+    assert "origin=" in url_names
+    assert "destination=" in url_names
+
+
+@pytest.mark.asyncio
+async def test_3way_cross_notifications_for_pickup_and_delivery():
+    """Verify real-time WhatsApp cross notifications for Donor, Volunteer, and Organization on handover."""
+    donor_phone = "94770011223"
+    org_phone = "94774455667"
+    vol_phone = "94778899001"
+
+    database.create_or_update_user(donor_phone, display_name="Tasty Bakers", user_role="donor", default_location="Colombo")
+    database.create_or_update_user(org_phone, display_name="Hope Shelter", user_role="organization", default_location="Colombo")
+    database.create_or_update_user(vol_phone, display_name="Danushka", user_role="volunteer", default_location="Colombo")
+
+    d = database.create_donor_record("d-3way", "Tasty Bakers", donor_phone, "Colombo 03")
+    o = database.create_organization_record("org-3way", "Hope Shelter", org_phone, "Colombo 07", "Prepared Meals")
+    v = database.create_volunteer_record("vol-3way", "Danushka", vol_phone, "Colombo", "Motorbike", current_status="busy")
+
+    don = database.create_donation_record("don-3way", "d-3way", "Fried Rice", 50, "packets", "Standard", "Colombo 03", "Now", "9 PM")
+    task = database.create_pickup_task_record("task-3way", "don-3way", "org-3way", "Colombo 03", "Colombo 07", "9 PM")
+    database.assign_volunteer_record("task-3way", v["id"])
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
+         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+        mock_msg.return_value = {"status": "sent"}
+        mock_img.return_value = {"status": "sent"}
+
+        # 1. Dispatch Pickup Success Notifications
+        await whatsapp_handler.dispatch_qr_pickup_success_notifications("task-3way", v["id"])
+
+        # Donor notified of collection
+        donor_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == donor_phone]
+        assert len(donor_calls) >= 1
+        assert "Food Pickup Confirmed" in donor_calls[0].kwargs.get("text", "")
+
+        # Org receives Delivery QR image
+        org_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == org_phone]
+        assert len(org_img_calls) >= 1
+        assert "/api/qr/FR-DL-" in org_img_calls[0].kwargs.get("image_url")
+
+        # Volunteer receives Delivery scanner link + Route to Org
+        vol_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
+        assert len(vol_calls) >= 1
+        vol_text = vol_calls[0].kwargs.get("text", "")
+        assert "Pickup Verified Successfully" in vol_text
+        assert "/scanner" in vol_text or "scanner" in vol_text
+        assert "google.com/maps" in vol_text
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg:
+        mock_msg.return_value = {"status": "sent"}
+
+        # 2. Dispatch Delivery Success Notifications
+        await whatsapp_handler.dispatch_qr_delivery_success_notifications("task-3way", v["id"])
+
+        # Org notified of delivery completion
+        org_del_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == org_phone]
+        assert len(org_del_calls) >= 1
+        assert "Delivery Successfully Completed" in org_del_calls[0].kwargs.get("text", "")
+
+        # Donor notified of safe delivery
+        donor_del_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == donor_phone]
+        assert len(donor_del_calls) >= 1
+        assert "Your Donation Has Been Delivered" in donor_del_calls[0].kwargs.get("text", "")
+
+        # Volunteer notified of completion + reimbursement recorded
+        vol_del_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
+        assert len(vol_del_calls) >= 1
+        vol_del_text = vol_del_calls[0].kwargs.get("text", "")
+        assert "Delivery Verified Successfully" in vol_del_text
+        assert "Transport Support" in vol_del_text or "LKR" in vol_del_text
+
+

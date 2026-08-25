@@ -19,6 +19,7 @@ import app
 import translation_service
 import voice_service
 import routing
+import qr_service
 
 logger = logging.getLogger("foodrescue.resilient")
 
@@ -192,12 +193,13 @@ def _get_task_extended_metrics(
     cost_calc = routing.calculate_transport_estimate(total_dist, vol_mode.lower())
     est_cost = float(cost_calc.get("estimated_support_amount") or (total_dist * routing.get_transport_rate(vol_mode.lower())))
 
-    directions_link = ""
     if p_coords and d_coords:
         directions_link = routing.generate_directions_link(p_coords[0], p_coords[1], d_coords[0], d_coords[1])
+    else:
+        directions_link = routing.generate_directions_link(p_loc, d_loc)
 
-    p_map = routing.generate_map_link(p_coords[0], p_coords[1]) if p_coords else ""
-    d_map = routing.generate_map_link(d_coords[0], d_coords[1]) if d_coords else ""
+    p_map = routing.generate_map_link(p_coords[0], p_coords[1]) if p_coords else routing.generate_map_link(p_loc)
+    d_map = routing.generate_map_link(d_coords[0], d_coords[1]) if d_coords else routing.generate_map_link(d_loc)
     food_info = f"{don.get('quantity', 20)} {don.get('unit', 'packets')} of {don.get('food_type', 'Prepared Meals')}" if don else "Food Donation"
     deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
 
@@ -692,7 +694,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             ext = _get_task_extended_metrics(task_rec, existing_vol or (database.get_volunteer_by_phone(phone) if phone else None))
 
             # Generate or retrieve active Pickup QR Code for this task
-            import qr_service
             task_qrs = database.get_qr_codes_for_task(task_id)
             pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
             if not pk_qr:
@@ -711,6 +712,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 )
             pk_token = pk_qr.get("token")
             verif_url = qr_service.build_verification_url("PICKUP", pk_token)
+            scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
             qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
 
             return translation_service.get_localized_message(
@@ -733,6 +735,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 directions_link=ext["directions_link"] or ext["delivery_map"] or "https://maps.google.com",
                 qr_img_link=qr_img_url,
                 verification_url=verif_url,
+                scanner_url=scanner_url,
             )
         return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
 
@@ -954,9 +957,16 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
         ) and not has_food_or_donation_keywords
 
-        if is_direct_avail and not in_vol_workflow:
+        if is_direct_avail:
             if not existing_vol:
-                tools.register_volunteer(name="Volunteer Courier", service_area="Colombo", phone=phone, transport_mode="Motorbike")
+                vol_area_guess = (user.get("default_location") if user else None) or "Colombo"
+                tools.register_volunteer(
+                    name=(user.get("display_name") if user and not user.get("display_name", "").startswith("User_") else "Volunteer Courier"),
+                    service_area=vol_area_guess,
+                    phone=phone,
+                    transport_mode="Motorbike",
+                    district=routing.resolve_district(vol_area_guess) or "Colombo"
+                )
                 existing_vol = database.get_volunteer_by_phone(phone) if phone else None
 
             if existing_vol:
@@ -964,19 +974,17 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     volunteer_id=existing_vol["id"], status="AVAILABLE", current_location=existing_vol.get("service_area", "Colombo")
                 )
 
-            import routing
             vol_area = existing_vol.get("service_area", "Colombo") if existing_vol else "Colombo"
             clean_vol_dist = routing.resolve_district(vol_area) or "Colombo"
+
+            # Clear previous conversation state
+            if phone:
+                database.clear_user_conversation_state(phone)
 
             pending = database.get_all_pickup_tasks()
             available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
             dist_tasks = [t for t in available_tasks if routing.resolve_district(t.get("pickup_location") or "") == clean_vol_dist]
             candidate_tasks = dist_tasks if dist_tasks else available_tasks
-
-            if phone:
-                database.set_user_conversation_state(
-                    phone, {"workflow": "VOLUNTEER", "current_question": "CLAIM_TASK", "expected_input_type": "CHOICE"}
-                )
 
             if candidate_tasks:
                 top_task = candidate_tasks[0]
@@ -1011,9 +1019,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 return (
                     f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
                     f"❤️ **Thank You For Volunteering!**\n"
-                    f"You are registered as a FoodRescue AI volunteer courier (Service Area: {vol_area}).\n\n"
-                    f"📦 There are currently **no active pickups** (0 pending tasks) available in your area.\n"
-                    f"As soon as a food donation is ready in {clean_vol_dist}, our AI coordinator will automatically notify you right here on WhatsApp! 🚚\n\n"
+                    f"You are registered as an active volunteer courier in **{vol_area}**.\n\n"
+                    f"📦 There are currently **no active pickups** (0 pending tasks) waiting in your area.\n"
+                    f"As soon as a food donation is registered in {clean_vol_dist}, our AI coordinator will automatically notify you right here on WhatsApp! 🚚\n\n"
                     f"Reply with:\n"
                     f"1️⃣ View available tasks\n"
                     f"2️⃣ Update my vehicle mode / service area\n"
@@ -1046,7 +1054,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             vol_vehicle = prompt.strip().title()
 
         # Extract District / Location
-        import routing
 
         v_dist_resolved = routing.resolve_district(prompt)
         if v_dist_resolved:
@@ -1268,7 +1275,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             org_name = prompt.strip()
 
         # Extract District / Location
-        import routing
 
         dist_resolved = routing.resolve_district(prompt)
         if dist_resolved:
@@ -1613,7 +1619,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
             pickup_loc = don.get("pickup_location") or don.get("location") or "Pickup Location" if don else "Pickup Location"
             deliv_loc = org.get("location") or org.get("service_area") or "Delivery Location" if org else "Delivery Location"
-            import routing
 
             don_dist = routing.resolve_district(pickup_loc) or routing.resolve_district(deliv_loc) or "Kegalle"
 
@@ -1727,7 +1732,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
             don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
 
-            import routing
 
             don_dist = routing.resolve_district(city) or routing.resolve_district(loc) or "Kegalle"
 
@@ -1827,7 +1831,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     database.create_or_update_user(phone=phone, display_name=cand_name)
 
     elif curr_q in ["CITY", "DISTRICT"] or expected_type in ["CITY", "DISTRICT"]:
-        import routing
 
         dist_res = routing.resolve_district(prompt)
         extracted_city = _extract_location(prompt) or voice_service.extract_donation_entities(prompt).get("city") or dist_res
@@ -1977,7 +1980,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     elif (curr_q in ["WHATSAPP_LOCATION", "LOCATION"] or expected_type == "LOCATION") and not loc_received:
         cand_text = prompt.strip()
         if not re.search(r"^(?:cancel|stop|menu)\b", clean_p):
-            import routing
             coords = routing.extract_coordinates_from_text(cand_text)
             if coords:
                 existing_draft = database.save_draft_donation(phone, {"latitude": coords[0], "longitude": coords[1], "location_received": True})
@@ -2038,6 +2040,33 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     if not donor_name_val and (city_val and deadline_val):
         donor_name_val = "Donor Partner"
         business_name_val = "Donor Partner"
+
+    # Step 0: Role-aware guard - Don't route registered volunteers or organizations into donor slot filling
+    if (vol_rec or (user and user.get("user_role") == "volunteer")) and not existing_draft.get("food_type"):
+        vol_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "your area")
+        vol_name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
+        return (
+            f"🚚 *Welcome, {vol_name}!* (Volunteer Courier — {vol_area})\n\n"
+            f"Reply with:\n"
+            f"1️⃣ View available tasks\n"
+            f"2️⃣ Check active delivery status\n"
+            f"3️⃣ Mark myself as AVAILABLE\n"
+            f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+            f"*Or reply with any question about your volunteer tasks!*"
+        )
+
+    if (org_rec or (user and user.get("user_role") == "organization")) and not existing_draft.get("food_type"):
+        org_area = (org_rec.get("location") if org_rec else None) or (user.get("default_location") if user else "your area")
+        org_name = (org_rec.get("name") if org_rec else None) or (user.get("display_name") if user else "Organization")
+        return (
+            f"🏢 *Welcome, {org_name}!* (Recipient Organization — {org_area})\n\n"
+            f"Reply with:\n"
+            f"1️⃣ Request surplus food donation\n"
+            f"2️⃣ Track incoming food deliveries\n"
+            f"3️⃣ Update daily portion capacity\n"
+            f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
+            f"*Or ask any question about available food donations!*"
+        )
 
     # Step 1: Missing Food Type or Quantity
     if not food_val:

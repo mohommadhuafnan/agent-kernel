@@ -591,7 +591,8 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 vol_user = database.get_user_by_phone(vol_phone)
                 v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
                 v_instr = translation_service.get_localized_message("volunteer_ask_pickup_qr", lang=v_lang)
-                v_caption = f"🔐 *Pickup Verification* (Task: `{task_id}`)\n\n{v_instr}\n\n🔗 Scanner Link: {verif_url}"
+                scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
+                v_caption = f"🔐 *Pickup Verification* (Task: `{task_id}`)\n\n{v_instr}\n\n👉 📷 *Open Camera Scanner:* {scanner_url}"
                 try:
                     await send_whatsapp_message(to_number=vol_phone, text=v_caption)
                 except Exception as e:
@@ -600,7 +601,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     database.record_message(
                         phone=vol_phone,
                         sender="agent",
-                        text=f"{v_instr}\n\n🔐 Verification Link: {verif_url}"
+                        text=f"{v_instr}\n\n👉 📷 *Open Camera Scanner:* {scanner_url}"
                     )
                 except Exception:
                     pass
@@ -843,19 +844,22 @@ async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: O
         except Exception:
             pass
 
-    # 3. Notify Volunteer with route navigation to Recipient Organization
+    # 3. Notify Volunteer with route navigation to Recipient Organization and Delivery Scanner
     if vol_phone:
         vol_user = database.get_user_by_phone(vol_phone)
         v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
         import resilient_executor
         ext = resilient_executor._get_task_extended_metrics(task, vol)
+        delivery_scanner_url = qr_service.build_scanner_url("DELIVERY", task_id=task_id)
         v_msg = translation_service.get_localized_message(
             "qr_pickup_verified_volunteer",
             lang=v_lang,
             food_info=food_info,
             org_name=org_name,
             org_location=org_loc,
-            directions_link=ext.get("directions_link", f"https://www.google.com/maps/dir/?api=1&destination={org_loc.replace(' ', '+')}")
+            directions_link=ext.get("directions_link", f"https://www.google.com/maps/dir/?api=1&destination={org_loc.replace(' ', '+')}"),
+            scanner_url=delivery_scanner_url,
+            delivery_scanner_url=delivery_scanner_url
         )
         try:
             await send_whatsapp_message(to_number=vol_phone, text=v_msg)

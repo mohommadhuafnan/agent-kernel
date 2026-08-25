@@ -1133,6 +1133,277 @@ def _render_verification_html(
 </html>"""
 
 
+def _render_scanner_html(qr_type: str = "pickup", task_id: Optional[str] = None, prefill_token: Optional[str] = None) -> str:
+    """Generate modern, mobile-first Camera QR Scanner web interface for physical volunteer handover."""
+    is_pickup = str(qr_type).strip().lower() == "pickup"
+    phase_title = "Pickup Verification" if is_pickup else "Delivery Verification"
+    badge_label = "🍱 Pickup Scanner (Scan Donor's Screen)" if is_pickup else "🎉 Delivery Scanner (Scan Organization's Screen)"
+    theme_color = "#10b981" if is_pickup else "#3b82f6"
+    target_role = "Donor" if is_pickup else "Recipient Organization"
+    task_str = f"Task: {task_id}" if task_id else "FoodRescue Handover"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FoodRescue AI — {phase_title}</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #0b1120; color: #f8fafc; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }}
+    .scanner-card {{ background: #1e293b; border: 1px solid #334155; border-radius: 1.25rem; max-width: 480px; width: 100%; overflow: hidden; box-shadow: 0 25px 40px -10px rgba(0,0,0,0.7); }}
+    .header {{ background: linear-gradient(135deg, #0f172a, #1e293b); padding: 1.25rem; text-align: center; border-bottom: 1px solid #334155; }}
+    .logo {{ font-size: 0.85rem; font-weight: 800; letter-spacing: 0.08em; color: #10b981; text-transform: uppercase; margin-bottom: 0.25rem; }}
+    .title {{ font-size: 1.25rem; font-weight: 800; color: #ffffff; }}
+    .badge {{ display: inline-block; background: {theme_color}20; color: {theme_color}; font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.75rem; border-radius: 9999px; border: 1px solid {theme_color}50; margin-top: 0.4rem; }}
+    
+    .body {{ padding: 1.25rem; }}
+    .camera-wrapper {{ position: relative; width: 100%; border-radius: 1rem; overflow: hidden; background: #000; border: 2px solid #334155; min-height: 280px; display: flex; align-items: center; justify-content: center; }}
+    #reader {{ width: 100% !important; border: none !important; }}
+    #reader video {{ width: 100% !important; height: auto !important; object-fit: cover !important; border-radius: 0.85rem; }}
+    
+    .scan-guide {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px dashed {theme_color}; border-radius: 1rem; pointer-events: none; z-index: 10; box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.4); animation: pulseGuide 2s infinite ease-in-out; }}
+    .laser-line {{ position: absolute; width: 100%; height: 2px; background: {theme_color}; box-shadow: 0 0 8px {theme_color}; animation: scanLaser 2s infinite linear; }}
+    @keyframes scanLaser {{
+      0% {{ top: 5%; }}
+      50% {{ top: 95%; }}
+      100% {{ top: 5%; }}
+    }}
+    @keyframes pulseGuide {{
+      0%, 100% {{ border-color: {theme_color}; opacity: 0.9; }}
+      50% {{ border-color: #ffffff; opacity: 0.6; }}
+    }}
+
+    .inst-box {{ background: #0f172a; border: 1px solid #334155; border-radius: 0.85rem; padding: 0.9rem; margin-top: 1rem; font-size: 0.85rem; color: #94a3b8; line-height: 1.4; text-align: center; }}
+    .inst-box strong {{ color: #f8fafc; }}
+
+    .actions {{ display: flex; gap: 0.5rem; margin-top: 1rem; }}
+    .btn-secondary {{ flex: 1; background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.85rem; cursor: pointer; }}
+    .btn-secondary:hover {{ background: #475569; }}
+
+    .manual-entry {{ margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #334155; }}
+    .manual-toggle {{ background: none; border: none; color: #38bdf8; font-size: 0.8rem; cursor: pointer; text-decoration: underline; display: block; width: 100%; text-align: center; margin-bottom: 0.5rem; }}
+    .manual-form {{ display: none; margin-top: 0.5rem; }}
+    .input-token {{ width: 100%; background: #0f172a; border: 1px solid #334155; color: #f8fafc; padding: 0.75rem; border-radius: 0.75rem; font-family: monospace; font-size: 0.9rem; margin-bottom: 0.5rem; text-align: center; text-transform: uppercase; }}
+    .input-token:focus {{ outline: none; border-color: {theme_color}; }}
+    .btn-submit {{ width: 100%; background: {theme_color}; color: #0f172a; border: none; padding: 0.75rem; border-radius: 0.75rem; font-weight: 700; font-size: 0.9rem; cursor: pointer; }}
+
+    /* Result Modals */
+    .result-card {{ display: none; padding: 1.5rem; text-align: center; }}
+    .res-icon {{ font-size: 3.5rem; margin-bottom: 0.75rem; }}
+    .res-title {{ font-size: 1.35rem; font-weight: 800; margin-bottom: 0.5rem; }}
+    .res-msg {{ color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.25rem; }}
+    .res-token {{ font-family: monospace; background: #0f172a; padding: 0.35rem 0.75rem; border-radius: 0.5rem; font-size: 0.8rem; color: #38bdf8; display: inline-block; margin-bottom: 1rem; }}
+    .btn-done {{ display: block; width: 100%; background: linear-gradient(135deg, #10b981, #059669); color: #fff; padding: 0.9rem; border-radius: 0.85rem; font-weight: 800; text-decoration: none; font-size: 1rem; border: none; cursor: pointer; }}
+  </style>
+</head>
+<body>
+
+  <div class="scanner-card">
+    <div class="header">
+      <div class="logo">🌿 FoodRescue AI</div>
+      <h1 class="title">{phase_title}</h1>
+      <span class="badge">{badge_label}</span>
+    </div>
+
+    <!-- Scanner Active View -->
+    <div id="scannerSection" class="body">
+      <div class="camera-wrapper">
+        <div id="reader"></div>
+        <div class="scan-guide">
+          <div class="laser-line"></div>
+        </div>
+      </div>
+
+      <div class="inst-box">
+        📸 <strong>Point your camera</strong> at the QR code displayed on the {target_role}'s phone screen.
+      </div>
+
+      <div class="manual-entry">
+        <button type="button" class="manual-toggle" onclick="toggleManual()">Or Enter Verification Code Manually ▾</button>
+        <div id="manualForm" class="manual-form">
+          <input type="text" id="manualToken" class="input-token" placeholder="FR-PK-xxxxxxxxxxxx" value="{prefill_token or ''}">
+          <button type="button" class="btn-submit" onclick="submitManualCode()">Verify Code Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Success Result View -->
+    <div id="successSection" class="result-card">
+      <div class="res-icon">✅</div>
+      <h2 id="successTitle" class="res-title" style="color: #10b981;">Handover Verified!</h2>
+      <span id="successToken" class="res-token"></span>
+      <p id="successMsg" class="res-msg">
+        Physical handover successfully verified in the FoodRescue AI system.
+      </p>
+      <button class="btn-done" onclick="closeOrReturn()">✓ Return to WhatsApp</button>
+    </div>
+
+    <!-- Error Result View -->
+    <div id="errorSection" class="result-card">
+      <div class="res-icon">⚠️</div>
+      <h2 id="errorTitle" class="res-title" style="color: #ef4444;">Verification Failed</h2>
+      <p id="errorMsg" class="res-msg">The QR code could not be verified.</p>
+      <button class="btn-secondary" style="width:100%; padding:0.9rem;" onclick="restartScanner()">📷 Try Scanning Again</button>
+    </div>
+  </div>
+
+  <script>
+    const QR_TYPE = "{qr_type.lower()}";
+    let html5QrCode = null;
+    let isVerifying = false;
+
+    function toggleManual() {{
+      const form = document.getElementById('manualForm');
+      form.style.display = form.style.display === 'block' ? 'none' : 'block';
+    }}
+
+    function extractTokenFromText(text) {{
+      if (!text) return null;
+      const clean = text.trim();
+      const match = clean.match(/FR-(PK|DL)-[a-zA-Z0-9_-]+/i);
+      if (match) return match[0];
+      if (clean.includes('/verify/')) {{
+        const parts = clean.split('/verify/')[1].split('/');
+        if (parts.length >= 2) return parts[1].split('?')[0].split('#')[0];
+      }}
+      return clean;
+    }}
+
+    async function handleScanSuccess(decodedText) {{
+      if (isVerifying) return;
+      isVerifying = true;
+
+      const token = extractTokenFromText(decodedText);
+      if (!token) {{
+        isVerifying = false;
+        return;
+      }}
+
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+      if (html5QrCode) {{
+        try {{ await html5QrCode.stop(); }} catch(e) {{}}
+      }}
+
+      await verifyToken(token);
+    }}
+
+    async function submitManualCode() {{
+      const val = document.getElementById('manualToken').value.trim();
+      const token = extractTokenFromText(val);
+      if (!token) {{
+        alert('Please enter a valid verification code (e.g. FR-PK-...)');
+        return;
+      }}
+      if (html5QrCode) {{
+        try {{ await html5QrCode.stop(); }} catch(e) {{}}
+      }}
+      await verifyToken(token);
+    }}
+
+    async function verifyToken(token) {{
+      document.getElementById('scannerSection').style.display = 'none';
+      document.getElementById('errorSection').style.display = 'none';
+
+      let gps = null;
+      if (navigator.geolocation) {{
+        try {{
+          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {{ timeout: 3000 }}));
+          gps = {{ latitude: pos.coords.latitude, longitude: pos.coords.longitude }};
+        }} catch(e) {{}}
+      }}
+
+      const targetType = token.toUpperCase().includes('DL') ? 'delivery' : (token.toUpperCase().includes('PK') ? 'pickup' : QR_TYPE);
+
+      try {{
+        const resp = await fetch(`/verify/${{targetType}}/${{token}}`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ gps: gps }})
+        }});
+        const data = await resp.json();
+
+        if (resp.ok && (data.status === 'success' || data.success)) {{
+          document.getElementById('successToken').innerText = token;
+          if (targetType === 'pickup') {{
+            document.getElementById('successTitle').innerText = 'Pickup Verified!';
+            document.getElementById('successMsg').innerText = 'Food marked as COLLECTED and is now in transit. Real-time WhatsApp notifications dispatched to Donor, Volunteer, and Organization!';
+          }} else {{
+            document.getElementById('successTitle').innerText = 'Delivery Completed!';
+            document.getElementById('successMsg').innerText = 'Food marked as DELIVERED & COMPLETED. Transport reimbursement support has been recorded. Thank you!';
+          }}
+          document.getElementById('successSection').style.display = 'block';
+        }} else {{
+          document.getElementById('errorTitle').innerText = 'Verification Failed';
+          document.getElementById('errorMsg').innerText = data.message || data.error || 'Invalid or expired QR verification code.';
+          document.getElementById('errorSection').style.display = 'block';
+        }}
+      }} catch(err) {{
+        document.getElementById('errorTitle').innerText = 'Network Error';
+        document.getElementById('errorMsg').innerText = 'Unable to connect to verification server. Please check your connection.';
+        document.getElementById('errorSection').style.display = 'block';
+      }} finally {{
+        isVerifying = false;
+      }}
+    }}
+
+    function restartScanner() {{
+      document.getElementById('errorSection').style.display = 'none';
+      document.getElementById('successSection').style.display = 'none';
+      document.getElementById('scannerSection').style.display = 'block';
+      initScanner();
+    }}
+
+    function closeOrReturn() {{
+      window.location.href = 'https://wa.me/';
+    }}
+
+    function initScanner() {{
+      if (typeof Html5Qrcode === 'undefined') {{
+        console.warn('Html5Qrcode library not yet loaded. Retrying in 500ms...');
+        setTimeout(initScanner, 500);
+        return;
+      }}
+
+      html5QrCode = new Html5Qrcode("reader");
+      const config = {{ fps: 15, qrbox: {{ width: 220, height: 220 }}, aspectRatio: 1.0 }};
+      
+      html5QrCode.start(
+        {{ facingMode: "environment" }},
+        config,
+        handleScanSuccess,
+        (errorMessage) => {{}}
+      ).catch((err) => {{
+        console.warn('Camera stream failed, falling back to manual entry:', err);
+        toggleManual();
+      }});
+    }}
+
+    window.addEventListener('DOMContentLoaded', () => {{
+      initScanner();
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/scanner", response_class=HTMLResponse)
+@router.get("/scan", response_class=HTMLResponse)
+@router.get("/scanner/{qr_type}", response_class=HTMLResponse)
+@router.get("/scan/{qr_type}", response_class=HTMLResponse)
+async def view_camera_scanner_page(
+    qr_type: Optional[str] = "pickup",
+    task_id: Optional[str] = Query(None),
+    token: Optional[str] = Query(None)
+):
+    """Serve the zero-cheat mobile camera QR scanner interface for volunteer couriers."""
+    clean_type = "delivery" if str(qr_type).lower() in ["delivery", "dl"] else "pickup"
+    html = _render_scanner_html(qr_type=clean_type, task_id=task_id, prefill_token=token)
+    return HTMLResponse(content=html, status_code=200)
+
+
 @router.get("/api/qr/{token}.png")
 @router.get("/api/qr/{token}")
 async def get_qr_png_image(token: str):
