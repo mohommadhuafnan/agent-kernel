@@ -424,3 +424,180 @@ def test_agent_kernel_qr_tools():
     ver_data = json.loads(ver_raw)
     assert ver_data["success"] is True
     assert ver_data["qr_type"] == "PICKUP"
+
+
+# =============================================================================
+# 6. QRCODER V4 API INTEGRATION, CACHING & RESILIENT FALLBACK TESTS
+# =============================================================================
+
+def test_qrcoder_api_key_loading(monkeypatch):
+    """Verify QRCODER_API_KEY environment variable is properly loaded."""
+    monkeypatch.setenv("QRCODER_API_KEY", "test_key_12345")
+    assert qr_service.get_qrcoder_api_key() == "test_key_12345"
+
+    monkeypatch.delenv("QRCODER_API_KEY", raising=False)
+    monkeypatch.delenv("AK_QRCODER_API_KEY", raising=False)
+    assert qr_service.get_qrcoder_api_key() == ""
+
+
+def test_qrcoder_api_successful_generation(monkeypatch):
+    """Verify generate_qr_image calls QRCoder V4 API and returns PNG bytes."""
+    qr_service.clear_qr_cache()
+    monkeypatch.setenv("QRCODER_API_KEY", "mock_valid_key")
+    fake_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+
+    class MockResponse:
+        status_code = 200
+        content = fake_png
+        text = "ok"
+
+    with patch("httpx.Client.get", return_value=MockResponse()) as mock_get:
+        verif_url = "https://foodrescue-ai-ten.vercel.app/verify/pickup/FR-PK-testmock123"
+        result = qr_service.generate_qr_image(verif_url, use_cache=False)
+        assert result == fake_png
+        assert mock_get.called
+        call_url = mock_get.call_args[0][0]
+        assert "key=mock_valid_key" in call_url
+        assert "text=" in call_url
+        assert "type=png" in call_url
+
+
+def test_qrcoder_api_caching(monkeypatch):
+    """Verify in-memory caching avoids duplicate QRCoder API calls."""
+    qr_service.clear_qr_cache()
+    monkeypatch.setenv("QRCODER_API_KEY", "mock_key")
+    fake_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+    class MockResponse:
+        status_code = 200
+        content = fake_png
+        text = "ok"
+
+    with patch("httpx.Client.get", return_value=MockResponse()) as mock_get:
+        url = "https://foodrescue-ai-ten.vercel.app/verify/delivery/FR-DL-cachetest"
+        res1 = qr_service.generate_qr_image(url, use_cache=True)
+        res2 = qr_service.generate_qr_image(url, use_cache=True)
+        assert res1 == fake_png
+        assert res2 == fake_png
+        # External HTTP client called only once due to in-memory cache
+        assert mock_get.call_count == 1
+
+
+def test_qrcoder_api_fallback_on_error(monkeypatch):
+    """Verify seamless fallback to pure-Python QR generator when QRCoder API fails or times out."""
+    qr_service.clear_qr_cache()
+    monkeypatch.setenv("QRCODER_API_KEY", "mock_error_key")
+
+    with patch("httpx.Client.get", side_effect=Exception("Connection timed out")):
+        url = "https://foodrescue-ai-ten.vercel.app/verify/pickup/FR-PK-fallbacktest"
+        res = qr_service.generate_qr_image(url, use_cache=False)
+        assert isinstance(res, bytes)
+        assert res[:8] == b"\x89PNG\r\n\x1a\n"
+        assert len(res) > 300
+
+
+@pytest.mark.asyncio
+async def test_volunteer_available_intent_and_response():
+    """Verify volunteer sending 'Available' updates status to AVAILABLE and returns friendly confirmation."""
+    vol_phone = "94773330001"
+    database.create_or_update_user(vol_phone, display_name="Rifqi Courier", user_role="volunteer")
+    vol = database.create_volunteer_record("vol-avail-1", "Rifqi Courier", vol_phone, "Kegalle", "Motorbike", current_status="busy")
+
+    from resilient_executor import run_resilient_chat
+    chat_res = await run_resilient_chat("Available", session_id=f"whatsapp:{vol_phone}")
+    assert chat_res["status"] == "success"
+    reply = chat_res["result"]
+    assert "AVAILABLE" in reply
+    assert "Thank you" in reply or "Great" in reply or "marked as AVAILABLE" in reply
+
+    # Verify status in database is now available
+    updated_vol = database.get_volunteer_record("vol-avail-1")
+    assert updated_vol["current_status"].upper() == "AVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_complete_lifecycle_handover_and_dispatch_separation():
+    """Verify that Donor accepting an organization does NOT prematurely dispatch Pickup QR or Courier Dispatched,
+    and that Volunteer acceptance correctly triggers Pickup QR to donor and Courier Dispatched to Org."""
+    donor_phone = "94772117131"
+    org_phone = "94760256631"
+    vol_phone = "94760256632"
+
+    database.create_or_update_user(donor_phone, display_name="Afnan", user_role="donor")
+    database.create_or_update_user(org_phone, display_name="Food Home", user_role="organization")
+    database.create_or_update_user(vol_phone, display_name="Mushan", user_role="volunteer")
+
+    database.create_donor_record("d-afnan", "Afnan", donor_phone, "Dewanagala, Mawanella")
+    database.create_organization_record("org-fh", "Food Home", org_phone, "Mawanella Town", "Rice & Curry")
+    database.create_volunteer_record("vol-mushan", "Mushan", vol_phone, "Kegalle", "Car", current_status="available")
+
+    don = database.create_donation_record(
+        "don-life-1", "d-afnan", "Rice & Curry", 20.0, "portions", "Halal", "Dewanagala, Mawanella", "Now", "8AM"
+    )
+
+    # 1. Donor is in ACCEPT_ORGANIZATION state and replies "1" (Accept)
+    database.set_user_conversation_state(
+        donor_phone,
+        {
+            "workflow": "DONATION",
+            "current_question": "ACCEPT_ORGANIZATION",
+            "expected_input_type": "CHOICE",
+            "matched_org_id": "org-fh",
+            "donation_id": "don-life-1",
+            "donor_name": "Afnan",
+            "food_info": "20.0 portions of Rice & Curry",
+            "district": "Kegalle",
+        },
+    )
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
+         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+        mock_msg.return_value = {"status": "sent"}
+        mock_img.return_value = {"status": "sent"}
+
+        msg_payload = {"from": donor_phone, "id": "msg_donor_acc", "type": "text", "text": {"body": "1"}}
+        res = await whatsapp_handler.process_incoming_whatsapp_message(msg_payload)
+        assert res["status"] == "processed"
+        reply = res["reply"]
+        assert "Connected with Food Home" in reply or "connected" in reply.lower()
+
+        # At this stage, NO volunteer has accepted yet!
+        # Confirm that Pickup QR was NOT sent yet (mock_img should not have been called with donor Pickup QR)
+        assert mock_img.call_count == 0
+
+        # Confirm Org was notified about Donor Approval (NOT courier dispatched)
+        org_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == org_phone]
+        assert len(org_calls) >= 1
+        org_text = org_calls[0].kwargs.get("text", "")
+        assert "Donor Approved Your Food Request" in org_text or "Food Home" in org_text
+        assert "Courier Dispatched" not in org_text
+
+        # Volunteer received task offer
+        vol_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
+        assert len(vol_calls) >= 1
+
+    # 2. Volunteer Mushan replies "Accept" to claim the task
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
+         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+        mock_msg.return_value = {"status": "sent"}
+        mock_img.return_value = {"status": "sent"}
+
+        vol_payload = {"from": vol_phone, "id": "msg_vol_acc", "type": "text", "text": {"body": "Accept"}}
+        vol_res = await whatsapp_handler.process_incoming_whatsapp_message(vol_payload)
+        assert vol_res["status"] == "processed"
+
+        # NOW: Donor should receive the Pickup QR image via WhatsApp!
+        assert mock_img.call_count == 1
+        img_call = mock_img.call_args
+        assert img_call.kwargs.get("to_number") == donor_phone
+        assert "/api/qr/FR-PK-" in img_call.kwargs.get("image_url")
+        assert "Pickup" in img_call.kwargs.get("caption")
+
+        # Org should receive Courier Dispatched notification with Mushan's details
+        org_disp_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == org_phone]
+        assert len(org_disp_calls) >= 1
+        disp_text = org_disp_calls[0].kwargs.get("text", "")
+        assert "Courier Dispatched" in disp_text
+        assert "Mushan" in disp_text
+        assert vol_phone in disp_text
+

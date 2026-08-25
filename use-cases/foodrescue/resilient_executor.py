@@ -818,55 +818,115 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return "No active pickup task was found to mark as delivered. Reply **5** to check your active tasks."
 
     # 6e. Volunteer Registration & Progressive Availability Intent
-    is_vol_intent = any(
-        m in clean_p
-        for m in [
+    has_food_or_donation_keywords = any(
+        w in clean_p
+        for w in [
+            "donate",
+            "donation",
+            "packets",
+            "packet",
+            "meals",
+            "meal",
+            "portions",
+            "portion",
+            "rice",
+            "curry",
+            "bread",
+            "biryani",
+            "cooked food",
+            "bakery",
+            "boxes",
+            "kg",
+            "i have",
+            "we have",
+            "hotel",
+            "restaurant",
+            "caterer",
+        ]
+    ) and not any(v in clean_p for v in ["available to volunteer", "volunteer to deliver", "deliver food", "help with pickups", "for pickups"])
+
+    is_vol_standalone_avail = (
+        clean_p in [
+            "available",
+            "available now",
+            "i am available",
+            "i'm available",
+            "im available",
+            "free",
+            "free now",
             "i'm free",
             "i am free",
-            "free now",
-            "i can help",
-            "available for pickup",
-            "available to help",
-            "available courier",
-            "pickups near me",
-            "any pickups",
-            "have time",
-            "ready to help",
-            "volunteer",
-            "want to volunteer",
-            "courier",
-            "help deliver",
-            "available to volunteer",
-            "free to volunteer",
-            "ready to volunteer",
-            "delivery volunteer",
-            "ස්වේච්ඡා",
-            "උදව් කරන්න පුළුවන්",
+            "ready",
+            "mark me available",
+            "mark available",
+            "සූදානම්",
             "ලෑස්තියි",
-            "உதவ முடியும்",
-            "தன்னார்வலர்",
-            "இலவசம்",
+            "தயார்",
         ]
-    ) or (clean_p == "3" and not in_vol_workflow)
+        or clean_p.startswith("available ")
+    ) and not has_food_or_donation_keywords
+
+    is_vol_intent = (
+        not has_food_or_donation_keywords
+        and (
+            is_vol_standalone_avail
+            or any(
+                m in clean_p
+                for m in [
+                    "i'm free",
+                    "i am free",
+                    "free now",
+                    "free",
+                    "i can help",
+                    "available for pickup",
+                    "available to help",
+                    "available courier",
+                    "pickups near me",
+                    "any pickups",
+                    "have time",
+                    "ready to help",
+                    "volunteer",
+                    "want to volunteer",
+                    "courier",
+                    "help deliver",
+                    "available to volunteer",
+                    "free to volunteer",
+                    "ready to volunteer",
+                    "delivery volunteer",
+                    "ස්වේච්ඡා",
+                    "උදව් කරන්න පුළුවන්",
+                    "உதவ முடியும்",
+                    "தன்னார்வலர்",
+                    "இலவசம்",
+                ]
+            )
+        )
+    ) or (clean_p == "3" and not in_vol_workflow and not has_food_or_donation_keywords)
 
     if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):
-        # 6e-1. Direct availability declaration (e.g. "I'm free now", "Hii i am available to volunteer today", "I'm free to volunteer now")
-        is_direct_avail = any(
-            m in clean_p
-            for m in [
-                "free now",
-                "i'm free",
-                "i am free",
-                "free to volunteer",
-                "available for pickup",
-                "available to volunteer",
-                "available to help",
-                "ready to help",
-                "ස්වේච්ඡා",
-                "ලෑස්තියි",
-                "උදව් කරන්න පුළුවන්",
-            ]
-        )
+        # 6e-1. Direct availability declaration (e.g. "Available", "I'm free now", "Hii i am available to volunteer today", "I'm free to volunteer now")
+        is_direct_avail = (
+            is_vol_standalone_avail
+            or any(
+                m in clean_p
+                for m in [
+                    "free now",
+                    "i'm free",
+                    "i am free",
+                    "free to volunteer",
+                    "available for pickup",
+                    "available to volunteer",
+                    "available to help",
+                    "ready to help",
+                    "ready",
+                    "ස්වේච්ඡා",
+                    "ලෑස්තියි",
+                    "සූදානම්",
+                    "උදව් කරන්න පුළුවන්",
+                    "தயார்",
+                ]
+            )
+        ) and not has_food_or_donation_keywords
 
         if is_direct_avail and not in_vol_workflow:
             if not existing_vol:
@@ -878,35 +938,57 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     volunteer_id=existing_vol["id"], status="AVAILABLE", current_location=existing_vol.get("service_area", "Colombo")
                 )
 
+            import routing
+            vol_area = existing_vol.get("service_area", "Colombo") if existing_vol else "Colombo"
+            clean_vol_dist = routing.resolve_district(vol_area) or "Colombo"
+
             pending = database.get_all_pickup_tasks()
             available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
-            count = len(available_tasks)
+            dist_tasks = [t for t in available_tasks if routing.resolve_district(t.get("pickup_location") or "") == clean_vol_dist]
+            candidate_tasks = dist_tasks if dist_tasks else available_tasks
 
             if phone:
                 database.set_user_conversation_state(
                     phone, {"workflow": "VOLUNTEER", "current_question": "CLAIM_TASK", "expected_input_type": "CHOICE"}
                 )
 
-            vol_area = existing_vol.get("service_area", "Colombo") if existing_vol else "Colombo"
-            if count > 0:
+            if candidate_tasks:
+                top_task = candidate_tasks[0]
+                task_id = top_task["id"]
+                don_id = top_task.get("donation_id", "")
+                don = database.get_donation_record(don_id) if don_id else None
+                food_info = (
+                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
+                    if don
+                    else "30 meal packets — Rice & Curry"
+                )
+                total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, existing_vol)
+                tools.set_session_context(key="current_task_id", value=task_id)
+                if existing_vol:
+                    tools.set_session_context(key="current_volunteer_id", value=existing_vol["id"])
+                if phone:
+                    database.set_user_conversation_state(
+                        phone, {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id}
+                    )
                 return (
                     f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
-                    f"❤️ **Thank You For Volunteering!**\n"
-                    f"You are registered as a FoodRescue AI volunteer courier (Service Area: {vol_area}).\n\n"
-                    f"🚚 **Pickup Opportunity Available!**\n"
-                    f"📦 There are currently **{count} pending pickup task(s)** available.\n\n"
-                    f"Would you like to claim a pickup task?\n"
-                    f"1️⃣ View available tasks (or reply *'Accept'*)\n"
-                    f"2️⃣ Update my vehicle mode / service area\n"
-                    f"3️⃣ Check my active pickups"
+                    f"🚚 **Food Pickup Opportunity in {clean_vol_dist}!**\n\n"
+                    f"• 🆔 **Task ID**: `{task_id}`\n"
+                    f"• 🍱 **Food**: {food_info}\n"
+                    f"• 📍 **Pickup**: {p_area}\n"
+                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
+                    f"• 📏 **Distance**: ~{total_dist} km\n"
+                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
+                    f"*Reply **Accept** or **Reject***"
                 )
             else:
                 return (
                     f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
                     f"❤️ **Thank You For Volunteering!**\n"
                     f"You are registered as a FoodRescue AI volunteer courier (Service Area: {vol_area}).\n\n"
-                    f"📦 There are currently **no active pickups** (0 pending tasks) available in your area.\n\n"
-                    f"Would you like to check options?\n"
+                    f"📦 There are currently **no active pickups** (0 pending tasks) available in your area.\n"
+                    f"As soon as a food donation is ready in {clean_vol_dist}, our AI coordinator will automatically notify you right here on WhatsApp! 🚚\n\n"
+                    f"Reply with:\n"
                     f"1️⃣ View available tasks\n"
                     f"2️⃣ Update my vehicle mode / service area\n"
                     f"3️⃣ Check my active pickups"
@@ -2023,7 +2105,10 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
                 "biryani",
                 "volunteer",
                 "courier",
+                "available",
                 "free now",
+                "free",
+                "ready",
                 "i can help",
                 "accept",
                 "reject",

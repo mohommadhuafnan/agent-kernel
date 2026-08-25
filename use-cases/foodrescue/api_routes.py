@@ -1134,13 +1134,14 @@ def _render_verification_html(
 
 
 @router.get("/api/qr/{token}.png")
+@router.get("/api/qr/{token}")
 async def get_qr_png_image(token: str):
-    """Generate and stream high-resolution PNG image of the handover QR code with zero third-party dependencies."""
+    """Generate and stream high-resolution PNG image of the handover QR code using QRCoder V4 API."""
     clean_tok = token.strip()
     qr_type = "pickup" if "pk" in clean_tok.lower() else "delivery"
     verif_url = qr_service.build_verification_url(qr_type, clean_tok)
     try:
-        png_bytes = qr_service.generate_qr_png_bytes(verif_url, box_size=10, border=3)
+        png_bytes = qr_service.generate_qr_image(verif_url, box_size=10, border=3)
         return Response(content=png_bytes, media_type="image/png")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate QR PNG: {exc}")

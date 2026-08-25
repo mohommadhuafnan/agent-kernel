@@ -229,6 +229,14 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
     # 1. Volunteer Accepts Task ("Accept", "1", "I'll take it", etc.)
     conv_state = database.get_user_conversation_state(from_number) or {}
     is_accept_state = conv_state.get("current_question") == "ACCEPT_TASK"
+    is_donor_workflow = (
+        conv_state.get("current_question") in ["ACCEPT_ORGANIZATION", "CONFIRMATION", "FOOD_TYPE", "QUANTITY", "DONOR_NAME", "DISTRICT", "DEADLINE", "WHATSAPP_LOCATION"]
+        or conv_state.get("workflow") == "DONATION"
+        or database.get_donor_by_phone(from_number) is not None
+    )
+    vol_rec = database.get_volunteer_by_phone(from_number)
+    is_vol_user = vol_rec is not None or conv_state.get("workflow") == "VOLUNTEER"
+
     is_accept_text = any(
         m in clean_p
         for m in [
@@ -255,11 +263,11 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         for w in ["assigned", "accepted", "claimed", "task accepted", "en route", "coordinating", "on the way", "delivery approved", "thank you", "proceed"]
     )
 
-    if (is_accept_state and is_accept_text) or (is_accept_text and has_accept_reply):
-        vol = database.get_volunteer_by_phone(from_number)
+    if not is_donor_workflow and ((is_accept_state and is_accept_text) or (is_vol_user and is_accept_text and has_accept_reply)):
+        vol = vol_rec or database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
-        vol_phone = from_number
+        vol_phone = (vol.get("phone") if vol else None) or from_number
 
         target_task = None
         state_task_id = conv_state.get("task_id")
@@ -274,7 +282,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
         if not target_task:
             all_tasks = database.get_all_pickup_tasks()
-            assigned_tasks = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED", "OFFERED", "PENDING"]]
+            assigned_tasks = [t for t in all_tasks if t.get("status") in ["OFFERED", "PENDING", "OPEN", "ASSIGNED", "EN_ROUTE", "ACCEPTED"]]
             if assigned_tasks:
                 target_task = assigned_tasks[-1]
 
@@ -282,6 +290,8 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             task_id = target_task["id"]
             if vol:
                 database.assign_volunteer_record(task_id, vol["id"])
+            else:
+                database.assign_volunteer_record(task_id, f"vol-{from_number}")
             database.clear_user_conversation_state(from_number)
 
             don_id = target_task.get("donation_id")

@@ -395,3 +395,87 @@ def build_verification_url(qr_type: str, token: str, base_url: Optional[str] = N
     root = (base_url or get_base_url()).rstrip("/")
     type_slug = "pickup" if qr_type.upper() == "PICKUP" else "delivery"
     return f"{root}/verify/{type_slug}/{token}"
+
+
+# =============================================================================
+# QRCODER V4 API INTEGRATION & IMAGE CACHING ENGINE
+# =============================================================================
+
+# In-memory cache for generated QR PNG bytes to prevent redundant API calls
+# (Respects QRCoder rate limits while ensuring instantaneous rendering)
+QR_IMAGE_CACHE: Dict[str, bytes] = {}
+MAX_QR_CACHE_ENTRIES = 1000
+
+
+def get_qrcoder_api_key() -> str:
+    """Retrieve QRCoder V4 API key from environment variables."""
+    key = os.environ.get("QRCODER_API_KEY") or os.environ.get("AK_QRCODER_API_KEY") or ""
+    return str(key).strip()
+
+
+def clear_qr_cache() -> None:
+    """Clear in-memory QR image cache (used in tests)."""
+    global QR_IMAGE_CACHE
+    QR_IMAGE_CACHE.clear()
+
+
+def generate_qr_image(
+    verification_url: str,
+    box_size: int = 10,
+    border: int = 4,
+    timeout: float = 10.0,
+    use_cache: bool = True
+) -> bytes:
+    """Generate high-resolution PNG image bytes for a handover verification URL.
+
+    Workflow:
+    1. Check in-memory cache for the verification URL.
+    2. If QRCODER_API_KEY is configured, call official QRCoder V4 API requesting PNG output.
+    3. Validate PNG magic bytes (\x89PNG\r\n\x1a\n).
+    4. On any failure (missing key, network timeout, rate limits, HTTP error), gracefully fall back
+       to our zero-dependency pure-Python PNG QR engine.
+    5. Cache and return valid PNG bytes.
+    """
+    import urllib.parse
+    import httpx
+
+    clean_url = verification_url.strip()
+    cache_key = hashlib.sha256(clean_url.encode("utf-8")).hexdigest()
+
+    if use_cache and cache_key in QR_IMAGE_CACHE:
+        return QR_IMAGE_CACHE[cache_key]
+
+    api_key = get_qrcoder_api_key()
+    if api_key:
+        try:
+            encoded_url = urllib.parse.quote(clean_url, safe="")
+            endpoint = f"https://www.qrcoder.co.uk/api/v4/?key={api_key}&text={encoded_url}&type=png"
+            
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.get(endpoint)
+                if resp.status_code == 200 and resp.content.startswith(b"\x89PNG\r\n\x1a\n"):
+                    png_bytes = resp.content
+                    if len(QR_IMAGE_CACHE) >= MAX_QR_CACHE_ENTRIES:
+                        QR_IMAGE_CACHE.clear()
+                    if use_cache:
+                        QR_IMAGE_CACHE[cache_key] = png_bytes
+                    logger.info(f"Successfully generated QR image via QRCoder V4 API for URL: {clean_url[:45]}...")
+                    return png_bytes
+                else:
+                    logger.warning(
+                        f"QRCoder V4 API returned non-PNG or error status {resp.status_code}. "
+                        "Falling back to zero-dependency local QR engine."
+                    )
+        except Exception as exc:
+            logger.warning(
+                f"QRCoder V4 API request failed ({exc.__class__.__name__}). "
+                "Seamlessly falling back to zero-dependency local QR engine."
+            )
+
+    # Fallback to pure-Python generator
+    png_bytes = generate_qr_png_bytes(clean_url, box_size=box_size, border=border)
+    if use_cache:
+        if len(QR_IMAGE_CACHE) >= MAX_QR_CACHE_ENTRIES:
+            QR_IMAGE_CACHE.clear()
+        QR_IMAGE_CACHE[cache_key] = png_bytes
+    return png_bytes

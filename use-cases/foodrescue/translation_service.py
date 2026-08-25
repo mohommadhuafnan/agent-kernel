@@ -1256,6 +1256,23 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "நீங்கள் இப்போது புதிய பணிகளுக்குத் தயார் (AVAILABLE) என மாற்றப்பட்டுள்ளீர்கள். 🚚"
         ),
     },
+    "volunteer_marked_available": {
+        "en": (
+            "🎉 **Great! You are now marked as AVAILABLE.**\n\n"
+            "Thank you for your response! We have noted that you are ready for food rescue pickups in **{service_area}**.\n\n"
+            "As soon as a food donation is ready in your area, our AI coordinator will automatically notify you right here on WhatsApp! 🚚"
+        ),
+        "si": (
+            "🎉 **ස්තූතියි! ඔබ දැන් සූදානම් (AVAILABLE) ලෙස සටහන් විය.**\n\n"
+            "ඔබගේ ප්‍රතිචාරයට ස්තූතියි! ඔබ **{service_area}** ප්‍රදේශයේ ආහාර බෙදාහැරීම් සඳහා සූදානම් බව සටහන් කරගන්නා ලදී.\n\n"
+            "ඔබගේ ප්‍රදේශයේ ආහාර පරිත්‍යාගයක් සූදානම් වූ වහාම අපගේ AI සම්බන්ධීකාරක WhatsApp හරහා ඔබට දැනුම් දෙනු ඇත! 🚚"
+        ),
+        "ta": (
+            "🎉 **நன்றி! நீங்கள் இப்போது தயாராக (AVAILABLE) உள்ளீர்கள்.**\n\n"
+            "உங்கள் பதிலுக்கு நன்றி! நீங்கள் **{service_area}** பகுதியில் பணிகளுக்குத் தயாராக உள்ளீர்கள் எனப் பதிவு செய்யப்பட்டது.\n\n"
+            "உங்கள் பகுதியில் உணவு நன்கொடை தயாரானதும் எங்கள் AI ஒருங்கிணைப்பாளர் WhatsApp மூலம் உங்களுக்கு அறிவிப்பார்! 🚚"
+        ),
+    },
     # 14. Mandatory WhatsApp Location Pin Templates
     "donor_ask_location_pin": {
         "en": (
