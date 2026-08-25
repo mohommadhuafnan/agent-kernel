@@ -809,7 +809,7 @@ const App = (function () {
           <div class="message-bubble ${isUser ? 'bubble-user' : 'bubble-agent'}">
             ${m.is_voice ? `<div class="voice-badge-tag">🎤 Voice Note (${m.transcript ? 'Transcribed' : 'Audio'})</div>` : ''}
             <div>${formatChatMessageContent(m.message_text)}</div>
-            <div class="bubble-time">${formatTimeShort(m.timestamp)}</div>
+            <div class="bubble-time">${formatTimeShort(m.timestamp)} ${isUser ? '<span class="wa-double-tick" style="color: #38bdf8; font-weight: 700; margin-left: 4px;" title="Read & Delivered">✓✓</span>' : ''}</div>
           </div>
         `;
       }).join('');

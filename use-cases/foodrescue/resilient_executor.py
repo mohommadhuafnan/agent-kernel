@@ -691,6 +691,28 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             task_rec = database.get_pickup_task_record(task_id) or {"id": task_id}
             ext = _get_task_extended_metrics(task_rec, existing_vol or (database.get_volunteer_by_phone(phone) if phone else None))
 
+            # Generate or retrieve active Pickup QR Code for this task
+            import qr_service
+            task_qrs = database.get_qr_codes_for_task(task_id)
+            pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
+            if not pk_qr:
+                pk_token = qr_service.generate_secure_token("PK")
+                pk_qr = database.create_qr_code_record(
+                    qr_id=f"qr-pk-{task_id}",
+                    task_id=task_id,
+                    donation_id=task_rec.get("donation_id") or "don-unknown",
+                    qr_type="PICKUP",
+                    token=pk_token,
+                    token_hash=qr_service.hash_token(pk_token),
+                    donor_id=task_rec.get("donor_id"),
+                    organization_id=task_rec.get("organization_id"),
+                    assigned_volunteer_id=vol_id or (existing_vol.get("id") if existing_vol else None),
+                    status="ACTIVE",
+                )
+            pk_token = pk_qr.get("token")
+            verif_url = qr_service.build_verification_url("PICKUP", pk_token)
+            qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
+
             return translation_service.get_localized_message(
                 "volunteer_task_assigned_full_details",
                 lang=lang,
@@ -709,6 +731,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 total_dist=ext["total_dist"],
                 est_cost=ext["est_cost"],
                 directions_link=ext["directions_link"] or ext["delivery_map"] or "https://maps.google.com",
+                qr_img_link=qr_img_url,
+                verification_url=verif_url,
             )
         return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
 
@@ -904,6 +928,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     ) or (clean_p == "3" and not in_vol_workflow and not has_food_or_donation_keywords)
 
     if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):
+        if phone:
+            database.update_user_profile(phone=phone, user_role="volunteer")
         # 6e-1. Direct availability declaration (e.g. "Available", "I'm free now", "Hii i am available to volunteer today", "I'm free to volunteer now")
         is_direct_avail = (
             is_vol_standalone_avail
@@ -1197,6 +1223,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     if (is_org_inventory_query or is_org_menu_opt or is_org_intent or in_org_workflow) and not (
         clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow
     ):
+        if phone:
+            database.update_user_profile(phone=phone, user_role="organization")
         existing_org = database.get_organization_by_phone(phone) if phone else None
 
         # 7a. User explicitly asked to view all available donations across the network
@@ -1652,11 +1680,14 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     loc_received = bool(
         existing_draft.get("location_received")
         or (existing_draft.get("latitude") and existing_draft.get("longitude"))
-        or existing_draft.get("city")
-        or existing_draft.get("location")
     )
 
-    has_required_to_confirm = bool(existing_draft.get("food_type") and (existing_draft.get("city") or existing_draft.get("location")))
+    has_required_to_confirm = bool(
+        existing_draft.get("food_type")
+        and (existing_draft.get("quantity") and float(existing_draft.get("quantity", 0)) > 0)
+        and (existing_draft.get("city") or existing_draft.get("location"))
+        and loc_received
+    )
 
     if curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION" or (is_confirm_intent and has_required_to_confirm):
         if is_confirm_intent:
@@ -1946,10 +1977,20 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     elif (curr_q in ["WHATSAPP_LOCATION", "LOCATION"] or expected_type == "LOCATION") and not loc_received:
         cand_text = prompt.strip()
         if not re.search(r"^(?:cancel|stop|menu)\b", clean_p):
-            if _extract_location(cand_text):
-                loc_ext = _extract_location(cand_text)
-                existing_draft = database.save_draft_donation(phone, {"city": loc_ext, "address": cand_text})
-            return translation_service.get_localized_message("location_pin_required_reminder", lang=lang)
+            import routing
+            coords = routing.extract_coordinates_from_text(cand_text)
+            if coords:
+                existing_draft = database.save_draft_donation(phone, {"latitude": coords[0], "longitude": coords[1], "location_received": True})
+                loc_received = True
+            else:
+                if _extract_location(cand_text):
+                    loc_ext = _extract_location(cand_text)
+                    existing_draft = database.save_draft_donation(phone, {"city": loc_ext, "address": cand_text})
+                if phone:
+                    database.set_user_conversation_state(
+                        phone, {"workflow": "DONATION", "current_question": "WHATSAPP_LOCATION", "expected_input_type": "LOCATION"}
+                    )
+                return translation_service.get_localized_message("location_pin_required_reminder", lang=lang)
 
     # Refresh draft from DB before slot evaluation
     if phone:
@@ -1960,6 +2001,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     # 9d. If User Pressed "1" or says "I want to donate" with no draft yet, prompt for food:
     if (clean_p in ["1", "donate", "i want to donate", "donate food", "i have food", "පරිත්‍යාග", "தானம்"]) and not existing_draft.get("food_type"):
         if phone:
+            database.update_user_profile(phone=phone, user_role="donor")
             database.set_user_conversation_state(
                 phone,
                 {
@@ -2024,8 +2066,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             "donor_ask_district", lang=lang, name=donor_name_val, quantity=qty_val, unit=unit_val, food_type=food_val
         )
 
-    # Step 4: Missing Food Pickup Deadline (MANDATORY: Prompt explicitly, no fake defaults)
-    if not deadline_val:
+    # Step 4: Missing Food Pickup Deadline (Prompt for deadline if not provided)
+    if not deadline_val and not loc_received:
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DEADLINE", "expected_input_type": "DEADLINE"})
         return translation_service.get_localized_message("donor_ask_deadline", lang=lang, city=city_val or "your area")
@@ -2046,7 +2088,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             donor_name=donor_name_val or "Friend",
         )
 
-    # Step 6: All fields present (Food, Qty, Name, District, Deadline, Live Location Pin) -> Show Summary Confirmation!
+    # Step 5: All fields present (Food, Qty, Name, District, Live Location Pin) -> Show Summary Confirmation!
     if phone:
         database.set_user_conversation_state(
             phone, {"workflow": "DONATION", "current_question": "CONFIRMATION", "expected_input_type": "CONFIRMATION"}
