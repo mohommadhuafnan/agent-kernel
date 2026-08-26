@@ -289,12 +289,12 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     # 5. Pickup Deadline / Availability Time
     deadline = None
     deadline_match = re.search(
-        r"\b(?:before|until|by|at)?\s*(today\s+before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?\s*today|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|until\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|by\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)\b",
+        r"\b(?:today\s+before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?\s*today|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|until\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|by\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)\b",
         text,
         re.IGNORECASE,
     )
     if deadline_match:
-        deadline = deadline_match.group(1).strip()
+        deadline = deadline_match.group(0).strip()
         # Clean title / formatting e.g. "Today before 6 PM"
         if "today" in deadline.lower() and "before" in deadline.lower():
             m_hr = re.search(r"(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)", deadline, re.IGNORECASE)
@@ -302,7 +302,7 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
             if "PM" not in hr_str and "AM" not in hr_str:
                 hr_str += " PM"
             deadline = f"Today before {hr_str}"
-        elif "before" in deadline.lower():
+        elif "before" in deadline.lower() or "until" in deadline.lower() or "by" in deadline.lower() or "at" in deadline.lower():
             m_hr = re.search(r"(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)", deadline, re.IGNORECASE)
             hr_str = m_hr.group(1).upper() if m_hr else "6 PM"
             if "PM" not in hr_str and "AM" not in hr_str:

@@ -97,6 +97,20 @@ def _extract_food_type(text: str) -> str:
     return text_clean.title() if len(text_clean.split()) <= 4 else "Surplus Food Packages"
 
 
+def _format_food_info(don: Optional[Dict[str, Any]]) -> str:
+    """Format food info string preserving exact food type, quantity, and unit without hardcoded defaults."""
+    if not don:
+        return "Surplus Food"
+    raw_qty = don.get("quantity")
+    if raw_qty is not None:
+        disp_qty = int(raw_qty) if isinstance(raw_qty, (int, float)) and raw_qty == int(raw_qty) else raw_qty
+    else:
+        disp_qty = 20
+    unit = don.get("unit") or "portions"
+    food = don.get("food_type") or "Prepared Meals"
+    return f"{disp_qty} {unit} of {food}"
+
+
 
 def _calculate_dynamic_task_metrics(
     task: Dict[str, Any], vol_record: Optional[Dict[str, Any]] = None
@@ -211,8 +225,8 @@ def _get_task_extended_metrics(
 
     p_map = routing.generate_map_link(p_coords[0], p_coords[1]) if p_coords else routing.generate_map_link(p_loc)
     d_map = routing.generate_map_link(d_coords[0], d_coords[1]) if d_coords else routing.generate_map_link(d_loc)
-    food_info = f"{don.get('quantity', 20)} {don.get('unit', 'packets')} of {don.get('food_type', 'Prepared Meals')}" if don else "Food Donation"
-    deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
+    food_info = _format_food_info(don)
+    deadline = (don.get("pickup_deadline") if don else None) or (task.get("scheduled_time") if task else None) or "Immediate"
 
     return {
         "total_dist": total_dist,
@@ -529,11 +543,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 task_id = top_task["id"]
                 don_id = top_task.get("donation_id", "")
                 don = database.get_donation_record(don_id) if don_id else None
-                food_info = (
-                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}"
-                    if don
-                    else "30 meal packets of Rice & Curry"
-                )
+                food_info = _format_food_info(don)
                 total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
 
                 tools.set_session_context(key="current_task_id", value=task_id)
@@ -643,11 +653,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             task_id = top_task["id"]
             don_id = top_task.get("donation_id", "")
             don = database.get_donation_record(don_id) if don_id else None
-            food_info = (
-                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "30 meal packets of Rice & Curry"
-            )
+            food_info = _format_food_info(don)
 
             vol_rec = existing_vol or (database.get_volunteer_by_phone(phone) if phone else None)
             total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
@@ -1029,11 +1035,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 task_id = top_task["id"]
                 don_id = top_task.get("donation_id", "")
                 don = database.get_donation_record(don_id) if don_id else None
-                food_info = (
-                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                    if don
-                    else "30 meal packets — Rice & Curry"
-                )
+                food_info = _format_food_info(don)
                 total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, existing_vol)
                 tools.set_session_context(key="current_task_id", value=task_id)
                 if existing_vol:
@@ -1159,11 +1161,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 task_id = top_task["id"]
                 don_id = top_task.get("donation_id", "")
                 don = database.get_donation_record(don_id) if don_id else None
-                food_info = (
-                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                    if don
-                    else "30 meal packets — Rice & Curry"
-                )
+                food_info = _format_food_info(don)
 
                 vol_record = database.get_volunteer_by_phone(phone) if phone else None
                 total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(
@@ -1393,11 +1391,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
 
             if district_matches:
                 top_m = district_matches[0]
-                m_qty = top_m.get("quantity", 30)
-                m_unit = top_m.get("unit", "meal packets")
-                m_food = top_m.get("food_type", "Rice & Curry")
+                food_info = _format_food_info(top_m)
                 m_donor = top_m.get("donor_name", "Local Donor")
-                m_dead = top_m.get("pickup_deadline", "Before 8 PM")
+                m_dead = top_m.get("pickup_deadline") or "Immediate"
                 d_phone = top_m.get("donor_phone")
                 d_donor_id = top_m.get("donor_id")
                 if not d_phone and d_donor_id:
@@ -1415,7 +1411,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                             "matched_org_id": (existing_org.get("id") if existing_org else "o1"),
                             "donation_id": top_m.get("id"),
                             "donor_name": m_donor,
-                            "food_info": f"{m_qty} {m_unit} of {m_food}",
+                            "food_info": food_info,
                             "district": final_district,
                         },
                     )
@@ -1852,12 +1848,13 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         if is_confirm_intent:
             # Commit donation from persistent draft
             qty = float(existing_draft.get("quantity") or 20.0)
+            disp_qty = int(qty) if qty == int(qty) else qty
             food = existing_draft.get("food_type") or "Prepared Meals"
             unit = existing_draft.get("unit") or "packets"
             dietary = existing_draft.get("dietary_info") or "Standard"
             city = existing_draft.get("city") or existing_draft.get("location") or (donor.get("location") if donor else None) or "Colombo"
             loc = existing_draft.get("address") or existing_draft.get("location") or city
-            deadline = existing_draft.get("pickup_deadline") or "Today before 6 PM"
+            deadline = existing_draft.get("pickup_deadline") or "Immediate"
             donor_name = (
                 existing_draft.get("donor_name")
                 or existing_draft.get("business_name")
@@ -1916,6 +1913,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
 
             org_distances.sort(key=lambda x: x[0])
 
+            food_info = f"{disp_qty} {unit} of {food}"
+
             if org_distances and phone:
                 top_dist, top_org = org_distances[0]
                 # Set conversation state for organizations in district to receive donation offer
@@ -1931,7 +1930,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                                 "donation_id": don_id,
                                 "donor_phone": phone,
                                 "donor_name": donor_name,
-                                "food_info": f"{qty} {unit} of {food}",
+                                "food_info": food_info,
                                 "district": don_dist,
                                 "distance_km": d_km,
                                 "pickup_location": loc,
@@ -1947,7 +1946,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     lang=lang,
                     donation_id=don_id,
                     donor_name=donor_name,
-                    food_info=f"{qty} {unit} of {food}",
+                    food_info=food_info,
                     city=loc or city,
                     deadline=deadline,
                     district=don_dist,
@@ -1964,7 +1963,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     lang=lang,
                     donor_name=donor_name,
                     donation_id=don_id,
-                    quantity=qty,
+                    quantity=disp_qty,
                     unit=unit,
                     food_type=food,
                     city=city,

@@ -127,6 +127,43 @@ def verify_signature(payload: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(expected, received)
 
 
+def _format_food_info(don: Optional[Dict[str, Any]]) -> str:
+    """Format food info string preserving exact food type, quantity, and unit without hardcoded defaults."""
+    if not don:
+        return "Surplus Food"
+    raw_qty = don.get("quantity")
+    if raw_qty is not None:
+        disp_qty = int(raw_qty) if isinstance(raw_qty, (int, float)) and raw_qty == int(raw_qty) else raw_qty
+    else:
+        disp_qty = 20
+    unit = don.get("unit") or "portions"
+    food = don.get("food_type") or "Prepared Meals"
+    return f"{disp_qty} {unit} of {food}"
+
+
+def _get_donor_donation_context(phone: str, donation_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve donor's active donation record accurately."""
+    if donation_id:
+        don = database.get_donation_record(donation_id)
+        if don:
+            return don
+    donor_rec = database.get_donor_by_phone(phone)
+    if donor_rec:
+        dons = database.get_donations_by_donor_id(donor_rec["id"])
+        if dons:
+            return dons[-1]
+    user = database.get_user_by_phone(phone)
+    if user:
+        dons = database.get_donations_by_donor_id(user.get("id", ""))
+        if dons:
+            return dons[-1]
+    all_dons = database.get_all_donations()
+    matching_dons = [d for d in all_dons if d.get("donor_phone") == phone or d.get("donor_id") == phone]
+    if matching_dons:
+        return matching_dons[-1]
+    return all_dons[-1] if all_dons else None
+
+
 async def send_whatsapp_message(to_number: str, text: str, reply_to_message_id: Optional[str] = None) -> Dict[str, Any]:
     """Send a WhatsApp text message via Meta Graph API v24.0."""
     access_token = get_access_token()
@@ -309,6 +346,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         ]
     )
     is_accept_intent = (is_accept_state and is_accept_text) or (has_accept_reply and (is_vol_user or is_accept_text or conv_state.get("task_id")))
+    is_accepted_intent = (is_accept_state and is_accept_text) or (has_accept_reply and (is_vol_user or is_accept_text or conv_state.get("task_id")))
 
     if is_delivered_intent:
         vol = database.get_volunteer_by_phone(from_number)
@@ -328,11 +366,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         if target_task:
             don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
-            food_info = (
-                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "30 meal packets — Rice & Curry"
-            )
+            food_info = _format_food_info(don)
 
             org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
@@ -395,11 +429,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         if target_task:
             don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
-            food_info = (
-                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "30 meal packets — Rice & Curry"
-            )
+            food_info = _format_food_info(don)
 
             # Generate or retrieve active Delivery QR for Organization
             import qr_service
@@ -454,10 +484,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 o_msg = translation_service.get_localized_message(
                     "org_delivery_qr_instructions",
                     lang=o_lang,
-                    volunteer_name=vol_name,
                     food_info=food_info,
+                    volunteer_name=vol_name,
                     task_id=target_task["id"],
-                    verification_url=dl_verif_url
                 )
                 try:
                     await send_whatsapp_image(to_number=org_phone, image_url=dl_qr_img, caption=o_msg)
@@ -472,22 +501,17 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception:
                     pass
 
-    elif is_accept_intent:
-        vol = vol_rec or database.get_volunteer_by_phone(from_number)
+    elif is_accepted_intent:
+        vol = database.get_volunteer_by_phone(from_number)
         vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
+        vol_phone = vol.get("phone") if vol else from_number
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
-        vol_phone = (vol.get("phone") if vol else None) or from_number
 
         target_task = None
-        state_task_id = conv_state.get("task_id")
-        if state_task_id:
-            target_task = database.get_pickup_task_record(state_task_id)
-
-        if not target_task and vol:
-            v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
-            assigned_v_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "ACCEPTED", "OFFERED", "PENDING", "OPEN"]]
-            if assigned_v_tasks:
-                target_task = assigned_v_tasks[-1]
+        curr_state = database.get_user_conversation_state(from_number)
+        task_id = curr_state.get("task_id")
+        if task_id:
+            target_task = database.get_pickup_task_record(task_id)
 
         if not target_task:
             all_tasks = database.get_all_pickup_tasks()
@@ -509,11 +533,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
 
-            food_info = (
-                f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "30 meal packets of Rice & Curry"
-            )
+            food_info = _format_food_info(don)
 
             # Generate or retrieve active Pickup QR for this task
             import qr_service
@@ -607,14 +627,14 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
     # 4. Donor Confirms Donation -> Send Offer Requests to District Recipient Organizations (Ordered by Distance)
     elif any(w in reply_text.lower() for w in ["notified nearby recipient organizations", "donation confirmed!", "notified registered recipient organizations"]):
-        all_dons = database.get_all_donations()
-        if all_dons:
-            top_don = all_dons[-1]
+        top_don = _get_donor_donation_context(from_number)
+        if top_don:
             don_id = top_don.get("id")
-            donor_name = top_don.get("donor_name", "Donor Partner")
-            food_info = f"{top_don.get('quantity', 30)} {top_don.get('unit', 'portions')} of {top_don.get('food_type', 'Prepared Meals')}"
-            pickup_loc = top_don.get("pickup_location") or top_don.get("location") or "Kegalle"
-            deadline = top_don.get("pickup_deadline", "Today before 6 PM")
+            donor_rec = database.get_donor_by_phone(from_number)
+            donor_name = (donor_rec.get("name") if donor_rec else None) or top_don.get("donor_name") or "Donor Partner"
+            food_info = _format_food_info(top_don)
+            pickup_loc = top_don.get("pickup_location") or top_don.get("location") or "Pickup Location"
+            deadline = top_don.get("pickup_deadline") or "Immediate"
 
             import routing
             don_dist = routing.resolve_district(pickup_loc) or "Kegalle"
@@ -684,9 +704,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             donor = database.get_donor_record(don.get("donor_id", "")) if don else None
             donor_name = (donor.get("name") if donor else None) or (don.get("donor_name") if don else "Local Donor")
             donor_phone = (donor.get("phone") if donor else None) or (don.get("donor_phone") if don else "")
-            donor_loc = don.get("pickup_location") or don.get("location") or "Pickup Location" if don else "Pickup Location"
-            food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Prepared Meals')}" if don else "Surplus Food"
-            deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
+            donor_loc = (don.get("pickup_location") if don else None) or (don.get("location") if don else None) or top_task.get("pickup_location") or "Pickup Location"
+            food_info = _format_food_info(don)
+            deadline = (don.get("pickup_deadline") if don else None) or top_task.get("scheduled_time") or "Immediate"
 
             import routing
             task_dist = routing.resolve_district(donor_loc) or routing.resolve_district(org.get("location") if org else "") or "Kegalle"
@@ -817,10 +837,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 if donor_phone and donor_phone != from_number:
                     donor_user = database.get_user_by_phone(donor_phone)
                     d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
-                    m_qty = top_don.get("quantity", 30)
-                    m_unit = top_don.get("unit", "meal packets")
-                    m_food = top_don.get("food_type", "Prepared Meals")
-                    food_info = f"{m_qty} {m_unit} — {m_food}"
+                    food_info = _format_food_info(top_don)
                     d_msg = translation_service.get_localized_message(
                         "org_matched_notify_donor",
                         lang=d_lang,
@@ -857,7 +874,7 @@ async def dispatch_qr_pickup_success_notifications(task_id: str, volunteer_id: O
     vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
     vol_phone = vol.get("phone") if vol else (vol_ref if vol_ref and str(vol_ref).isdigit() else None)
 
-    food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Prepared Meals')}" if don else "30 meal packets of Prepared Meals"
+    food_info = _format_food_info(don)
     donor_loc = don.get("pickup_location") or don.get("location") or "Donor Location" if don else "Donor Location"
     org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
     org_loc = org.get("location") or org.get("service_area") or task.get("delivery_location") or "Recipient Location"
@@ -976,7 +993,7 @@ async def dispatch_qr_delivery_success_notifications(task_id: str, volunteer_id:
     vol_name = vol.get("name", "Volunteer Courier") if vol else "Volunteer Courier"
     vol_phone = vol.get("phone") if vol else (vol_ref if vol_ref and str(vol_ref).isdigit() else None)
 
-    food_info = f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} of {don.get('food_type', 'Prepared Meals')}" if don else "30 meal packets of Prepared Meals"
+    food_info = _format_food_info(don)
     org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
     org_loc = org.get("location") or org.get("service_area") or task.get("delivery_location") or "Recipient Location"
     now_str = database.format_sri_lanka_time()
@@ -1560,11 +1577,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                 task_id = top_task["id"]
                 don_id = top_task.get("donation_id", "")
                 don = database.get_donation_record(don_id) if don_id else None
-                food_info = (
-                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Rice & Curry')}"
-                    if don
-                    else "30 meal packets — Rice & Curry"
-                )
+                food_info = _format_food_info(don)
 
                 import resilient_executor
 
@@ -1652,9 +1665,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                     if all_d:
                         donor_phone = all_d[-1].get("phone")
 
-                food_desc = (
-                    f"{matched_don.get('quantity', 20)} {matched_don.get('unit', 'packets')} of {matched_don.get('food_type', 'Rice & Curry')}"
-                )
+                food_desc = _format_food_info(matched_don)
 
                 # Send Accept/Reject offer to Donor
                 if donor_phone and donor_phone != from_number:
@@ -1768,6 +1779,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                     b_name = draft.get("business_name") or d_name
                     city_val = draft.get("city") or (donor_rec.get("location") if donor_rec else None) or "Colombo"
 
+                    disp_qty = int(qty) if isinstance(qty, (int, float)) and qty == int(qty) else qty
                     loc_ack = translation_service.get_localized_message("donor_location_received", lang=preferred_language)
                     summary_msg = translation_service.get_localized_message(
                         "donation_summary_confirm",
