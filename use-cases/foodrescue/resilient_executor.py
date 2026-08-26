@@ -685,32 +685,268 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
 
     user_state = database.get_user_conversation_state(phone) if phone else {}
-    is_donor_accepting_org = bool(user_state.get("current_question") == "ACCEPT_ORGANIZATION")
+    curr_q = user_state.get("current_question")
+    org_rec = database.get_organization_by_phone(phone) if phone else None
+    donor_rec = database.get_donor_by_phone(phone) if phone else None
+    existing_vol = database.get_volunteer_by_phone(phone) if phone else None
+    user_role = user.get("user_role") if user else None
 
-    # 6b. Volunteer Accept / Reject Task
-    if not is_donor_accepting_org and any(
+    is_org_user = bool(org_rec or user_role == "organization" or user_state.get("workflow") == "ORGANIZATION" or curr_q == "ACCEPT_DONATION_OFFER")
+    is_donor_user = bool(donor_rec or user_role == "donor" or user_state.get("workflow") == "DONATION" or curr_q == "ACCEPT_ORGANIZATION")
+    is_vol_user = bool(existing_vol or user_role == "volunteer" or user_state.get("workflow") == "VOLUNTEER" or curr_q == "ACCEPT_TASK")
+
+    # 6a-1. Handle Organization Accepting/Declining Food Donation Offer
+    if (curr_q == "ACCEPT_DONATION_OFFER" or (is_org_user and user_state.get("donation_id"))) and any(
         m in clean_p
         for m in [
             "accept",
-            "i'll take it",
-            "ill take it",
-            "take it",
-            "i can do it",
-            "accept task",
-            "take pickup",
+            "accept offer",
+            "accept donation",
+            "accept request",
             "claim",
-            "භාරගන්නවා",
+            "1",
+            "yes",
+            "confirm",
+            "ok",
+            "sure",
+            "y",
+            "agree",
+            "පිළිගන්නවා",
             "ඔව්",
+            "භාරගන්නවා",
             "ஏற்கிறேன்",
             "ஆம்",
             "ஏற்றுக்கொள்கிறேன்",
-            "பணியை ஏற்கிறேன்",
         ]
+    ):
+        don_id = user_state.get("donation_id")
+        donor_phone = user_state.get("donor_phone")
+        donor_name = user_state.get("donor_name", "Local Food Donor")
+        food_info = user_state.get("food_info", "Surplus Food")
+        org_id = (org_rec.get("id") if org_rec else None) or "o1"
+        org_name = (org_rec.get("name") if org_rec else None) or "Recipient Organization"
+        org_loc = (org_rec.get("location") or org_rec.get("service_area") or "Kegalle") if org_rec else "Kegalle"
+        org_clean_dist = routing.resolve_district(org_loc) or "Kegalle"
+
+        don = database.get_donation_record(don_id) if don_id else None
+        if don:
+            donor_loc = don.get("pickup_location") or don.get("location") or org_clean_dist
+            deadline = don.get("pickup_deadline") or "Immediate"
+            if not donor_phone and don.get("donor_id"):
+                d_rec = database.get_donor_record(don.get("donor_id"))
+                donor_phone = d_rec.get("phone") if d_rec else don.get("donor_phone")
+        else:
+            donor_loc = org_clean_dist
+            deadline = "Immediate"
+
+        if don_id:
+            tools.accept_donation(donation_id=don_id, organization_id=org_id)
+
+        task_raw = tools.create_pickup_task(
+            donation_id=don_id,
+            organization_id=org_id,
+            pickup_location=donor_loc,
+            delivery_location=org_loc,
+            scheduled_time=deadline,
+        )
+        task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
+        task_id = task_res.get("task_id", "")
+
+        # Clear org state
+        if phone:
+            database.clear_user_conversation_state(phone)
+
+        # Find available volunteers in this district and broadcast/offer
+        all_vols = database.get_all_volunteers()
+        dist_vols = [
+            v
+            for v in all_vols
+            if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
+            and (
+                routing.resolve_district(v.get("service_area") or v.get("location") or "") == org_clean_dist
+                or not v.get("service_area")
+                or v.get("service_area") == "Sri Lanka"
+            )
+        ]
+
+        if task_id and dist_vols:
+            for v in dist_vols[:3]:
+                v_phone = v.get("phone")
+                if v_phone and v_phone != phone and v_phone != donor_phone:
+                    database.set_user_conversation_state(
+                        v_phone,
+                        {
+                            "workflow": "VOLUNTEER",
+                            "current_question": "ACCEPT_TASK",
+                            "expected_input_type": "CHOICE",
+                            "task_id": task_id,
+                        },
+                    )
+
+        return translation_service.get_localized_message(
+            "org_accepted_dispatching_volunteer",
+            lang=lang,
+            org_name=org_name,
+            food_info=food_info,
+            donor_name=donor_name,
+            donor_location=donor_loc,
+            org_location=org_loc,
+            district=org_clean_dist,
+        )
+
+    elif (curr_q == "ACCEPT_DONATION_OFFER" or (is_org_user and user_state.get("donation_id"))) and any(
+        m in clean_p for m in ["decline", "no", "reject", "cancel", "pass", "බැහැ", "මඟහරින්න", "மறுக்கிறேன்"]
+    ):
+        if phone:
+            database.clear_user_conversation_state(phone)
+        return "👍 Thank you for letting us know. We will offer this donation to other organizations in your district."
+
+    # 6a-2. Handle Donor Accepting/Rejecting Matched Organization
+    if (curr_q == "ACCEPT_ORGANIZATION" or (is_donor_user and user_state.get("matched_org_id"))) and any(
+        m in clean_p
+        for m in [
+            "accept",
+            "accept org",
+            "1",
+            "yes",
+            "confirm",
+            "ok",
+            "connect",
+            "sure",
+            "y",
+            "agree",
+            "පිළිගන්නවා",
+            "ඔව්",
+            "ஏற்கிறேன்",
+            "ஆம்",
+        ]
+    ):
+        matched_org_id = user_state.get("matched_org_id")
+        don_id = user_state.get("donation_id")
+        if not don_id:
+            all_dons = database.get_all_donations()
+            if all_dons:
+                don_id = all_dons[-1]["id"]
+        if not matched_org_id:
+            all_orgs = database.get_all_organizations()
+            if all_orgs:
+                matched_org_id = all_orgs[-1]["id"]
+
+        don = database.get_donation_record(don_id) if don_id else None
+        org = database.get_organization_record(matched_org_id) if matched_org_id else None
+        org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+
+        if don_id and matched_org_id:
+            tools.accept_donation(donation_id=don_id, organization_id=matched_org_id)
+
+        donor_name = don.get("donor_name", "Local Donor") if don else "Local Donor"
+        food_info = _format_food_info(don)
+        deadline = don.get("pickup_deadline") if don else "Immediate"
+        pickup_loc = don.get("pickup_location") or don.get("location") or "Pickup Location" if don else "Pickup Location"
+        deliv_loc = org.get("location") or org.get("service_area") or "Delivery Location" if org else "Delivery Location"
+        don_dist = routing.resolve_district(pickup_loc) or routing.resolve_district(deliv_loc) or "Kegalle"
+
+        task_id = ""
+        if don_id and matched_org_id:
+            task_raw = tools.create_pickup_task(
+                donation_id=don_id,
+                organization_id=matched_org_id,
+                pickup_location=pickup_loc,
+                delivery_location=deliv_loc,
+                scheduled_time=deadline,
+            )
+            task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
+            task_id = task_res.get("task_id", "")
+
+        all_vols = database.get_all_volunteers()
+        dist_vols = [
+            v
+            for v in all_vols
+            if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
+            and (
+                routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
+                or not v.get("service_area")
+                or v.get("service_area") == "Sri Lanka"
+            )
+        ]
+
+        if task_id and dist_vols:
+            for v in dist_vols[:3]:
+                v_phone = v.get("phone")
+                if v_phone and v_phone != phone:
+                    database.set_user_conversation_state(
+                        v_phone,
+                        {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id},
+                    )
+
+        if phone:
+            database.clear_user_conversation_state(phone)
+
+        return (
+            f"✅ **Connected with {org_name}!**\n\n"
+            f"We have sent your donation details to **{org_name}**.\n"
+            f"Our AI coordinator is now searching for and dispatching available volunteer couriers in **{don_dist} District** to pick up and deliver the food. 🚚"
+        )
+
+    elif (curr_q == "ACCEPT_ORGANIZATION" or (is_donor_user and user_state.get("matched_org_id"))) and any(
+        m in clean_p for m in ["reject", "no", "cancel", "decline", "වෙනත්", "මඟහරින්න", "மறுக்கிறேன்"]
+    ):
+        if phone:
+            database.clear_user_conversation_state(phone)
+        return "👍 No problem! Your food donation remains active, and we will match you with another organization in your district."
+
+    # 6b. Volunteer Courier Accept / Reject Task
+    is_explicit_vol_accept = any(
+        w in clean_p
+        for w in [
+            "accept task",
+            "accept pickup",
+            "take pickup",
+            "take task",
+            "take the task",
+            "take this task",
+            "accept this task",
+            "பணியை ஏற்கிறேன்",
+            "பணியை",
+            "කාර්යය භාරගන්නවා",
+            "කාර්යය",
+        ]
+    )
+    has_vol_context = bool(
+        curr_q == "ACCEPT_TASK"
+        or (is_vol_user and not is_org_user and not is_donor_user)
+        or user_state.get("task_id")
+        or tools._get_context_val("current_task_id", "")
+        or is_explicit_vol_accept
+    )
+    if (
+        (has_vol_context and not is_org_user and not is_donor_user)
+        and any(
+            m in clean_p
+            for m in [
+                "accept",
+                "accept task",
+                "accept pickup",
+                "i'll take it",
+                "ill take it",
+                "take it",
+                "i can do it",
+                "take pickup",
+                "claim",
+                "1",
+                "yes",
+                "භාරගන්නවා",
+                "ඔව්",
+                "ஏற்கிறேன்",
+                "ஆம்",
+                "ஏற்றுக்கொள்கிறேன்",
+                "பணியை ஏற்கிறேன்",
+            ]
+        )
     ):
         task_id = tools._get_context_val("current_task_id", "")
         if not task_id and phone:
-            st = database.get_user_conversation_state(phone)
-            task_id = st.get("task_id", "")
+            task_id = user_state.get("task_id", "")
         if not task_id:
             pending = database.get_all_pickup_tasks()
             avail = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
@@ -783,13 +1019,18 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
         return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
 
-    if clean_p in ["reject", "can't do it", "cant do it", "no", "decline", "බැහැ", "නැහැ", "மறுக்கிறேன்", "இல்லை"]:
-        user_conv = database.get_user_conversation_state(phone) if phone else {}
-        if user_conv.get("current_question") == "ACCEPT_ORGANIZATION":
-            if phone:
-                database.clear_user_conversation_state(phone)
-            return "👍 No problem! Your food donation remains active, and we will match you with another organization in your district."
-        task_id = tools._get_context_val("current_task_id", "") or user_conv.get("task_id", "")
+    if (curr_q == "ACCEPT_TASK" or (is_vol_user and not is_org_user)) and clean_p in [
+        "reject",
+        "can't do it",
+        "cant do it",
+        "no",
+        "decline",
+        "බැහැ",
+        "නැහැ",
+        "මறுக்கிறேன்",
+        "இல்லை",
+    ]:
+        task_id = tools._get_context_val("current_task_id", "") or user_state.get("task_id", "")
         if task_id:
             tools.reject_pickup_task(pickup_task_id=task_id)
             if phone:
@@ -1555,139 +1796,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
 
                 tools.set_session_context(key="current_task_id", value=task_id)
-                if vol_rec:
-                    tools.set_session_context(key="current_volunteer_id", value=vol_rec["id"])
-                if phone:
-                    database.set_user_conversation_state(
-                        phone, {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id}
-                    )
-
-                return (
-                    f"🚚 **Food Pickup Opportunity in {vol_dist}!**\n\n"
-                    f"Hi {vol_name}! A food rescue task is available:\n\n"
-                    f"• 🆔 **Task ID**: `{task_id}`\n"
-                    f"• 🍱 **Food**: {food_info}\n"
-                    f"• 📍 **Pickup**: {p_area}\n"
-                    f"• 🏢 **Delivery**: {r_name} ({d_area})\n"
-                    f"• 📏 **Distance**: ~{total_dist} km\n"
-                    f"• 💰 **Estimated transport support**: LKR {int(est_cost)}\n\n"
-                    f"*Reply **Accept** or **Reject***"
-                )
-            else:
-                return (
-                    f"🚚 **Volunteer Courier Portal ({vol_dist})**\n\n"
-                    f"Hi {vol_name}! You are registered as an active courier in **{vol_dist}** and marked **AVAILABLE**.\n\n"
-                    f"There are currently 0 unassigned pickups waiting in {vol_dist}.\n\n"
-                    f"Reply with:\n"
-                    f"1️⃣ Search active pickups\n"
-                    f"2️⃣ Check active delivery status\n"
-                    f"3️⃣ Mark myself as free / update vehicle\n"
-                    f"4️⃣ Change language (භාෂාව / மொழி)\n\n"
-                    f"Our coordinator will message you immediately once a local pickup is ready! 🚚"
-                )
-
-    # 9a-0. Handle Organization Accepting/Declining Food Donation Offer
-    if (curr_q == "ACCEPT_DONATION_OFFER" or expected_type == "ACCEPT_DONATION_OFFER" or (org_rec and curr_state.get("workflow") == "ORGANIZATION" and curr_state.get("donation_id"))) and (org_rec or (user and user.get("user_role") == "organization")):
-        if any(
-            m in clean_p
-            for m in [
-                "accept",
-                "1",
-                "yes",
-                "confirm",
-                "ok",
-                "sure",
-                "y",
-                "agree",
-                "claim",
-                "පිළිගන්නවා",
-                "ඔව්",
-                "භාරගන්නවා",
-                "ஏற்கிறேன்",
-                "ஆம்",
-                "ஏற்றுக்கொள்கிறேன்",
-            ]
-        ):
-            don_id = curr_state.get("donation_id")
-            donor_phone = curr_state.get("donor_phone")
-            donor_name = curr_state.get("donor_name", "Local Food Donor")
-            food_info = curr_state.get("food_info", "Surplus Food")
-            org_id = (org_rec.get("id") if org_rec else None) or "o1"
-            org_name = (org_rec.get("name") if org_rec else None) or "Recipient Organization"
-            org_loc = (org_rec.get("location") or org_rec.get("service_area") or "Kegalle") if org_rec else "Kegalle"
-            org_clean_dist = routing.resolve_district(org_loc) or "Kegalle"
-
-            don = database.get_donation_record(don_id) if don_id else None
-            if don:
-                donor_loc = don.get("pickup_location") or don.get("location") or org_clean_dist
-                deadline = don.get("pickup_deadline", "Immediate")
-                if not donor_phone and don.get("donor_id"):
-                    donor_rec = database.get_donor_record(don.get("donor_id"))
-                    donor_phone = donor_rec.get("phone") if donor_rec else don.get("donor_phone")
-            else:
-                donor_loc = org_clean_dist
-                deadline = "Immediate"
-
-            if don_id:
-                tools.accept_donation(donation_id=don_id, organization_id=org_id)
-
-            task_raw = tools.create_pickup_task(
-                donation_id=don_id,
-                organization_id=org_id,
-                pickup_location=donor_loc,
-                delivery_location=org_loc,
-                scheduled_time=deadline,
-            )
-            task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
-            task_id = task_res.get("task_id", "")
-
-            # Clear org state
-            if phone:
-                database.clear_user_conversation_state(phone)
-
-            # Find available volunteers in this district and broadcast/offer
-            all_vols = database.get_all_volunteers()
-            dist_vols = [
-                v for v in all_vols
-                if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
-                and (
-                    routing.resolve_district(v.get("service_area") or v.get("location") or "") == org_clean_dist
-                    or not v.get("service_area")
-                    or v.get("service_area") == "Sri Lanka"
-                )
-            ]
-
-            if task_id and dist_vols:
-                for v in dist_vols[:3]:
-                    v_phone = v.get("phone")
-                    if v_phone and v_phone != phone and v_phone != donor_phone:
-                        database.set_user_conversation_state(
-                            v_phone,
-                            {
-                                "workflow": "VOLUNTEER",
-                                "current_question": "ACCEPT_TASK",
-                                "expected_input_type": "CHOICE",
-                                "task_id": task_id,
-                            }
-                        )
-
-            return translation_service.get_localized_message(
-                "org_accepted_dispatching_volunteer",
-                lang=lang,
-                org_name=org_name,
-                food_info=food_info,
-                donor_name=donor_name,
-                donor_location=donor_loc,
-                org_location=org_loc,
-                district=org_clean_dist,
-            )
-
-        elif any(m in clean_p for m in ["decline", "no", "reject", "cancel", "pass", "බැහැ", "මඟහරින්න", "மறுக்கிறேன்"]):
-            if phone:
-                database.clear_user_conversation_state(phone)
-            return "👍 Thank you for letting us know. We will offer this donation to other organizations in your district."
-
-    # Role guard for registered organization: Never prompt for food donations or create drafts
+     # Role guard for registered organization: Never prompt for food donations or create drafts
     if (org_rec or (user and user.get("user_role") == "organization")) and curr_state.get("workflow") != "DONATION":
         is_explicit_donate = any(w in clean_p for w in ["i want to donate", "donate food", "i have food to donate", "පරිත්‍යාග", "தானம்"])
         if not is_explicit_donate:
@@ -1719,110 +1828,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     f"There are currently 0 active surplus food donations available right now.\n\n"
                     f"You don't need to keep asking; our AI coordinator will automatically notify you on WhatsApp the moment fresh surplus food is donated in your district! 🍱"
                 )
-
-    # 9a. Handle Donor Accepting/Rejecting Matched Organization (Backwards Compatibility)
-    if curr_q == "ACCEPT_ORGANIZATION" or expected_type == "ACCEPT_ORGANIZATION":
-        if any(
-            m in clean_p
-            for m in [
-                "accept",
-                "1",
-                "yes",
-                "confirm",
-                "ok",
-                "connect",
-                "sure",
-                "y",
-                "agree",
-                "පිළිගන්නවා",
-                "ඔව්",
-                "ஏற்கிறேன்",
-                "ஆம்",
-            ]
-        ):
-            matched_org_id = curr_state.get("matched_org_id")
-            don_id = curr_state.get("donation_id")
-            if not don_id:
-                all_dons = database.get_all_donations()
-                if all_dons:
-                    don_id = all_dons[-1]["id"]
-            if not matched_org_id:
-                all_orgs = database.get_all_organizations()
-                if all_orgs:
-                    matched_org_id = all_orgs[-1]["id"]
-
-            don = database.get_donation_record(don_id) if don_id else None
-            org = database.get_organization_record(matched_org_id) if matched_org_id else None
-            org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
-            org_phone = org.get("phone") if org else None
-
-            if don_id and matched_org_id:
-                tools.accept_donation(donation_id=don_id, organization_id=matched_org_id)
-
-            donor_name = don.get("donor_name", "Local Donor") if don else "Local Donor"
-            donor_phone = phone or (don.get("donor_phone") if don else "")
-            food_info = (
-                f"{don.get('quantity', 20)} {don.get('unit', 'packets')} of {don.get('food_type', 'Rice & Curry')}"
-                if don
-                else "20 packets of Rice & Curry"
-            )
-            deadline = don.get("pickup_deadline", "Immediate") if don else "Immediate"
-            pickup_loc = don.get("pickup_location") or don.get("location") or "Pickup Location" if don else "Pickup Location"
-            deliv_loc = org.get("location") or org.get("service_area") or "Delivery Location" if org else "Delivery Location"
-
-            don_dist = routing.resolve_district(pickup_loc) or routing.resolve_district(deliv_loc) or "Kegalle"
-
-            # Create pickup task linking donor and organization
-            task_id = ""
-            if don_id and matched_org_id:
-                task_raw = tools.create_pickup_task(
-                    donation_id=don_id,
-                    organization_id=matched_org_id,
-                    pickup_location=pickup_loc,
-                    delivery_location=deliv_loc,
-                    scheduled_time=deadline,
-                )
-                task_res = json.loads(task_raw) if isinstance(task_raw, str) else {}
-                task_id = task_res.get("task_id", "")
-
-            # Search available volunteers in this specific district
-            all_vols = database.get_all_volunteers()
-            dist_vols = [
-                v
-                for v in all_vols
-                if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
-                and (
-                    routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
-                    or not v.get("service_area")
-                    or v.get("service_area") == "Sri Lanka"
-                )
-            ]
-
-            # If task created and volunteers available in district, offer to available volunteer(s)
-            if task_id and dist_vols:
-                top_vol = dist_vols[0]
-                v_phone = top_vol.get("phone")
-                if v_phone:
-                    task_rec = database.get_pickup_task_record(task_id) or {"id": task_id}
-                    ext = _get_task_extended_metrics(task_rec, top_vol)
-                    database.set_user_conversation_state(
-                        v_phone,
-                        {"workflow": "VOLUNTEER", "current_question": "ACCEPT_TASK", "expected_input_type": "CHOICE", "task_id": task_id},
-                    )
-
-            if phone:
-                database.clear_user_conversation_state(phone)
-
-            return (
-                f"✅ **Connected with {org_name}!**\n\n"
-                f"We have sent your donation details to **{org_name}**.\n"
-                f"Our AI coordinator is now searching for and dispatching available volunteer couriers in **{don_dist} District** to pick up and deliver the food. 🚚"
-            )
-
-        elif any(m in clean_p for m in ["reject", "no", "cancel", "decline", "වෙනත්", "මඟහරින්න", "மறுக்கிறேன்"]):
-            if phone:
-                database.clear_user_conversation_state(phone)
-            return "👍 No problem! Your food donation remains active, and we will match you with another organization in your district."
 
     # 9b. Handle Confirmation Stage ("Confirm" / 1 -> commit donation)
     is_confirm_word = (
@@ -2432,10 +2437,28 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
     for model_name in model_candidates:
         try:
             logger.info(f"[Resilient Run] Executing '{agent_name}' with model '{model_name}' for session '{session_id}'")
-            # Update agent model dynamically
-            app.foodrescue_coordinator.model = model_name
+            # Inject user role context so Gemini never confuses role perspective
+            user_obj = database.get_user_by_phone(phone) if phone else None
+            org_obj = database.get_organization_by_phone(phone) if phone else None
+            vol_obj = database.get_volunteer_by_phone(phone) if phone else None
+            donor_obj = database.get_donor_by_phone(phone) if phone else None
 
-            req = BaseChatRequest(agent=agent_name, prompt=prompt, session_id=session_id)
+            role_ctx = ""
+            if org_obj or (user_obj and user_obj.get("user_role") == "organization"):
+                o_name = (org_obj.get("name") if org_obj else None) or (user_obj.get("display_name") if user_obj else "Recipient Organization")
+                o_loc = (org_obj.get("location") if org_obj else None) or (user_obj.get("default_location") if user_obj else "Sri Lanka")
+                role_ctx = f"[User Role: Recipient Organization ({o_name}), Location: {o_loc}] "
+            elif vol_obj or (user_obj and user_obj.get("user_role") == "volunteer"):
+                v_name = (vol_obj.get("name") if vol_obj else None) or (user_obj.get("display_name") if user_obj else "Volunteer Courier")
+                v_area = (vol_obj.get("service_area") if vol_obj else None) or (user_obj.get("default_location") if user_obj else "Sri Lanka")
+                v_veh = (vol_obj.get("transport_mode") if vol_obj else None) or "Motorbike"
+                role_ctx = f"[User Role: Volunteer Courier ({v_name}), Vehicle: {v_veh}, Service Area: {v_area}] "
+            elif donor_obj or (user_obj and user_obj.get("user_role") == "donor"):
+                d_name = (donor_obj.get("name") if donor_obj else None) or (user_obj.get("display_name") if user_obj else "Donor")
+                role_ctx = f"[User Role: Food Donor Partner ({d_name})] "
+
+            full_prompt = f"{role_ctx}{prompt}" if role_ctx and not prompt.startswith("[User Role:") else prompt
+            req = BaseChatRequest(agent=agent_name, prompt=full_prompt, session_id=session_id)
             # Cap individual agent execution at 8.0s to avoid hanging on slow retries
             chat_result = await asyncio.wait_for(chat_service.process_async_chat_request(req), timeout=8.0)
 

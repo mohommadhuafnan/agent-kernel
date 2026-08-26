@@ -308,7 +308,11 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
     conv_state = database.get_user_conversation_state(from_number) or {}
     is_accept_state = conv_state.get("current_question") == "ACCEPT_TASK"
     vol_rec = database.get_volunteer_by_phone(from_number)
-    is_vol_user = vol_rec is not None or conv_state.get("workflow") == "VOLUNTEER"
+    org_rec = database.get_organization_by_phone(from_number)
+    donor_rec = database.get_donor_by_phone(from_number)
+    is_org_user = org_rec is not None or conv_state.get("workflow") == "ORGANIZATION" or conv_state.get("current_question") == "ACCEPT_DONATION_OFFER"
+    is_donor_user = donor_rec is not None or conv_state.get("workflow") == "DONATION" or conv_state.get("current_question") == "ACCEPT_ORGANIZATION"
+    is_vol_user = (vol_rec is not None or conv_state.get("workflow") == "VOLUNTEER") and not is_org_user and not is_donor_user
 
     is_accept_text = any(
         m in clean_p
@@ -322,16 +326,22 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             "take it",
             "i can do it",
             "accept task",
+            "accept pickup",
+            "accept offer",
+            "accept donation",
+            "accept request",
             "claim",
             "agree",
             "start",
             "on the way",
             "පිළිගන්නවා",
             "භාරගන්නවා",
+            "ஏற்கிறேன்",
+            "ஆம்",
             "ஏற்றுக்கொள்கிறேன்",
         ]
     )
-    has_accept_reply = any(
+    has_vol_accept_reply = any(
         w in reply_text.lower()
         for w in [
             "task assigned",
@@ -344,9 +354,11 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             "ஒதுக்கப்பட்டது",
             "பணி எண்",
         ]
+    ) and not any(w in reply_text.lower() for w in ["donation offer accepted", "food donation accepted", "connected with"])
+    is_accepted_intent = (
+        (is_accept_text and (is_accept_state or has_vol_accept_reply or is_vol_user) and not is_org_user and not is_donor_user)
+        or (has_vol_accept_reply and not is_org_user and not is_donor_user)
     )
-    is_accept_intent = (is_accept_state and is_accept_text) or (has_accept_reply and (is_vol_user or is_accept_text or conv_state.get("task_id")))
-    is_accepted_intent = (is_accept_state and is_accept_text) or (has_accept_reply and (is_vol_user or is_accept_text or conv_state.get("task_id")))
 
     if is_delivered_intent:
         vol = database.get_volunteer_by_phone(from_number)
@@ -508,10 +520,20 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         vol_mode = vol.get("transport_mode", "Three-Wheeler") if vol else "Three-Wheeler"
 
         target_task = None
-        curr_state = database.get_user_conversation_state(from_number)
+        curr_state = database.get_user_conversation_state(from_number) or {}
         task_id = curr_state.get("task_id")
         if task_id:
             target_task = database.get_pickup_task_record(task_id)
+
+        if not target_task and reply_text:
+            m = re.search(r"\b(task-[\w\-]+)\b", reply_text, re.IGNORECASE)
+            if m:
+                target_task = database.get_pickup_task_record(m.group(1))
+
+        if not target_task and vol and vol.get("id"):
+            v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
+            if v_tasks:
+                target_task = v_tasks[-1]
 
         if not target_task:
             all_tasks = database.get_all_pickup_tasks()
