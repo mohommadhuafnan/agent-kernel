@@ -709,6 +709,157 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "நன்றி, **{org_name}**! 3️⃣ உங்கள் அமைப்பிற்கு **தினசரி தேவைப்படும் உணவு அளவு / கொள்ளளவு (Daily Capacity)** எவ்வளவு? (எ.கா: *50 பொதிகள்*, *100 பொதிகள்*, *250 meals/day*)"
         ),
     },
+    "org_donation_offer_request": {
+        "en": (
+            "🍱 **Surplus Food Donation Available in {district}!**\n\n"
+            "A registered donor partner has fresh surplus food ready for pickup:\n"
+            "• 🍱 **Food**: {food_info}\n"
+            "• 👤 **Donor**: {donor_name}\n"
+            "• 📍 **Pickup Area**: {donor_location}\n"
+            "• 📏 **Distance**: ~{distance_km} km away\n"
+            "• ⏰ **Pickup Deadline**: {deadline}\n\n"
+            "Does your organization need this food donation today?\n"
+            "👉 Reply **Accept** (or **1**) to claim this donation, or **Decline**."
+        ),
+        "si": (
+            "🍱 **{district} දිස්ත්‍රික්කයෙන් අතිරික්ත ආහාර පරිත්‍යාගයක් ඇත!**\n\n"
+            "ලියාපදිංචි පරිත්‍යාගශීලියෙකු සතුව නැවුම් අතිරික්ත ආහාර තිබේ:\n"
+            "• 🍱 **ආහාර**: {food_info}\n"
+            "• 👤 **පරිත්‍යාගශීලියා**: {donor_name}\n"
+            "• 📍 **ස්ථානය**: {donor_location}\n"
+            "• 📏 **දුර**: ~{distance_km} km\n"
+            "• ⏰ **අවසන් වේලාව**: {deadline}\n\n"
+            "ඔබගේ සංවිධානයට අද දින මෙම ආහාර අවශ්‍යද?\n"
+            "👉 භාරගැනීමට **Accept** (හෝ **1**) එවන්න, නැතහොත් **Decline** එවන්න."
+        ),
+        "ta": (
+            "🍱 **{district} மாவட்டத்தில் உபரி உணவு நன்கொடை கிடைக்கிறது!**\n\n"
+            "பதிவுசெய்யப்பட்ட நன்கொடையாளரிடம் புதிய உபரி உணவு தயாராக உள்ளது:\n"
+            "• 🍱 **உணவு**: {food_info}\n"
+            "• 👤 **நன்கொடையாளர்**: {donor_name}\n"
+            "• 📍 **பகுதி**: {donor_location}\n"
+            "• 📏 **தூரம்**: ~{distance_km} km\n"
+            "• ⏰ **காலக்கெடு**: {deadline}\n\n"
+            "உங்கள் அமைப்பிற்கு இன்று இந்த உணவு தேவையா?\n"
+            "👉 ஏற்க **Accept** (அல்லது **1**) என பதிலளிக்கவும், அல்லது **Decline** என அனுப்பவும்."
+        ),
+    },
+    "donor_donation_published_notified_orgs": {
+        "en": (
+            "✅ **Donation Confirmed! (ID: {donation_id})**\n\n"
+            "Thank you, {donor_name}! 🙏\n"
+            "• 🍱 **Food**: {food_info}\n"
+            "• 📍 **Pickup**: {city}\n"
+            "• ⏰ **Deadline**: {deadline}\n\n"
+            "We have notified nearby recipient Organizations in **{district}** (including *{org_name}*, ~{distance_km} km away).\n"
+            "As soon as an Organization accepts, we will dispatch an available volunteer courier to collect the food from you! 🚚"
+        ),
+        "si": (
+            "✅ **පරිත්‍යාගය තහවුරු විය! (අංකය: {donation_id})**\n\n"
+            "ස්තූතියි, {donor_name}! 🙏\n"
+            "• 🍱 **ආහාර**: {food_info}\n"
+            "• 📍 **ස්ථානය**: {city}\n"
+            "• ⏰ **අවසන් වේලාව**: {deadline}\n\n"
+            "අපි **{district}** හි ලියාපදිංචි සංවිධාන වෙත (ඇතුළුව *{org_name}*, දුර ~{distance_km} km) දැනුම් දී ඇත.\n"
+            "සංවිධානයක් පිළිගත් වහාම ආහාර ලබාගැනීමට ස්වේච්ඡා කුරියර්වරයෙකු එවන්නෙමු! 🚚"
+        ),
+        "ta": (
+            "✅ **நன்கொடை உறுதி செய்யப்பட்டது! (எண்: {donation_id})**\n\n"
+            "நன்றி, {donor_name}! 🙏\n"
+            "• 🍱 **உணவு**: {food_info}\n"
+            "• 📍 **இடம்**: {city}\n"
+            "• ⏰ **காலக்கெடு**: {deadline}\n\n"
+            "நாங்கள் **{district}** மாவட்டத்திலுள்ள பெறும் அமைப்புகளுக்கு (*{org_name}*, ~{distance_km} km உட்பட) அறிவித்துள்ளோம்.\n"
+            "அமைப்பு ஏற்றுக்கொண்டதும் உணவை சேகரிக்க தன்னார்வ கூரியர் அனுப்பப்படுவார்! 🚚"
+        ),
+    },
+    "org_accepted_dispatching_volunteer": {
+        "en": (
+            "✅ **Food Donation Accepted!**\n\n"
+            "Thank you, {org_name}! You have confirmed acceptance of **{food_info}** from **{donor_name}**.\n\n"
+            "🚚 Our AI coordinator is now dispatching an available volunteer courier in **{district} District** to pick up the meals from {donor_location} and deliver them to your door ({org_location})."
+        ),
+        "si": (
+            "✅ **ආහාර පරිත්‍යාගය භාරගන්නා ලදී!**\n\n"
+            "ස්තූතියි, {org_name}! ඔබ **{donor_name}** ගෙන් **{food_info}** භාරගැනීම තහවුරු කළා.\n\n"
+            "🚚 {donor_location} වෙතින් ආහාර ලබාගෙන ඔබගේ ස්ථානයට ({org_location}) භාරදීමට **{district}** දිස්ත්‍රික්කයේ ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ කරමින් සිටිමු."
+        ),
+        "ta": (
+            "✅ **உணவு நன்கொடை ஏற்றுக்கொள்ளப்பட்டது!**\n\n"
+            "நன்றி, {org_name}! நீங்கள் **{donor_name}** இடமிருந்து **{food_info}** பெறுவதை உறுதி செய்துள்ளீர்கள்.\n\n"
+            "🚚 {donor_location} இலிருந்து உணவை பெற்று உங்கள் அமைப்பிற்கு ({org_location}) வழங்க **{district}** மாவட்டத்தில் தன்னார்வலரை நியமிக்கிறோம்."
+        ),
+    },
+    "donor_org_accepted_volunteer_dispatching": {
+        "en": (
+            "🎉 **Donation Accepted by Recipient!**\n\n"
+            "*{org_name}* in {district} has accepted your food donation ({food_info}).\n\n"
+            "🚚 We are now assigning a nearby volunteer courier to collect the food from you. We will send you courier details and a pickup QR code shortly!"
+        ),
+        "si": (
+            "🎉 **ලබන්නාගේ සංවිධානය ඔබගේ පරිත්‍යාගය පිළිගන්නා ලදී!**\n\n"
+            "*{org_name}* විසින් ඔබගේ ආහාර පරිත්‍යාගය ({food_info}) භාරගැනීම තහවුරු කළා.\n\n"
+            "🚚 ආහාර ලබාගැනීමට ස්වේච්ඡා කුරියර්වරයෙකු සම්බන්ධ කරමින් සිටින අතර කුරියර් විස්තර සහ Pickup QR කේතය ඉක්මනින් එවන්නෙමු!"
+        ),
+        "ta": (
+            "🎉 **பெறும் அமைப்பு உங்கள் நன்கொடையை ஏற்றுக்கொண்டது!**\n\n"
+            "*{org_name}* உங்கள் உணவு நன்கொடையை ({food_info}) ஏற்றுக்கொண்டுள்ளது.\n\n"
+            "🚚 உணவை சேகரிக்க தன்னார்வலரை நியமித்து வருகிறோம். விரைவில் கூரியர் விபரங்கள் மற்றும் Pickup QR குறியீடு அனுப்பப்படும்!"
+        ),
+    },
+    "volunteer_delivery_completed_with_availability": {
+        "en": (
+            "🎉 **Delivery Completed & Verified!**\n\n"
+            "• 🆔 **Task ID**: `{task_id}`\n"
+            "• 🍱 **Food Delivered**: {food_info}\n"
+            "• 🏢 **Recipient**: {org_name}\n"
+            "• 💰 **Estimated Transport Support**: LKR {est_cost}\n"
+            "• ⏰ **Completed At**: {timestamp}\n\n"
+            "Thank you for helping rescue food and feed people! ❤️\n\n"
+            "**Are you available for more deliveries today?**\n"
+            "👉 Reply **AVAILABLE** (or **YES**) to stay active for new pickups, or **BUSY** to take a break."
+        ),
+        "si": (
+            "🎉 **බෙදාහැරීම සාර්ථකව සම්පූර්ණ කර තහවුරු කරන ලදී!**\n\n"
+            "• 🆔 **කාර්ය අංකය**: `{task_id}`\n"
+            "• 🍱 **ආහාර**: {food_info}\n"
+            "• 🏢 **සංවිධානය**: {org_name}\n"
+            "• 💰 **ප්‍රවාහන සහාය මුදල**: LKR {est_cost}\n"
+            "• ⏰ **වේලාව**: {timestamp}\n\n"
+            "ආහාර අපතේ යාම වළක්වා අසරණ අයට උපකාර කිරීම ගැන ඔබට ස්තූතියි! ❤️\n\n"
+            "**අද දින තවත් බෙදාහැරීම් සඳහා ඔබ සූදානම්ද?**\n"
+            "👉 සූදානම් නම් **AVAILABLE** (හෝ **YES**) එවන්න, විවේක ගැනීමට **BUSY** එවන්න."
+        ),
+        "ta": (
+            "🎉 **டெலிவரி வெற்றிகரமாக முடிந்து சரிபார்க்கப்பட்டது!**\n\n"
+            "• 🆔 **பணி எண்**: `{task_id}`\n"
+            "• 🍱 **உணவு**: {food_info}\n"
+            "• 🏢 **பெறும் அமைப்பு**: {org_name}\n"
+            "• 💰 **போக்குவரத்து உதவித்தொகை**: LKR {est_cost}\n"
+            "• ⏰ **நேரம்**: {timestamp}\n\n"
+            "உணவை மீட்டு மக்களுக்கு உதவியதற்கு மிக்க நன்றி! ❤️\n\n"
+            "**இன்று மேலும் டெலிவரிகளுக்கு நீங்கள் தயாரா?**\n"
+            "👉 தயார் என்றால் **AVAILABLE** (அல்லது **YES**) என அனுப்பவும், இடைவேளை எடுக்க **BUSY** என அனுப்பவும்."
+        ),
+    },
+    "volunteer_status_updated_available": {
+        "en": (
+            "📍 **Status: ACTIVE & AVAILABLE in {service_area}** 🟢\n\n"
+            "Thank you, {volunteer_name}! You are now marked as AVAILABLE in **{service_area}**.\n\n"
+            "📦 Currently {pending_count} pending pickups in your area.\n"
+            "Our AI coordinator will immediately send you a task offer the moment food is ready! 🚚"
+        ),
+        "si": (
+            "📍 **තත්ත්වය: ACTIVE & AVAILABLE in {service_area}** 🟢\n\n"
+            "ආයුබෝවන් {volunteer_name}! ඔබ **{service_area}** හි සක්‍රීය කුරියර්වරයෙකු ලෙස සලකුණු කර ඇත.\n\n"
+            "ආහාර පරිත්‍යාගයක් සූදානම් වූ වහාම අප ඔබට දන්වන්නෙමු! 🚚"
+        ),
+        "ta": (
+            "📍 **நிலை: ACTIVE & AVAILABLE in {service_area}** 🟢\n\n"
+            "வணக்கம் {volunteer_name}! நீங்கள் **{service_area}** பகுதியில் தயாராக (AVAILABLE) உள்ளீர்கள்.\n\n"
+            "புதிய உணவு கிடைத்தவுடன் உடனடியாக பணி அனுப்பப்படும்! 🚚"
+        ),
+    },
     "org_matched_notify_donor": {
         "en": (
             "✅ **Donation Created & Confirmed! (ID: {donation_id} | Status: PICKUP_ASSIGNED)**\n\n"
@@ -1346,11 +1497,10 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": (
             "📦 **Pickup Verification**\n\n"
             "Your volunteer ({volunteer_name}) has been assigned to collect your donation!\n\n"
-            "Please show the **Pickup QR Code** below to the volunteer. The volunteer will scan this QR code to securely confirm that the food has been handed over. 🔐\n\n"
+            "Please show the **Pickup QR Code** image below to the volunteer. The volunteer will scan this QR code using their camera to securely confirm that the food has been handed over. 🔐\n\n"
             "🍱 **Food:** {food_info}\n"
             "🚚 **Volunteer:** {volunteer_name} ({transport_mode})\n"
-            "🆔 **Task ID:** {task_id}\n\n"
-            "🔗 *Verification Link:* {verification_url}"
+            "🆔 **Task ID:** {task_id}"
         ),
         "si": (
             "📦 **ආහාර ලබාගැනීම තහවුරු කිරීම (Pickup QR)**\n\n"
@@ -1373,11 +1523,10 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": (
             "📦 **Delivery Verification**\n\n"
             "Your FoodRescue AI volunteer ({volunteer_name}) has arrived with your donation!\n\n"
-            "Please show the **Delivery QR Code** below to the volunteer. The volunteer will scan it after the food has been handed over. 🔐\n\n"
+            "Please show the **Delivery QR Code** image below to the volunteer. The volunteer will scan it after the food has been handed over. 🔐\n\n"
             "🍱 **Food:** {food_info}\n"
             "🚚 **Volunteer:** {volunteer_name}\n"
-            "🆔 **Task ID:** {task_id}\n\n"
-            "🔗 *Verification Link:* {verification_url}"
+            "🆔 **Task ID:** {task_id}"
         ),
         "si": (
             "📦 **ආහාර භාරගැනීම තහවුරු කිරීම (Delivery QR)**\n\n"
@@ -1647,6 +1796,8 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "• 📞 *Contact:* {org_phone}\n"
             "• 📍 *Location:* {delivery_location}\n\n"
             "📏 *Total Distance:* ~{total_dist} km | 💰 *Transport Support:* LKR {est_cost}\n\n"
+            "📍 *Live Route Updates:*\n"
+            "Tap ➕ → **Location** to share your live GPS coordinates for dynamic road route tracking.\n\n"
             "🔐 *Handover Verification:*\n"
             "When you arrive at the donor location, ask the donor to show the **Pickup QR Code** on their phone screen. Then open your mobile camera scanner to scan it:\n"
             "👉 📷 *Open Camera Scanner:* {scanner_url}"
@@ -1665,6 +1816,8 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "• 📞 *දුරකථන:* {org_phone}\n"
             "• 📍 *ස්ථානය:* {delivery_location}\n\n"
             "📏 *දුර:* ~{total_dist} km | 💰 *ප්‍රවාහන සහනාධාරය:* LKR {est_cost}\n\n"
+            "📍 *සජීවී මාර්ග යාවත්කාලීන කිරීම්:*\n"
+            "නියම මාර්ගය ලබාගැනීමට ➕ → **ස්ථානය (Location)** ඔබා ඔබගේ වත්මන් ස්ථානය එවන්න.\n\n"
             "🔐 *භාරගැනීම තහවුරු කිරීම:*\n"
             "පරිත්‍යාගශීලියා වෙත ගිය පසු ඔවුන්ගේ දුරකථනයේ ඇති **Pickup QR Code** එක පෙන්වන්නැයි ඉල්ලා පහත කැමරා ස්කෑනරය හරහා ස්කෑන් කරන්න:\n"
             "👉 📷 *කැමරා ස්කෑනරය:* {scanner_url}"
@@ -1683,6 +1836,8 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "• 📞 *தொடர்பு:* {org_phone}\n"
             "• 📍 *இடம்:* {delivery_location}\n\n"
             "📏 *தூரம்:* ~{total_dist} km | 💰 *போக்குவரத்து கட்டணம்:* LKR {est_cost}\n\n"
+            "📍 *நேரலை வழிப்பாதை புதுப்பிப்பு:*\n"
+            "நேரலை வழியறிய ➕ → **Location** அழுத்தி உங்கள் தற்போதைய இருப்பிடத்தை பகிரவும்.\n\n"
             "🔐 *ஒப்படைப்பு சரிபார்ப்பு:*\n"
             "வழங்குபவரிடம் சென்றதும் அவரது தொலைபேசியில் உள்ள **Pickup QR Code** ஐக் காண்பிக்குமாறு கேட்டு கீழே உள்ள கேமரா ஸ்கேனர் மூலம் ஸ்கேன் செய்யவும்:\n"
             "👉 📷 *கேமரா ஸ்கேனர்:* {scanner_url}"

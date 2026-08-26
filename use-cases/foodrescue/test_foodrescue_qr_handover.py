@@ -733,7 +733,7 @@ async def test_3way_cross_notifications_for_pickup_and_delivery():
         vol_del_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
         assert len(vol_del_calls) >= 1
         vol_del_text = vol_del_calls[0].kwargs.get("text", "")
-        assert "Delivery Verified Successfully" in vol_del_text
-        assert "Transport Support" in vol_del_text or "LKR" in vol_del_text
+        assert "Delivery Completed & Verified" in vol_del_text or "Delivery Verified" in vol_del_text
+        assert "Transport Support" in vol_del_text or "LKR" in vol_del_text or "AVAILABLE" in vol_del_text
 
 

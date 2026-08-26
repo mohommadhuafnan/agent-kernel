@@ -577,3 +577,235 @@ async def rank_volunteers_by_distance(
     # Rank by shortest duration and distance
     eligible_volunteers.sort(key=lambda x: (x["duration_seconds"], x["distance_km"]))
     return eligible_volunteers
+
+
+async def calculate_task_dynamic_route(
+    task_id_or_data: Union[str, Dict[str, Any]],
+    volunteer_location_override: Optional[Union[str, Dict[str, Any], Tuple[float, float]]] = None
+) -> Dict[str, Any]:
+    """Calculate the real dynamic road route for an active pickup task based on its current lifecycle phase.
+    
+    Phases:
+    1. PICKUP Phase (status: PENDING, OFFERED, OPEN, ASSIGNED, EN_ROUTE):
+       - Route: Volunteer Current Location -> Donor Pickup Location
+       - Action: Directs volunteer to donor to inspect & collect food.
+    2. DELIVERY Phase (status: COLLECTED, IN_TRANSIT, PICKED_UP):
+       - Route: Volunteer Current Location -> Organization Delivery Destination
+       - Action: Directs volunteer to organization kitchen/shelter.
+    3. COMPLETED Phase (status: COMPLETED, DELIVERED):
+       - Route: Donor Pickup Location -> Organization Delivery Destination
+       - Action: Shows completed trip trajectory.
+       
+    Strict GPS & Error Handling Rules:
+    - Never invents coordinates or fake static KM.
+    - If GPS is missing for a required participant, returns status='needs_location' with missing_participant.
+    - Uses configured transport rates from database.get_transport_settings() for exact reimbursement consistency.
+    - Returns Google Maps directions URL for turn-by-turn navigation.
+    """
+    import database
+    import routing
+
+    # Resolve task record
+    if isinstance(task_id_or_data, str):
+        task = database.get_pickup_task_record(task_id_or_data)
+        if not task:
+            return {"success": False, "status": "error", "error": f"Pickup task '{task_id_or_data}' not found."}
+    elif isinstance(task_id_or_data, dict):
+        task = task_id_or_data
+    else:
+        return {"success": False, "status": "error", "error": "Invalid task parameter."}
+
+    task_id = task.get("id", "task-unknown")
+    task_status = str(task.get("status", "ASSIGNED")).upper()
+    donation_id = task.get("donation_id")
+    organization_id = task.get("organization_id")
+    volunteer_id = task.get("volunteer_id")
+
+    # Fetch associated participants
+    donation = database.get_donation_record(donation_id) if donation_id else None
+    donor = database.get_donor_record(donation.get("donor_id")) if donation and donation.get("donor_id") else None
+    organization = database.get_organization_record(organization_id) if organization_id else None
+    volunteer = database.get_volunteer_record(volunteer_id) if volunteer_id else None
+
+    # Resolve authoritative coordinates
+    vol_loc = (
+        volunteer_location_override
+        or (volunteer.get("current_coordinates") if volunteer else None)
+        or (volunteer.get("current_location") if volunteer else None)
+        or (volunteer.get("service_area") if volunteer else None)
+        or (volunteer.get("location") if volunteer else None)
+    )
+    vol_coords = resolve_coordinates(vol_loc)
+
+    donor_loc = (
+        (donation.get("pickup_location") if donation else None)
+        or (donation.get("location") if donation else None)
+        or (donor.get("location") if donor else None)
+        or task.get("pickup_location")
+    )
+    donor_coords = resolve_coordinates(donor_loc)
+
+    org_loc = (
+        (organization.get("location") if organization else None)
+        or (organization.get("service_area") if organization else None)
+        or task.get("delivery_location")
+    )
+    org_coords = resolve_coordinates(org_loc)
+
+    transport_mode = (volunteer.get("transport_mode") if volunteer else None) or "motorbike"
+
+    # Determine Active Phase and Route Endpoints
+    if task_status in ["COLLECTED", "IN_TRANSIT", "PICKED_UP"]:
+        phase = "DELIVERY"
+        origin_name = (volunteer.get("name") if volunteer else "Volunteer Courier") or "Volunteer Courier"
+        origin_role = "volunteer"
+        origin_coords = vol_coords or donor_coords
+
+        dest_name = (organization.get("name") if organization else "Recipient Organization") or "Recipient Organization"
+        dest_role = "organization"
+        dest_coords = org_coords
+
+        if dest_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "organization",
+                "message": "Live location required from Recipient Organization to calculate the delivery route."
+            }
+        if origin_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "volunteer",
+                "message": "Live location required from Volunteer Courier to calculate the delivery route."
+            }
+
+    elif task_status in ["COMPLETED", "DELIVERED"]:
+        phase = "COMPLETED"
+        origin_name = (donor.get("name") if donor else None) or (donation.get("donor_name") if donation else "Donor Pickup") or "Donor Pickup"
+        origin_role = "donor"
+        origin_coords = donor_coords
+
+        dest_name = (organization.get("name") if organization else "Recipient Organization") or "Recipient Organization"
+        dest_role = "organization"
+        dest_coords = org_coords
+
+        if origin_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "donor",
+                "message": "Live location required from Donor to calculate completed trip route."
+            }
+        if dest_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "organization",
+                "message": "Live location required from Recipient Organization to calculate completed trip route."
+            }
+
+    else:
+        # Default: Pickup Phase (ASSIGNED, EN_ROUTE, OFFERED, OPEN, PENDING)
+        phase = "PICKUP"
+        origin_name = (volunteer.get("name") if volunteer else "Volunteer Courier") or "Volunteer Courier"
+        origin_role = "volunteer"
+        origin_coords = vol_coords
+
+        dest_name = (donor.get("name") if donor else None) or (donation.get("donor_name") if donation else "Donor Pickup") or "Donor Pickup"
+        dest_role = "donor"
+        dest_coords = donor_coords
+
+        if dest_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "donor",
+                "message": "Live location required from Donor to calculate the pickup route."
+            }
+        if origin_coords is None:
+            return {
+                "success": False,
+                "status": "needs_location",
+                "phase": phase,
+                "task_id": task_id,
+                "missing_participant": "volunteer",
+                "message": "Live location required from Volunteer Courier to calculate the pickup route."
+            }
+
+    # Execute Road Route Calculation
+    route_res = await calculate_route(origin_coords, dest_coords, transport_mode)
+    if not route_res.get("success"):
+        return {
+            "success": False,
+            "status": "error",
+            "phase": phase,
+            "task_id": task_id,
+            "message": "Route temporarily unavailable.",
+            "origin": {"name": origin_name, "role": origin_role, "coordinates": {"latitude": origin_coords[0], "longitude": origin_coords[1]}},
+            "destination": {"name": dest_name, "role": dest_role, "coordinates": {"latitude": dest_coords[0], "longitude": dest_coords[1]}},
+            "all_participants": {
+                "volunteer": {"name": volunteer.get("name") if volunteer else None, "coordinates": {"latitude": vol_coords[0], "longitude": vol_coords[1]} if vol_coords else None},
+                "donor": {"name": donor.get("name") if donor else (donation.get("donor_name") if donation else None), "coordinates": {"latitude": donor_coords[0], "longitude": donor_coords[1]} if donor_coords else None},
+                "organization": {"name": organization.get("name") if organization else None, "coordinates": {"latitude": org_coords[0], "longitude": org_coords[1]} if org_coords else None}
+            }
+        }
+
+    dist_km = route_res.get("distance_km", 0.0) or 0.0
+    dur_min = route_res.get("duration_minutes", 1) or 1
+    coords = route_res.get("coordinates", [])
+    polyline_str = route_res.get("route_geometry")
+
+    # Generate Google Maps Turn-by-Turn Directions URL
+    directions_url = routing.generate_directions_link(origin_coords[0], origin_coords[1], dest_coords[0], dest_coords[1])
+
+    # Dynamic Reimbursement Calculation using configured vehicle rates
+    rate_per_km = routing.get_transport_rate(transport_mode)
+    cost_calc = routing.calculate_transport_estimate(dist_km, transport_mode)
+    est_cost = cost_calc.get("estimated_support_amount", round(dist_km * rate_per_km, 2))
+
+    return {
+        "success": True,
+        "status": "success",
+        "phase": phase,
+        "task_id": task_id,
+        "task_status": task_status,
+        "transport_mode": transport_mode,
+        "origin": {
+            "name": origin_name,
+            "role": origin_role,
+            "coordinates": {"latitude": origin_coords[0], "longitude": origin_coords[1]}
+        },
+        "destination": {
+            "name": dest_name,
+            "role": dest_role,
+            "coordinates": {"latitude": dest_coords[0], "longitude": dest_coords[1]}
+        },
+        "all_participants": {
+            "volunteer": {"name": volunteer.get("name") if volunteer else None, "coordinates": {"latitude": vol_coords[0], "longitude": vol_coords[1]} if vol_coords else None},
+            "donor": {"name": donor.get("name") if donor else (donation.get("donor_name") if donation else None), "coordinates": {"latitude": donor_coords[0], "longitude": donor_coords[1]} if donor_coords else None},
+            "organization": {"name": organization.get("name") if organization else None, "coordinates": {"latitude": org_coords[0], "longitude": org_coords[1]} if org_coords else None}
+        },
+        "distance_km": dist_km,
+        "duration_minutes": dur_min,
+        "duration_text": f"{dur_min} min",
+        "coordinates": coords,
+        "route_geometry": polyline_str,
+        "directions_url": directions_url,
+        "estimated_cost": est_cost,
+        "rate_per_km": rate_per_km,
+        "currency": "LKR",
+        "provider": route_res.get("provider", "graphhopper"),
+        "is_exact_road_route": route_res.get("is_exact_road_route", True)
+    }
+

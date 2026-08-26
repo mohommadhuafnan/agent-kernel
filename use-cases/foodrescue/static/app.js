@@ -627,6 +627,9 @@ const App = (function () {
           🚲 <strong>Transport:</strong> ${escapeHtml(v.transport_mode || 'Motorbike')}<br>
           📦 <strong>Completed Pickups:</strong> ${v.completed_pickups || 0}
         </div>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <button class="btn btn-secondary btn-sm" onclick="App.viewVolunteerLocation('${v.id}')">🗺️ View on Map</button>
+        </div>
       </div>
     `).join('');
   }
@@ -892,7 +895,10 @@ const App = (function () {
         <td>LKR ${t.estimated_transport_cost || 350}</td>
         <td><span class="badge badge-slate">${t.approved_transport_reimbursement ? 'APPROVED' : 'PENDING'}</span></td>
         <td>
-          <button class="btn btn-secondary btn-sm" onclick="App.approveReimbursement('${t.id}')">Approve</button>
+          <div style="display: flex; gap: 4px;">
+            <button class="btn btn-primary btn-sm" onclick="App.viewPickupRoute('${t.id}')">🗺️ Route</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.approveReimbursement('${t.id}')">Approve</button>
+          </div>
         </td>
       </tr>
     `).join('');
@@ -908,6 +914,32 @@ const App = (function () {
 
   async function approveReimbursement(taskId) {
     alert(`Reimbursement approved for Task ${taskId}.`);
+  }
+
+  function viewPickupRoute(taskId) {
+    switchTab('map');
+    setTimeout(() => {
+      drawTaskDynamicRoute(taskId);
+    }, 250);
+  }
+
+  function viewVolunteerLocation(volId) {
+    const vols = state.volunteers || [];
+    const vol = vols.find(v => v.id === volId);
+    if (!vol) {
+      switchTab('map');
+      return;
+    }
+    switchTab('map');
+    setTimeout(() => {
+      if (state.map && state.mapMarkers) {
+        const match = state.mapMarkers.find(m => m.getPopup() && m.getPopup().getContent().includes(vol.name));
+        if (match) {
+          state.map.setView(match.getLatLng(), 14);
+          match.openPopup();
+        }
+      }
+    }, 250);
   }
 
   // 9. Operations Map View (Leaflet Integration)
@@ -953,17 +985,129 @@ const App = (function () {
           state.mapMarkers.push(marker);
         });
 
-        if (state.mapMarkers.length > 0) {
+        if (state.mapMarkers.length > 0 && (!state.routeLayers || state.routeLayers.length === 0)) {
           const group = L.featureGroup(state.mapMarkers);
           state.map.fitBounds(group.getBounds().pad(0.15));
-        } else if (data.center && data.center.lat && data.center.lng) {
+        } else if (data.center && data.center.lat && data.center.lng && (!state.routeLayers || state.routeLayers.length === 0)) {
           state.map.setView([data.center.lat, data.center.lng], data.center.zoom || 11);
         }
       })
       .catch(err => console.warn('Map locations error:', err));
   }
 
-  function drawPickupRoute(pickupLoc, deliveryLoc, volLoc) {
+  function drawTaskDynamicRoute(taskId) {
+    if (!state.map || typeof L === 'undefined') return;
+
+    // Clear previous route polylines and transient markers
+    (state.routeLayers || []).forEach(l => state.map.removeLayer(l));
+    state.routeLayers = [];
+
+    const banner = document.getElementById('active-route-banner');
+
+    fetch(`/api/tasks/${encodeURIComponent(taskId)}/route`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'needs_location') {
+          if (banner) {
+            banner.style.display = 'flex';
+            banner.innerHTML = `
+              <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; padding: 10px 16px; border-radius: 8px; color: #f59e0b; display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div>
+                  <strong>⚠️ Live Location Required</strong> &nbsp;|&nbsp;
+                  <span>${escapeHtml(data.message || 'Live location required to calculate road route.')}</span> &nbsp;
+                  <small style="color: #94a3b8;">(Participant: ${escapeHtml(data.missing_participant || 'User')})</small>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('active-route-banner').style.display='none';">✕</button>
+              </div>
+            `;
+          }
+          return;
+        }
+
+        if (data.success && data.coordinates && data.coordinates.length > 0) {
+          const latlngs = data.coordinates.map(pt => [pt[0], pt[1]]);
+          const isDelivery = data.phase === 'DELIVERY';
+          const isCompleted = data.phase === 'COMPLETED';
+          const routeColor = isDelivery ? '#3b82f6' : (isCompleted ? '#8b5cf6' : '#10b981');
+
+          const poly = L.polyline(latlngs, {
+            color: routeColor,
+            weight: 5,
+            opacity: 0.9,
+            dashArray: '8, 8'
+          }).addTo(state.map);
+
+          state.routeLayers.push(poly);
+          state.map.fitBounds(poly.getBounds(), {padding: [50, 50]});
+
+          // Add Origin and Destination Markers
+          const startPt = latlngs[0];
+          const endPt = latlngs[latlngs.length - 1];
+
+          const origLabel = data.origin && data.origin.name ? data.origin.name : 'Origin';
+          const destLabel = data.destination && data.destination.name ? data.destination.name : 'Destination';
+
+          const origIcon = data.origin && data.origin.role === 'volunteer' ? '🔵 🛵' : '🍱';
+          const destIcon = data.destination && data.destination.role === 'organization' ? '🏢' : '📍 🍱';
+
+          const originMarker = L.marker(startPt, {
+            title: `${origIcon} ${origLabel}`
+          }).addTo(state.map).bindPopup(`<b>${origIcon} ${escapeHtml(origLabel)}</b><br><small>Route Origin (${escapeHtml(data.phase)})</small>`).openPopup();
+          state.routeLayers.push(originMarker);
+
+          const destMarker = L.marker(endPt, {
+            title: `${destIcon} ${destLabel}`
+          }).addTo(state.map).bindPopup(`<b>${destIcon} ${escapeHtml(destLabel)}</b><br><small>Route Destination (${escapeHtml(data.phase)})</small>`);
+          state.routeLayers.push(destMarker);
+
+          // Update Active Route Banner
+          if (banner) {
+            const phaseBadge = isDelivery
+              ? '<span class="badge badge-blue" style="margin-right: 6px;">🚚 Delivery Route (Volunteer ➔ Organization)</span>'
+              : (isCompleted
+                ? '<span class="badge badge-purple" style="margin-right: 6px;">✅ Completed Trip (Donor ➔ Org)</span>'
+                : '<span class="badge badge-emerald" style="margin-right: 6px;">📦 Pickup Route (Volunteer ➔ Donor)</span>');
+
+            const dist = data.distance_km || 0.0;
+            const timeText = data.duration_text || `${data.duration_minutes || 1} min`;
+            const cost = data.estimated_cost ? `LKR ${data.estimated_cost}` : '';
+            const gmapsUrl = data.directions_url || `https://www.google.com/maps/dir/?api=1&origin=${startPt[0]},${startPt[1]}&destination=${endPt[0]},${endPt[1]}`;
+
+            banner.style.display = 'flex';
+            banner.innerHTML = `
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                ${phaseBadge}
+                <strong>Task #${escapeHtml(data.task_id || taskId)}</strong> &nbsp;|&nbsp; 
+                <span>${origIcon} <b>From:</b> ${escapeHtml(origLabel)}</span> &nbsp;➔&nbsp; 
+                <span>${destIcon} <b>To:</b> ${escapeHtml(destLabel)}</span> &nbsp;|&nbsp; 
+                <span>📏 <b>Road Distance:</b> ${dist} km</span> &nbsp;|&nbsp; 
+                <span>⏱️ <b>ETA:</b> ~${timeText}</span>
+                ${cost ? `&nbsp;|&nbsp; <span>💰 <b>Support:</b> ${cost}</span>` : ''}
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <a href="${gmapsUrl}" target="_blank" class="btn btn-primary btn-sm" style="text-decoration: none;">🗺️ Open Navigation</a>
+                <button class="btn btn-secondary btn-sm" onclick="App.drawTaskDynamicRoute('${escapeHtml(taskId)}');" title="Refresh Live Route">🔄</button>
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('active-route-banner').style.display='none';">✕</button>
+              </div>
+            `;
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('Dynamic task route error:', err);
+        // Fallback to legacy two-point route if available
+        const task = (state.pickups || []).find(t => t.id === taskId);
+        if (task) {
+          drawPickupRoute(task.pickup_location, task.delivery_location, task.volunteer_name, task);
+        }
+      });
+  }
+
+  function drawPickupRoute(pickupLoc, deliveryLoc, volLoc, taskDetails) {
+    if (taskDetails && taskDetails.id) {
+      drawTaskDynamicRoute(taskDetails.id);
+      return;
+    }
     if (!state.map || typeof L === 'undefined') return;
     
     // Clear previous route polylines
@@ -987,16 +1131,54 @@ const App = (function () {
         const poly = L.polyline(latlngs, {
           color: '#10b981',
           weight: 5,
-          opacity: 0.85,
+          opacity: 0.9,
           dashArray: '8, 8'
         }).addTo(state.map);
         
         state.routeLayers.push(poly);
-        state.map.fitBounds(poly.getBounds(), {padding: [40, 40]});
+        state.map.fitBounds(poly.getBounds(), {padding: [50, 50]});
+
+        // Add distinct markers for Pickup, Delivery, and Courier
+        const startPt = latlngs[0];
+        const endPt = latlngs[latlngs.length - 1];
+
+        const pickupMarker = L.marker(startPt, {
+          title: `Pickup: ${pickupLoc}`
+        }).addTo(state.map).bindPopup(`<b>🍱 Pickup Origin</b><br>${escapeHtml(pickupLoc)}`).openPopup();
+        state.routeLayers.push(pickupMarker);
+
+        const deliveryMarker = L.marker(endPt, {
+          title: `Delivery: ${deliveryLoc}`
+        }).addTo(state.map).bindPopup(`<b>🏢 Delivery Destination</b><br>${escapeHtml(deliveryLoc)}`);
+        state.routeLayers.push(deliveryMarker);
+
+        // Update active route banner
+        const banner = document.getElementById('active-route-banner');
+        if (banner) {
+          const gmapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(pickupLoc)}&destination=${encodeURIComponent(deliveryLoc)}`;
+          const dist = data.total_distance_km || (taskDetails ? taskDetails.total_distance_km : 4.5);
+          const timeMin = data.total_time_minutes || Math.round(dist * 2.5);
+          banner.style.display = 'flex';
+          banner.innerHTML = `
+            <div>
+              <span class="badge badge-emerald" style="margin-right: 6px;">Active Route</span>
+              <strong>🍱 ${taskDetails ? 'Task #' + escapeHtml(taskDetails.id) : 'Food Delivery Route'}</strong> &nbsp;|&nbsp; 
+              <span>📍 <b>Pickup:</b> ${escapeHtml(pickupLoc)}</span> &nbsp;➔&nbsp; 
+              <span>🏢 <b>Delivery:</b> ${escapeHtml(deliveryLoc)}</span> &nbsp;|&nbsp; 
+              <span>📏 <b>Distance:</b> ${dist} km</span> &nbsp;|&nbsp; 
+              <span>⏱️ <b>Est Time:</b> ~${timeMin} mins</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <a href="${gmapsUrl}" target="_blank" class="btn btn-primary btn-sm" style="text-decoration: none;">🗺️ Directions</a>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('active-route-banner').style.display='none';">✕</button>
+            </div>
+          `;
+        }
       }
     })
     .catch(e => console.warn('GraphHopper pickup route draw error:', e));
   }
+
 
   // 10. Render Agent Activity (Audit Events) View
   function renderAgentEvents() {
@@ -1472,6 +1654,9 @@ const App = (function () {
     closeModal,
     approveReimbursement,
     drawPickupRoute,
+    drawTaskDynamicRoute,
+    viewPickupRoute,
+    viewVolunteerLocation,
     renderLiveOperations
   };
 })();

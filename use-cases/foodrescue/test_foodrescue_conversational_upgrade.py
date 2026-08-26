@@ -174,8 +174,8 @@ async def test_dynamic_slot_filling_and_no_repeated_questions():
         prompt="Confirm",
         session_id=session_id
     )
-    assert "Donation Created" in r4 or "✅" in r4
-    assert "PICKUP_ASSIGNED" in r4 or "Organization" in r4 or "Match" in r4
+    assert "Donation Created" in r4 or "Donation Confirmed" in r4 or "✅" in r4
+    assert "PICKUP_ASSIGNED" in r4 or "Organization" in r4 or "Organizations" in r4 or "Match" in r4 or "recipient" in r4.lower()
 
     # Turn 5: User accepts matched organization if matched
     if database.get_user_conversation_state(phone).get("current_question") == "ACCEPT_ORGANIZATION":

@@ -525,6 +525,69 @@ async def calculate_pickup_route_endpoint(body: PickupRouteCalculationRequest):
     return JSONResponse(content=result)
 
 
+@router.get("/api/tasks/{task_id}/route")
+async def get_task_dynamic_route_endpoint(task_id: str):
+    """Get active dynamic road route for a pickup task based on its lifecycle phase and live GPS coordinates."""
+    import routing_service
+    result = await routing_service.calculate_task_dynamic_route(task_id)
+    return JSONResponse(content=result)
+
+
+class VolunteerLocationUpdateRequest(BaseModel):
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
+    address: Optional[str] = Field(None)
+    status: Optional[str] = Field("AVAILABLE")
+
+
+@router.post("/api/volunteers/{volunteer_id}/location")
+async def update_volunteer_location_endpoint(volunteer_id: str, body: VolunteerLocationUpdateRequest):
+    """Update volunteer live GPS position and refresh active task routing metrics."""
+    vol = database.get_volunteer_record(volunteer_id)
+    if not vol:
+        raise HTTPException(status_code=404, detail=f"Volunteer '{volunteer_id}' not found.")
+
+    coords = {"latitude": body.latitude, "longitude": body.longitude}
+    addr = body.address or f"{body.latitude:.5f}, {body.longitude:.5f}"
+
+    database.update_volunteer_availability(
+        volunteer_id=volunteer_id,
+        status=body.status or "AVAILABLE",
+        current_location=addr,
+        current_coordinates=coords
+    )
+
+    # Check if volunteer has active task
+    v_tasks = database.get_pickup_tasks_for_volunteer(volunteer_id)
+    active_tasks = [t for t in v_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED", "IN_TRANSIT"]]
+
+    updated_route = None
+    if active_tasks:
+        target_task = active_tasks[-1]
+        import routing_service
+        route_res = await routing_service.calculate_task_dynamic_route(
+            target_task["id"],
+            volunteer_location_override=coords
+        )
+        if route_res.get("success"):
+            updated_route = route_res
+            dist_km = route_res.get("distance_km", 0.0)
+            est_cost = route_res.get("estimated_cost", 0.0)
+            database.update_pickup_task_logistics(
+                task_id=target_task["id"],
+                total_distance_km=dist_km,
+                estimated_transport_cost=est_cost
+            )
+
+    return JSONResponse(content={
+        "status": "success",
+        "volunteer_id": volunteer_id,
+        "current_coordinates": coords,
+        "current_location": addr,
+        "active_route": updated_route
+    })
+
+
 @router.get("/api/reports")
 async def get_reports_endpoint():
     """Get aggregated impact analytics and reporting metrics."""
@@ -1454,7 +1517,7 @@ async def view_pickup_verification_page(token: str):
             food_info=food_name, quantity_info=qty, party_a_label="Donor", party_a_name=donor_name,
             party_b_label="Volunteer", party_b_name=vol_name, location_label="Pickup Location",
             location_val=pickup_loc, task_id=task_id, is_valid=True, already_verified=True,
-            verified_time=qr_rec.get("verified_at", "Verified")
+            verified_time=database.format_sri_lanka_time(qr_rec.get("verified_at"))
         )
         return HTMLResponse(content=html, status_code=200)
 
@@ -1495,7 +1558,7 @@ async def confirm_pickup_verification(token: str, request: Request):
         "status": "success",
         "message": "Food pickup verified and recorded as COLLECTED.",
         "task_id": task_id,
-        "verified_at": result.get("verified_at")
+        "verified_at": database.format_sri_lanka_time(result.get("verified_at"))
     })
 
 
@@ -1535,9 +1598,10 @@ async def view_delivery_verification_page(token: str):
             food_info=food_name, quantity_info=qty, party_a_label="Organization", party_a_name=org_name,
             party_b_label="Volunteer", party_b_name=vol_name, location_label="Destination",
             location_val=deliv_loc, task_id=task_id, is_valid=True, already_verified=True,
-            verified_time=qr_rec.get("verified_at", "Delivered")
+            verified_time=database.format_sri_lanka_time(qr_rec.get("verified_at"))
         )
         return HTMLResponse(content=html, status_code=200)
+
 
     html = _render_verification_html(
         title="Delivery Verification", qr_type="DELIVERY", token=clean_tok,
@@ -1576,7 +1640,7 @@ async def confirm_delivery_verification(token: str, request: Request):
         "status": "success",
         "message": "Food delivery verified and recorded as DELIVERED & COMPLETED.",
         "task_id": task_id,
-        "verified_at": result.get("verified_at")
+        "verified_at": database.format_sri_lanka_time(result.get("verified_at"))
     })
 
 

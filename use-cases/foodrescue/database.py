@@ -330,9 +330,31 @@ def create_volunteer_record(
         transport_mode=transport_mode,
         availability=availability,
         current_status=current_status,
-        location=location
+        location=location,
     )
 
+
+def update_volunteer_record(
+    volunteer_id: str,
+    name: Optional[str] = None,
+    phone: Optional[str] = None,
+    service_area: Optional[str] = None,
+    transport_mode: Optional[str] = None,
+    availability: Optional[str] = None,
+    current_status: Optional[str] = None,
+    location: Optional[str] = None,
+    **kwargs: Any
+) -> Optional[Dict[str, Any]]:
+    return get_repository().update_volunteer_record(
+        volunteer_id=volunteer_id,
+        name=name,
+        phone=phone,
+        service_area=service_area,
+        transport_mode=transport_mode,
+        availability=availability,
+        current_status=current_status,
+        location=location,
+    )
 
 
 def get_all_pickup_tasks() -> List[Dict[str, Any]]:
@@ -709,5 +731,45 @@ def get_connection():
         return repo._get_connection()
     from db_sqlite import SQLiteRepository
     return SQLiteRepository()._get_connection()
+
+
+# Sri Lanka Timezone Utilities (Asia/Colombo / UTC+5:30)
+import datetime
+
+SL_TIMEZONE = datetime.timezone(datetime.timedelta(hours=5, minutes=30), name="Asia/Colombo")
+
+
+def get_sri_lanka_tz() -> datetime.timezone:
+    """Return the Sri Lanka standard timezone (+05:30)."""
+    return SL_TIMEZONE
+
+
+def get_sri_lanka_now() -> datetime.datetime:
+    """Return the current datetime in Sri Lanka Standard Time."""
+    return datetime.datetime.now(SL_TIMEZONE)
+
+
+def format_sri_lanka_time(dt_or_str: Optional[Any] = None) -> str:
+    """Format a datetime or ISO string into human-readable Sri Lanka Time (e.g. 2026-08-26 07:43 PM (+05:30))."""
+    if dt_or_str is None:
+        dt = get_sri_lanka_now()
+    elif isinstance(dt_or_str, datetime.datetime):
+        if dt_or_str.tzinfo is None:
+            dt = dt_or_str.replace(tzinfo=datetime.timezone.utc).astimezone(SL_TIMEZONE)
+        else:
+            dt = dt_or_str.astimezone(SL_TIMEZONE)
+    elif isinstance(dt_or_str, str):
+        try:
+            parsed = datetime.datetime.fromisoformat(dt_or_str.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            dt = parsed.astimezone(SL_TIMEZONE)
+        except Exception:
+            return dt_or_str
+    else:
+        return str(dt_or_str)
+
+    return dt.strftime("%Y-%m-%d %I:%M %p (+05:30)")
+
 
 

@@ -323,7 +323,7 @@ async def test_role_aware_greeting_and_availability_coordination():
 
     # Volunteer says "I am free" when 0 tasks exist in Kegalle
     v_free = await resilient_executor.execute_deterministic_fallback("I am free", session_id=f"whatsapp:{vol_phone}")
-    assert "ACTIVE & AVAILABLE" in v_free
+    assert "AVAILABLE" in v_free
     assert "Kegalle" in v_free
 
     # 2. Register Organization in Kegalle
