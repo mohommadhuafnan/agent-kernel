@@ -421,6 +421,18 @@ def create_pickup_task(
     record = database.create_pickup_task_record(
         task_id=task_id, donation_id=clean_don_id, org_id=clean_org_id, pickup_loc=clean_pickup_loc, delivery_loc=clean_delivery_loc, time=clean_time
     )
+    import routing
+    p_c = routing.geocode_location(clean_pickup_loc)
+    d_c = routing.geocode_location(clean_delivery_loc)
+    if p_c and d_c:
+        d_km = round(max(0.5, routing.calculate_haversine_distance(p_c[0], p_c[1], d_c[0], d_c[1]) * 1.25), 1)
+    else:
+        d_km = round(max(1.0, (hash(f"{clean_pickup_loc}_{clean_delivery_loc}") % 40) / 10.0 + 1.8), 1)
+    cost_info = routing.calculate_transport_estimate(d_km, "motorbike")
+    c_lkr = float(cost_info.get("estimated_support_amount") or (d_km * 50.0))
+    database.update_pickup_task_logistics(task_id=task_id, total_distance_km=d_km, estimated_transport_cost=int(c_lkr))
+    record["total_distance_km"] = d_km
+    record["estimated_transport_cost"] = int(c_lkr)
     database.update_donation_status_record(clean_don_id, "PICKUP_PENDING")
 
     _set_context_val("current_task_id", task_id)

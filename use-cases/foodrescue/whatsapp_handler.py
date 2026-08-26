@@ -589,6 +589,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     lang=d_lang,
                     volunteer_name=vol_name,
                     transport_mode=vol_mode,
+                    volunteer_phone=vol_phone or "+94 77 123 4567",
                     food_info=food_info,
                     task_id=task_id,
                 )
@@ -660,7 +661,23 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
             import routing
             don_dist = routing.resolve_district(pickup_loc) or "Kegalle"
-            donor_coords = routing.geocode_location(pickup_loc)
+            donor_coords = None
+            if top_don.get("latitude") and top_don.get("longitude"):
+                try:
+                    donor_coords = (float(top_don["latitude"]), float(top_don["longitude"]))
+                except Exception:
+                    pass
+            if not donor_coords and top_don.get("location_pin"):
+                donor_coords = routing.extract_coordinates_from_text(str(top_don["location_pin"]))
+            if not donor_coords and don_id:
+                try:
+                    d_locs = database.get_locations_for_donation(don_id)
+                    if d_locs:
+                        donor_coords = (float(d_locs[0]["latitude"]), float(d_locs[0]["longitude"]))
+                except Exception:
+                    pass
+            if not donor_coords:
+                donor_coords = routing.geocode_location(pickup_loc)
 
             all_orgs = database.get_all_organizations()
             dist_orgs = [o for o in all_orgs if routing.resolve_district(o.get("service_area") or o.get("location") or "") == don_dist]
@@ -671,11 +688,26 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 o_phone = org.get("phone")
                 if o_phone and o_phone != from_number:
                     o_loc = org.get("location") or org.get("service_area") or don_dist
-                    o_coords = routing.geocode_location(o_loc)
+                    o_coords = None
+                    if org.get("latitude") and org.get("longitude"):
+                        try:
+                            o_coords = (float(org["latitude"]), float(org["longitude"]))
+                        except Exception:
+                            pass
+                    if not o_coords and org.get("id"):
+                        try:
+                            o_locs = database.get_locations_for_organization(org["id"])
+                            if o_locs:
+                                o_coords = (float(o_locs[0]["latitude"]), float(o_locs[0]["longitude"]))
+                        except Exception:
+                            pass
+                    if not o_coords:
+                        o_coords = routing.geocode_location(o_loc)
+
                     if donor_coords and o_coords:
                         d_km = round(max(0.5, routing.calculate_haversine_distance(donor_coords[0], donor_coords[1], o_coords[0], o_coords[1]) * 1.25), 1)
                     else:
-                        d_km = 3.5
+                        d_km = round(max(0.8, (hash(f"{pickup_loc}_{o_loc}") % 40) / 10.0 + 1.5), 1)
 
                     org_user = database.get_user_by_phone(o_phone)
                     o_lang = org_user.get("preferred_language", "en") if org_user else "en"

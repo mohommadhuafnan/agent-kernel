@@ -891,8 +891,8 @@ const App = (function () {
         <td>${escapeHtml(t.delivery_location)}</td>
         <td><strong>${escapeHtml(t.volunteer_name || 'Awaiting')}</strong></td>
         <td><span class="badge badge-${getTaskBadgeColor(t.status)}">${t.status}</span></td>
-        <td>${t.total_distance_km || 4.8} km</td>
-        <td>LKR ${t.estimated_transport_cost || 350}</td>
+        <td>${t.total_distance_km ? t.total_distance_km + ' km' : '—'}</td>
+        <td>${t.estimated_transport_cost ? 'LKR ' + t.estimated_transport_cost : (t.total_distance_km ? 'LKR ' + Math.round(t.total_distance_km * 50) : '—')}</td>
         <td><span class="badge badge-slate">${t.approved_transport_reimbursement ? 'APPROVED' : 'PENDING'}</span></td>
         <td>
           <div style="display: flex; gap: 4px;">

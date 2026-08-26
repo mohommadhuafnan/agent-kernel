@@ -1500,6 +1500,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "Please show the **Pickup QR Code** image below to the volunteer. The volunteer will scan this QR code using their camera to securely confirm that the food has been handed over. 🔐\n\n"
             "🍱 **Food:** {food_info}\n"
             "🚚 **Volunteer:** {volunteer_name} ({transport_mode})\n"
+            "📞 **Volunteer Contact:** {volunteer_phone}\n"
             "🆔 **Task ID:** {task_id}"
         ),
         "si": (
@@ -1508,6 +1509,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "ස්වේච්ඡා සාමාජිකයා පැමිණි පසු කරුණාකර පහත **Pickup QR Code** එක පෙන්වන්න. ආහාර භාරදීම තහවුරු කිරීමට ඔවුන් මෙය ස්කෑන් කරනු ඇත. 🔐\n\n"
             "🍱 **ආහාර:** {food_info}\n"
             "🚚 **ස්වේච්ඡා සාමාජික:** {volunteer_name} ({transport_mode})\n"
+            "📞 **දුරකථන අංකය:** {volunteer_phone}\n"
             "🆔 **කාර්ය අංකය:** {task_id}"
         ),
         "ta": (
@@ -1516,6 +1518,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "தன்னார்வலர் வந்தவுடன் தயவுசெய்து கீழே உள்ள **Pickup QR Code** ஐக் காண்பிக்கவும். உணவு பாதுகாப்பாக ஒப்படைக்கப்பட்டதை உறுதிப்படுத்த அவர்கள் இதை ஸ்கேன் செய்வார்கள். 🔐\n\n"
             "🍱 **உணவு:** {food_info}\n"
             "🚚 **தன்னார்வலர்:** {volunteer_name} ({transport_mode})\n"
+            "📞 **தொடர்பு எண்:** {volunteer_phone}\n"
             "🆔 **பணி எண்:** {task_id}"
         ),
     },
