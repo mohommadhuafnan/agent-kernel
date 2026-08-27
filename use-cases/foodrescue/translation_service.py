@@ -700,7 +700,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
     },
     "org_ask_capacity": {
         "en": (
-            "Got it, **{org_name}**! 3️⃣ What type of food and **how many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)"
+            "Got it, **{org_name}**! 3️⃣ **How many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)"
         ),
         "si": (
             "ස්තූතියි, **{org_name}**! 3️⃣ ඔබේ සංවිධානයට **දිනකට අවශ්‍ය ආහාර ප්‍රමාණය / ධාරිතාව (Daily Capacity)** කොපමණද? (උදා: *ආහාර පැකට් 50*, *පැකට් 100*, *250 meals/day*)"
@@ -1190,7 +1190,7 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "ta": "புரிந்தது **{org_name}**! 2️⃣ உங்கள் அமைப்பு அமைந்துள்ள **மாவட்டம்** எது? (எ.கா: கேகாலை, கண்டி, கொழும்பு, கம்பஹா, காலி, யாழ்ப்பாணம்)",
     },
     "org_ask_capacity": {
-        "en": "Got it, **{org_name}**! 3️⃣ What type of food and **how many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)",
+        "en": "Got it, **{org_name}**! 3️⃣ **How many portions / meals per day** does your organization need? (Daily Capacity, e.g. *50 meals*, *100 portions*, *250 meals/day*)",
         "si": "ස්තූතියි, **{org_name}**! 3️⃣ ඔබේ සංවිධානයට **දිනකට අවශ්‍ය ආහාර ප්‍රමාණය / ධාරිතාව (Daily Capacity)** කොපමණද? (උදා: *ආහාර පැකට් 50*, *පැකට් 100*, *250 meals/day*)",
         "ta": "நன்றி, **{org_name}**! 3️⃣ உங்கள் அமைப்பிற்கு **தினசரி தேவைப்படும் உணவு அளவு / கொள்ளளவு (Daily Capacity)** எவ்வளவு? (எ.கா: *50 பொதிகள்*, *100 பொதிகள்*, *250 meals/day*)",
     },
@@ -1217,17 +1217,17 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": (
             "📍 **Step 3: Please Share Your Organization's Live Location Pin in {city}**\n\n"
             "Tap ➕ (or 📎) → **Location** → **'Send your current location'** 📍 so our volunteer couriers can navigate directly to your door in {city}!\n\n"
-            "Also tell us what type of food and how many meal portions you need today."
+            "Also tell us how many meal portions your organization needs today."
         ),
         "si": (
             "📍 **පියවර 3: කරුණාකර ඔබගේ සංවිධානයේ ස්ථානය ({city}) WhatsApp හරහා එවන්න**\n\n"
             "➕ (හෝ 📎) ඔබා → **ස්ථානය (Location)** → **'වත්මන් ස්ථානය එවන්න'** 📍 යවන්න. එවිට ස්වේච්ඡා කුරියර්වරුන්ට ආහාර ගෙනවිත් දිය හැක!\n\n"
-            "එසේම ඔබට අවශ්‍ය ආහාර වර්ගය හෝ ප්‍රමාණය ද සඳහන් කරන්න."
+            "එසේම ඔබට අවශ්‍ය ප්‍රමාණය (Daily Capacity) ද සඳහන් කරන්න."
         ),
         "ta": (
             "📍 **படி 3: உங்கள் அமைப்பின் நேரலை இருப்பிடத்தை ({city}) பகிரவும்**\n\n"
             "➕ (அல்லது 📎) அழுத்தி → **Location** → **'Send your current location'** 📍 என்பதை அனுப்பவும்.\n\n"
-            "மேலும் உங்களுக்குத் தேவையான உணவு வகை அல்லது பொதிகளையும் குறிப்பிடவும்."
+            "மேலும் உங்களுக்குத் தேவையான உணவுப் பொதிகளின் எண்ணிக்கையையும் குறிப்பிடவும்."
         ),
     },
     # Volunteer Workflow Templates
@@ -1849,7 +1849,6 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
 }
 
 
-
 class _SafeMessageFormatter(string.Formatter):
     """Custom string formatter that gracefully handles missing keys and specifiers without crashing."""
 
@@ -1887,10 +1886,7 @@ def get_localized_message(key: str, lang: str = "en", **kwargs) -> str:
         return ""
 
     # Clean None values in kwargs
-    clean_kwargs = {
-        k: ("" if v is None else v)
-        for k, v in kwargs.items()
-    }
+    clean_kwargs = {k: ("" if v is None else v) for k, v in kwargs.items()}
 
     try:
         formatter = _SafeMessageFormatter(default="")

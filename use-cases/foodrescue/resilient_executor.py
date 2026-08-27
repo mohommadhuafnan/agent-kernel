@@ -58,7 +58,7 @@ def _extract_quantity(text: str) -> float:
             return float(match.group(1))
         except ValueError:
             pass
-    return 30.0
+    return 0.0
 
 
 def _extract_location(text: str) -> Optional[str]:
@@ -91,13 +91,14 @@ def _format_food_info(don: Optional[Dict[str, Any]]) -> str:
     if not don:
         return "Surplus Food"
     raw_qty = don.get("quantity")
-    if raw_qty is not None:
+    if raw_qty is not None and float(raw_qty) > 0:
         disp_qty = int(raw_qty) if isinstance(raw_qty, (int, float)) and raw_qty == int(raw_qty) else raw_qty
-    else:
-        disp_qty = 20
-    unit = don.get("unit") or "portions"
-    food = don.get("food_type") or "Prepared Meals"
-    return f"{disp_qty} {unit} of {food}"
+        unit = don.get("unit") or "portions"
+        food = don.get("food_type") or "Prepared Meals"
+        return f"{disp_qty} {unit} of {food}"
+    unit = don.get("unit") or ""
+    food = don.get("food_type") or "Surplus Food"
+    return f"{food} ({unit})" if unit else food
 
 
 def _calculate_dynamic_task_metrics(
@@ -2170,10 +2171,13 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
                 task_id = top_task["id"]
                 don_id = top_task.get("donation_id", "")
                 don = database.get_donation_record(don_id) if don_id else None
+                don_qty = don.get("quantity") if don else None
+                don_unit = don.get("unit", "meal packets") if don else "meal packets"
+                don_food = don.get("food_type", "Prepared Meals") if don else "Prepared Meals"
                 food_info = (
-                    f"{don.get('quantity', 30)} {don.get('unit', 'meal packets')} — {don.get('food_type', 'Prepared Meals')}"
-                    if don
-                    else "30 meal packets — Prepared Meals"
+                    f"{int(don_qty) if isinstance(don_qty, (int, float)) and don_qty == int(don_qty) else don_qty} {don_unit} — {don_food}"
+                    if don_qty
+                    else don_food
                 )
                 total_dist, est_cost, d_name, d_contact, r_name, p_area, d_area = _calculate_dynamic_task_metrics(top_task, vol_rec)
 
@@ -2231,7 +2235,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
     if curr_q == "CONFIRMATION" or expected_type == "CONFIRMATION" or (is_confirm_intent and has_required_to_confirm):
         if is_confirm_intent:
             # Commit donation from persistent draft
-            qty = float(existing_draft.get("quantity") or 20.0)
+            qty = float(existing_draft.get("quantity") or 0.0)
             disp_qty = int(qty) if qty == int(qty) else qty
             food = existing_draft.get("food_type") or "Prepared Meals"
             unit = existing_draft.get("unit") or "packets"
@@ -2651,7 +2655,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         reply = translation_service.get_localized_message(
             "donor_ask_location_native",
             lang=lang,
-            quantity=disp_qty or 20,
+            quantity=disp_qty or "",
             unit=unit_val or "packets",
             food_type=food_val or "Food",
             city=city_val or "Sri Lanka",

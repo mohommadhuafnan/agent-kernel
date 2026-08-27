@@ -204,6 +204,7 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
         (r"\b(?:vegetarian(?:\s+meals?)?|veg(?:\s+meals?)?|salads?|சைவ)\b", "Vegetarian Meals"),
         (r"\b(?:rice|බත්|சோறு|சாதம்)\b", "Rice"),
         (r"\b(?:cooked\s+meals?|meal\s+packets?|prepared\s+meals?|lunch\s+packets?|dinner\s+packets?)\b", "Prepared Meals"),
+        (r"\b(?:food|surplus\s+food)\b", "Food"),
     ]
 
     for pat, label in specific_dishes:

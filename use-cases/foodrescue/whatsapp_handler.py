@@ -1836,7 +1836,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                     )
                 )
                 b_name = draft.get("business_name") or d_name
-                city_val = draft.get("city") or (donor_rec.get("location") if donor_rec else None) or "Sri Lanka"
+                city_val = draft.get("address") or draft.get("city") or (loc_address or loc_name or f"📍 {lat:.4f}, {lng:.4f}") or "Sri Lanka"
 
                 disp_qty = int(qty) if isinstance(qty, (int, float)) and qty == int(qty) else qty
                 final_deadline = deadline or "Immediate"
