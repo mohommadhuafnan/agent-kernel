@@ -120,7 +120,7 @@ async def get_dashboard():
         "status_distribution": stats.get("status_distribution", {}),
         "recent_activity": recent_events,
         "system_health": "operational",
-        "backend": os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite")
+        "backend": (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).lower()
     }
     return JSONResponse(content={"status": "success", "stats": enriched_stats})
 
@@ -779,7 +779,7 @@ async def get_settings_endpoint():
         "webhook_url": "https://foodrescue-ai-ten.vercel.app/whatsapp/webhook",
         "verify_token_configured": bool(os.environ.get("WHATSAPP_VERIFY_TOKEN")),
         "access_token_configured": bool(os.environ.get("WHATSAPP_ACCESS_TOKEN")),
-        "database_backend": os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite"),
+        "database_backend": (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).lower(),
         "status": "ONLINE"
     }
     return JSONResponse(content={
