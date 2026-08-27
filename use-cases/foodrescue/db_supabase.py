@@ -2150,3 +2150,62 @@ class SupabaseRepository(BaseRepository):
             "verified_by": effective_vol_id,
             "task": updated_task,
         }
+
+    def delete_donation_record(self, donation_id: str) -> bool:
+        """Delete a food donation record and its linked tasks/QR codes."""
+        try:
+            self._execute("DELETE FROM qr_codes WHERE donation_id = %s", (donation_id,))
+            self._execute("DELETE FROM pickup_tasks WHERE donation_id = %s", (donation_id,))
+            self._execute("DELETE FROM donations WHERE id = %s", (donation_id,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting donation {donation_id}: {err}")
+            return False
+
+    def delete_donor_record(self, donor_id: str) -> bool:
+        """Delete a donor record."""
+        try:
+            self._execute("DELETE FROM donors WHERE id = %s", (donor_id,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting donor {donor_id}: {err}")
+            return False
+
+    def delete_organization_record(self, org_id: str) -> bool:
+        """Delete an organization record."""
+        try:
+            self._execute("DELETE FROM organizations WHERE id = %s", (org_id,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting organization {org_id}: {err}")
+            return False
+
+    def delete_volunteer_record(self, volunteer_id: str) -> bool:
+        """Delete a volunteer record."""
+        try:
+            self._execute("DELETE FROM volunteers WHERE id = %s", (volunteer_id,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting volunteer {volunteer_id}: {err}")
+            return False
+
+    def delete_user_record(self, phone: str) -> bool:
+        """Delete a user profile and active state."""
+        try:
+            clean_phone = phone.replace("whatsapp:", "").strip()
+            self._execute("DELETE FROM users WHERE phone = %s", (clean_phone,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting user {phone}: {err}")
+            return False
+
+    def delete_pickup_task_record(self, task_id: str) -> bool:
+        """Delete a pickup task record."""
+        try:
+            self._execute("DELETE FROM qr_codes WHERE task_id = %s", (task_id,))
+            self._execute("DELETE FROM pickup_tasks WHERE id = %s", (task_id,))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting task {task_id}: {err}")
+            return False
+

@@ -219,7 +219,11 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
         food_type = "Noodles & Pasta"
     elif re.search(r"\b(?:bread|bakery|pastry|pastries|buns?|sandwiches?|short\s+eats|rolls?|patties|cutlets|පාන්|බේකරි|ரொட்டி)\b", text, re.IGNORECASE):
         food_type = "Bakery & Bread"
-    elif re.search(r"\b(?:vegetarian|veg|vegetables?|salads?|fruits?|produce|එළවළු|சைவ)\b", text, re.IGNORECASE):
+    elif re.search(r"\b(?:fresh\s+vegetables?|vegetables?|produce|එළවළු)\b", text, re.IGNORECASE):
+        food_type = "Vegetables"
+    elif re.search(r"\b(?:fruits?|fresh\s+fruits?)\b", text, re.IGNORECASE):
+        food_type = "Fruits"
+    elif re.search(r"\b(?:vegetarian(?:\s+meals?)?|veg(?:\s+meals?)?|salads?|சைவ)\b", text, re.IGNORECASE):
         food_type = "Vegetarian Meals"
     elif re.search(r"\b(?:rice|බත්|சோறு|சாதம்)\b", text, re.IGNORECASE):
         food_type = "Rice"

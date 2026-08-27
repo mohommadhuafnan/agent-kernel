@@ -266,7 +266,7 @@ async def test_any_food_type_and_arbitrary_portions_extraction():
         ("I have 50 boxes of bakery items", "Bakery & Bread", 50.0, "boxes"),
         ("40 plates of fried rice", "Fried Rice", 40.0, "portions"),
         ("30 portions of kottu roti", "Kottu Roti", 30.0, "portions"),
-        ("100 kg of fresh vegetables", "Vegetarian Meals", 100.0, "kg"),
+        ("100 kg of fresh vegetables", "Vegetables", 100.0, "kg"),
         ("My name is Chef Kamal and I have 20 portions of soup", "Soup", 20.0, "portions"),
     ]
 

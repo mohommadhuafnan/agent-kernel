@@ -198,6 +198,60 @@ async def get_donation_detail(donation_id: str):
     })
 
 
+@router.delete("/api/donations/{donation_id}")
+async def delete_donation_endpoint(donation_id: str):
+    """Delete a food donation record and associated tasks/QR codes."""
+    success = database.delete_donation_record(donation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Donation '{donation_id}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"Donation {donation_id} deleted permanently."})
+
+
+@router.delete("/api/donors/{donor_id}")
+async def delete_donor_endpoint(donor_id: str):
+    """Delete a donor partner record."""
+    success = database.delete_donor_record(donor_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Donor '{donor_id}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"Donor {donor_id} deleted permanently."})
+
+
+@router.delete("/api/organizations/{org_id}")
+async def delete_organization_endpoint(org_id: str):
+    """Delete a recipient organization record."""
+    success = database.delete_organization_record(org_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Organization '{org_id}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"Organization {org_id} deleted permanently."})
+
+
+@router.delete("/api/volunteers/{vol_id}")
+async def delete_volunteer_endpoint(vol_id: str):
+    """Delete a volunteer courier record."""
+    success = database.delete_volunteer_record(vol_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Volunteer '{vol_id}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"Volunteer {vol_id} deleted permanently."})
+
+
+@router.delete("/api/users/{phone}")
+async def delete_user_endpoint(phone: str):
+    """Delete a user profile and session state."""
+    success = database.delete_user_record(phone)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"User '{phone}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"User {phone} deleted permanently."})
+
+
+@router.delete("/api/pickup-tasks/{task_id}")
+async def delete_pickup_task_endpoint(task_id: str):
+    """Delete a pickup task record."""
+    success = database.delete_pickup_task_record(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found or could not be deleted.")
+    return JSONResponse(content={"status": "success", "message": f"Task {task_id} deleted permanently."})
+
+
 @router.get("/api/conversations")
 async def get_conversations_endpoint():
     """Get list of all active conversation threads with latest messages and user profiles."""

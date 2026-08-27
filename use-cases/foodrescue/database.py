@@ -809,4 +809,30 @@ def format_sri_lanka_time(dt_or_str: Optional[Any] = None) -> str:
     return dt.strftime("%Y-%m-%d %I:%M %p (+05:30)")
 
 
+# Record Deletion Helpers
+def delete_donation_record(donation_id: str) -> bool:
+    return get_repository().delete_donation_record(donation_id)
+
+
+def delete_donor_record(donor_id: str) -> bool:
+    return get_repository().delete_donor_record(donor_id)
+
+
+def delete_organization_record(org_id: str) -> bool:
+    return get_repository().delete_organization_record(org_id)
+
+
+def delete_volunteer_record(volunteer_id: str) -> bool:
+    return get_repository().delete_volunteer_record(volunteer_id)
+
+
+def delete_user_record(phone: str) -> bool:
+    return get_repository().delete_user_record(phone)
+
+
+def delete_pickup_task_record(task_id: str) -> bool:
+    return get_repository().delete_pickup_task_record(task_id)
+
+
+
 

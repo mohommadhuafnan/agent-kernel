@@ -1766,5 +1766,58 @@ class MongoRepository(BaseRepository):
             "task": updated_task,
         }
 
+    def delete_donation_record(self, donation_id: str) -> bool:
+        """Delete a food donation record and its linked tasks/QR codes."""
+        try:
+            self.qr_codes_col.delete_many({"donation_id": donation_id})
+            self.pickup_tasks_col.delete_many({"donation_id": donation_id})
+            res = self.donations_col.delete_one({"id": donation_id})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+    def delete_donor_record(self, donor_id: str) -> bool:
+        """Delete a donor record."""
+        try:
+            res = self.donors_col.delete_one({"id": donor_id})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+    def delete_organization_record(self, org_id: str) -> bool:
+        """Delete an organization record."""
+        try:
+            res = self.organizations_col.delete_one({"id": org_id})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+    def delete_volunteer_record(self, volunteer_id: str) -> bool:
+        """Delete a volunteer record."""
+        try:
+            res = self.volunteers_col.delete_one({"id": volunteer_id})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+    def delete_user_record(self, phone: str) -> bool:
+        """Delete a user profile and active state."""
+        try:
+            norm = self._normalize_phone(phone)
+            res = self.users_col.delete_one({"phone_number": norm})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+    def delete_pickup_task_record(self, task_id: str) -> bool:
+        """Delete a pickup task record."""
+        try:
+            self.qr_codes_col.delete_many({"task_id": task_id})
+            res = self.pickup_tasks_col.delete_one({"id": task_id})
+            return res.deleted_count > 0
+        except Exception:
+            return False
+
+
 
 

@@ -591,5 +591,37 @@ class BaseRepository(ABC):
         """Retrieve all QR codes with optional status or type filtering."""
         pass
 
+    # Record Deletion Interface
+    @abstractmethod
+    def delete_donation_record(self, donation_id: str) -> bool:
+        """Delete a food donation record and its linked tasks/QR codes."""
+        pass
+
+    @abstractmethod
+    def delete_donor_record(self, donor_id: str) -> bool:
+        """Delete a donor record."""
+        pass
+
+    @abstractmethod
+    def delete_organization_record(self, org_id: str) -> bool:
+        """Delete an organization record."""
+        pass
+
+    @abstractmethod
+    def delete_volunteer_record(self, volunteer_id: str) -> bool:
+        """Delete a volunteer record."""
+        pass
+
+    @abstractmethod
+    def delete_user_record(self, phone: str) -> bool:
+        """Delete a user profile and active state."""
+        pass
+
+    @abstractmethod
+    def delete_pickup_task_record(self, task_id: str) -> bool:
+        """Delete a pickup task record."""
+        pass
+
+
 
 

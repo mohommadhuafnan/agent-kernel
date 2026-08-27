@@ -2338,5 +2338,76 @@ class SQLiteRepository(BaseRepository):
             "task": updated_task,
         }
 
+    def delete_donation_record(self, donation_id: str) -> bool:
+        """Delete a food donation record and its linked tasks/QR codes."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM qr_codes WHERE donation_id = ?", (donation_id,))
+                cursor.execute("DELETE FROM pickup_tasks WHERE donation_id = ?", (donation_id,))
+                cursor.execute("DELETE FROM donations WHERE id = ?", (donation_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_donor_record(self, donor_id: str) -> bool:
+        """Delete a donor record."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM donors WHERE id = ?", (donor_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_organization_record(self, org_id: str) -> bool:
+        """Delete an organization record."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_volunteer_record(self, volunteer_id: str) -> bool:
+        """Delete a volunteer record."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM volunteers WHERE id = ?", (volunteer_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_user_record(self, phone: str) -> bool:
+        """Delete a user profile and active state."""
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM users WHERE phone_number = ?", (norm,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_pickup_task_record(self, task_id: str) -> bool:
+        """Delete a pickup task record."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM qr_codes WHERE task_id = ?", (task_id,))
+                cursor.execute("DELETE FROM pickup_tasks WHERE id = ?", (task_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
 
 
