@@ -428,15 +428,13 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
         target_task = None
         if vol:
             v_tasks = database.get_pickup_tasks_for_volunteer(vol["id"])
-            col_v_tasks = [t for t in v_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
-            if col_v_tasks:
-                target_task = col_v_tasks[-1]
+            if v_tasks:
+                target_task = v_tasks[-1]
 
         if not target_task:
             all_tasks = database.get_all_pickup_tasks()
-            collected_tasks = [t for t in all_tasks if t.get("status") in ["COLLECTED", "IN_TRANSIT"]]
-            if collected_tasks:
-                target_task = collected_tasks[-1]
+            if all_tasks:
+                target_task = all_tasks[-1]
 
         if target_task:
             don_id = target_task.get("donation_id")
@@ -1171,7 +1169,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             user = database.create_or_update_user(
                 phone=from_number,
                 display_name=vol_rec.get("name", "Volunteer"),
-                preferred_language="en",
+                preferred_language=None,
                 user_role="volunteer",
                 onboarding_completed=True,
                 default_location=vol_rec.get("service_area") or vol_rec.get("location"),
@@ -1180,7 +1178,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             user = database.create_or_update_user(
                 phone=from_number,
                 display_name=org_rec.get("name", "Organization"),
-                preferred_language="en",
+                preferred_language=None,
                 user_role="organization",
                 onboarding_completed=True,
                 default_location=org_rec.get("location") or org_rec.get("service_area"),
@@ -1189,7 +1187,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             user = database.create_or_update_user(
                 phone=from_number,
                 display_name=donor_rec.get("name", "Donor"),
-                preferred_language="en",
+                preferred_language=None,
                 user_role="donor",
                 onboarding_completed=True,
                 default_location=donor_rec.get("location"),
@@ -1198,7 +1196,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             user = database.create_or_update_user(
                 phone=from_number,
                 display_name=f"User_{from_number[-4:]}",
-                preferred_language="en",
+                preferred_language=None,
                 user_role="unknown",
                 onboarding_completed=False,
             )

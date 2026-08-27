@@ -1,7 +1,7 @@
 """FoodRescue AI Persistence Delegation Layer.
 
 Dispatches all database operations to the active repository backend
-(SQLite or MongoDB) based on the FOODRESCUE_DB_BACKEND environment variable.
+(Supabase PostgreSQL or SQLite) based on the FOODRESCUE_DATABASE environment variable.
 """
 
 import os
@@ -19,25 +19,26 @@ def get_repository() -> BaseRepository:
     if _CURRENT_REPO is not None:
         return _CURRENT_REPO
 
-    backend = os.environ.get("FOODRESCUE_DB_BACKEND", "sqlite").strip().lower()
-    if backend == "mongodb":
-        try:
-            from db_mongo import MongoRepository
-            mongo_repo = MongoRepository()
-            mongo_repo._get_db().command("ping")
-            _CURRENT_REPO = mongo_repo
-            return _CURRENT_REPO
-        except Exception as exc:
-            import logging
-            logging.getLogger("foodrescue.db").warning(f"MongoDB connection failed ({exc}); falling back to SQLite.")
-            from db_sqlite import SQLiteRepository
-            _CURRENT_REPO = SQLiteRepository()
-            return _CURRENT_REPO
-    else:
+    backend = (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).strip().lower()
+    
+    if backend == "sqlite":
         from db_sqlite import SQLiteRepository
         _CURRENT_REPO = SQLiteRepository()
+        return _CURRENT_REPO
 
-    return _CURRENT_REPO
+    # Supabase PostgreSQL (Default production backend)
+    try:
+        from db_supabase import SupabaseRepository
+        supabase_repo = SupabaseRepository()
+        supabase_repo.setup_database()
+        _CURRENT_REPO = supabase_repo
+        return _CURRENT_REPO
+    except Exception as exc:
+        import logging
+        logging.getLogger("foodrescue.db").warning(f"Supabase connection notice ({exc}); falling back to local SQLite.")
+        from db_sqlite import SQLiteRepository
+        _CURRENT_REPO = SQLiteRepository()
+        return _CURRENT_REPO
 
 
 def set_repository(repo: Optional[BaseRepository]) -> None:
@@ -527,8 +528,8 @@ def get_user_by_phone(phone: str) -> Optional[Dict[str, Any]]:
 def create_or_update_user(
     phone: str,
     display_name: Optional[str] = None,
-    preferred_language: str = "en",
-    preferred_response_mode: str = "text",
+    preferred_language: Optional[str] = None,
+    preferred_response_mode: Optional[str] = None,
     user_role: str = "unknown",
     onboarding_completed: bool = False,
     default_location: Optional[str] = None,

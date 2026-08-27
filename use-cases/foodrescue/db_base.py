@@ -1,6 +1,6 @@
-"""FoodRescue AI Abstract Repository Interface.
+"""Base Repository Interface for FoodRescue AI.
 
-Defines the contract for business persistence across SQLite and MongoDB backends.
+Defines the contract for business persistence across Supabase PostgreSQL and SQLite backends.
 """
 
 from abc import ABC, abstractmethod
@@ -417,8 +417,8 @@ class BaseRepository(ABC):
         self,
         phone: str,
         display_name: Optional[str] = None,
-        preferred_language: str = "en",
-        preferred_response_mode: str = "text",
+        preferred_language: Optional[str] = None,
+        preferred_response_mode: Optional[str] = None,
         user_role: str = "unknown",
         onboarding_completed: bool = False,
         default_location: Optional[str] = None,

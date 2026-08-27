@@ -14,7 +14,7 @@ import tools
 import translation_service
 import voice_service
 import whatsapp_handler
-from db_mongo import MongoRepository
+from db_supabase import SupabaseRepository
 from db_sqlite import SQLiteRepository
 
 
@@ -42,7 +42,7 @@ def test_client():
 
 
 # =============================================================================
-# 1. DATABASE PERSISTENCE & PARITY (SQLITE & MONGO)
+# 1. DATABASE PERSISTENCE & PARITY (SQLITE & SUPABASE)
 # =============================================================================
 
 def test_database_persistence_sqlite():
@@ -88,18 +88,16 @@ def test_database_persistence_sqlite():
     assert not database.get_draft_donation(phone)
 
 
-import mongomock
-
-
-def test_database_persistence_mongo_parity():
-    """Test user profile, conversation state, response mode, and draft donation methods in MongoRepository."""
-    client = mongomock.MongoClient()
-    db = client["foodrescue_test"]
-    repo = MongoRepository(db_instance=db)
+def test_database_persistence_supabase_parity():
+    """Test user profile, conversation state, response mode, and draft donation methods in SupabaseRepository."""
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    repo = SupabaseRepository(connection_instance=conn)
     repo.setup_database()
     phone = "+94770001002"
 
-    u = repo.create_or_update_user(phone=phone, display_name="Mongo User", preferred_language="si", preferred_response_mode="voice")
+    u = repo.create_or_update_user(phone=phone, display_name="Supabase User", preferred_language="si", preferred_response_mode="voice")
     assert u["phone_number"] in [phone, "94770001002"]
     assert u["preferred_response_mode"] == "voice"
 

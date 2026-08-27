@@ -1503,8 +1503,8 @@ class SQLiteRepository(BaseRepository):
         self,
         phone: str,
         display_name: Optional[str] = None,
-        preferred_language: str = "en",
-        preferred_response_mode: str = "text",
+        preferred_language: Optional[str] = None,
+        preferred_response_mode: Optional[str] = None,
         user_role: str = "unknown",
         onboarding_completed: bool = False,
         default_location: Optional[str] = None,
@@ -1571,8 +1571,10 @@ class SQLiteRepository(BaseRepository):
             else:
                 cursor.execute(
                     """
-                INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, user_role, onboarding_completed, default_location, first_seen_at, last_seen_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (
+                    phone_number, display_name, preferred_language, preferred_response_mode,
+                    user_role, onboarding_completed, default_location, first_seen_at, last_seen_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         norm,

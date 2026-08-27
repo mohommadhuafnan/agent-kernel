@@ -23,7 +23,7 @@ import whatsapp_handler
 import database
 from agentkernel.api import RESTAPI, AgentRESTRequestHandler
 
-# Initialize active database backend (SQLite / MongoDB Atlas) on cold start
+# Initialize active database backend (Supabase PostgreSQL / SQLite) on cold start
 try:
     database.setup_database()
 except Exception as init_err:

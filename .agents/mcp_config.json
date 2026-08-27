@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "serverUrl": "https://mcp.supabase.com/mcp?project_ref=vrzdsqalybgclpmnrlsv&features=docs%2Cdatabase%2Cdebugging%2Cdevelopment"
+    }
+  }
+}

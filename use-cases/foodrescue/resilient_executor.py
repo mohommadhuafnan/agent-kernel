@@ -932,41 +932,35 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         or tools._get_context_val("current_task_id", "")
         or is_explicit_vol_accept
     )
-    if (
-        (has_vol_context and not is_org_user and not is_donor_user)
-        and any(
-            m in clean_p
-            for m in [
-                "accept",
-                "accept task",
-                "accept pickup",
-                "i'll take it",
-                "ill take it",
-                "take it",
-                "i can do it",
-                "take pickup",
-                "claim",
-                "1",
-                "yes",
-                "භාරගන්නවා",
-                "ඔව්",
-                "ஏற்கிறேன்",
-                "ஆம்",
-                "ஏற்றுக்கொள்கிறேன்",
-                "பணியை ஏற்கிறேன்",
-            ]
-        )
-    ):
-        task_id = tools._get_context_val("current_task_id", "")
-        if not task_id and phone:
-            task_id = user_state.get("task_id", "")
+    # 6b. Volunteer Task Acceptance / Search
+    is_explicit_vol_accept = any(
+        m in clean_p
+        for m in [
+            "accept task",
+            "accept pickup",
+            "i'll take it",
+            "ill take it",
+            "take it",
+            "i can do it",
+            "take pickup",
+            "claim",
+            "භාරගන්නවා",
+            "ஏற்கிறேன்",
+            "ஏற்றுக்கொள்கிறேன்",
+            "பணியை ஏற்கிறேன்",
+        ]
+    )
+    is_task_offer_active = bool(
+        curr_q in ["VOL_TASK_OFFER", "ACCEPT_TASK"] or user_state.get("task_id") or tools._get_context_val("current_task_id", "")
+    )
+
+    if has_vol_context and not is_org_user and not is_donor_user and (is_explicit_vol_accept or (is_task_offer_active and clean_p in ["1", "yes", "accept", "ඔව්", "ஆம்"])):
+        task_id = user_state.get("task_id", "") or tools._get_context_val("current_task_id", "")
         if not task_id:
             pending = database.get_all_pickup_tasks()
             avail = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
             if avail:
                 task_id = avail[0]["id"]
-            else:
-                task_id = "task-assigned-01"
 
         if task_id:
             vol_id = tools._get_context_val("current_volunteer_id", "")
@@ -1030,7 +1024,59 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 verification_url=verif_url,
                 scanner_url=scanner_url,
             )
-        return "No pending pickup task is currently selected. Reply **3** to see available volunteer opportunities."
+        return "No open pickup task is currently available to accept. Reply **1** to search new pickups or **3** to update your availability."
+
+    # Volunteer Menu Option 1: Search / View Available Pickups
+    if has_vol_context and not is_org_user and not is_donor_user and clean_p in ["1", "search", "view tasks", "tasks", "pickups", "available pickups", "search pickups"]:
+        vol_loc = (existing_vol.get("service_area") if existing_vol else None) or (user.get("default_location") if user else None) or "Sri Lanka"
+        all_tasks = database.get_all_pickup_tasks()
+        open_tasks = [t for t in all_tasks if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
+        if open_tasks:
+            target_t = open_tasks[0]
+            ext = _get_task_extended_metrics(target_t, existing_vol)
+            if phone:
+                database.set_user_conversation_state(
+                    phone, {"workflow": "VOLUNTEER", "current_question": "VOL_TASK_OFFER", "task_id": target_t["id"]}
+                )
+            return (
+                f"🚚 *Available Pickup Task Found in {vol_loc}!* 📍\n\n"
+                f"🆔 Task ID: `{target_t['id']}`\n"
+                f"🍱 Food: {ext['food_info']}\n"
+                f"📍 Pickup From: {ext['pickup_location']} ({ext['donor_name']})\n"
+                f"🏢 Deliver To: {ext['delivery_location']} ({ext['recipient_name']})\n"
+                f"📏 Total Road Distance: ~{ext['total_dist']} km\n"
+                f"⛽ Fuel Support: LKR {ext['est_cost']:.2f}\n"
+                f"⏰ Pickup Deadline: {ext['deadline']}\n\n"
+                f"Reply *1* or *Accept* to claim this delivery task! 🚀"
+            )
+        return f"🚚 *No open pickup tasks right now in {vol_loc}.*\n\nWe have you registered as an active courier. You will receive an instant notification as soon as a donor posts surplus food in your area! 🙏"
+
+    # Recipient Org Menu Option 1: Request Surplus Food Donation
+    if is_org_user and not is_vol_user and not is_donor_user and clean_p in ["1", "request", "request food", "request surplus food", "need food", "surplus food"]:
+        if phone:
+            database.set_user_conversation_state(
+                phone, {"workflow": "RECIPIENT", "current_question": "CAPACITY", "expected_input_type": "QUANTITY"}
+            )
+        org_name = (org_rec.get("name") if org_rec else None) or (user.get("display_name") if user else "Organization")
+        return (
+            f"🏢 *Surplus Food Request for {org_name}*\n\n"
+            f"How many meal portions or food packets do you need today?\n"
+            f"*(Reply with the quantity, e.g. '50 portions' or '100 packets')*"
+        )
+
+    # Recipient Org Capacity / Portion Quantity Response
+    if user_state.get("workflow") == "RECIPIENT" and curr_q in ["CAPACITY", "ORG_CAPACITY"]:
+        m_num = re.search(r"\b(\d+(?:\.\d+)?)\b", prompt)
+        if m_num:
+            cap_val = int(float(m_num.group(1)))
+            if phone:
+                if org_rec:
+                    database.update_recipient_organization(organization_id=org_rec.get("id"), daily_capacity=cap_val)
+                database.clear_user_conversation_state(phone)
+            return (
+                f"✅ *Capacity Recorded: {cap_val} Portions!*\n\n"
+                f"Thank you! We have updated your daily food requirement. Our AI match engine will automatically assign incoming surplus food donations in your district to your organization! 🍲"
+            )
 
     if (curr_q == "ACCEPT_TASK" or (is_vol_user and not is_org_user)) and clean_p in [
         "reject",
@@ -1230,7 +1276,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
 
     if (is_vol_intent or in_vol_workflow) and not (clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_vol_workflow):
         if phone:
-            database.update_user_profile(phone=phone, user_role="volunteer")
+            database.create_or_update_user(phone=phone, user_role="volunteer")
         # 6e-1. Direct availability declaration (e.g. "Available", "I'm free now", "Hii i am available to volunteer today", "I'm free to volunteer now")
         is_direct_avail = (
             is_vol_standalone_avail
@@ -1521,7 +1567,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow
     ):
         if phone:
-            database.update_user_profile(phone=phone, user_role="organization")
+            database.create_or_update_user(phone=phone, user_role="organization")
         existing_org = database.get_organization_by_phone(phone) if phone else None
 
         # 7a. User explicitly asked to view all available donations across the network
@@ -2002,12 +2048,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     # 9b. Context-Aware Input Resolution Based on Current Question
     if curr_q == "DONOR_NAME" or expected_type == "NAME":
         cand_name = prompt.strip()
-        if _extract_location(cand_name) or any(
-            c in cand_name.lower() for c in ["colombo", "kandy", "galle", "mawanella", "jaffna", "negombo", "dehiwala", "nugegoda"]
-        ):
+        dist_cand = routing.resolve_district(cand_name)
+        if dist_cand:
             # User answered location instead of name
-            loc_val = _extract_location(cand_name) or cand_name
-            draft_update = {"city": loc_val, "location": loc_val}
+            loc_val = cand_name.title() if ("colombo" in cand_name.lower() or dist_cand.lower() in cand_name.lower()) else dist_cand
+            draft_update = {"city": loc_val, "location": loc_val, "district": dist_cand}
             if not existing_draft.get("donor_name"):
                 draft_update["donor_name"] = "Donor Partner"
                 draft_update["business_name"] = "Donor Partner"
@@ -2016,43 +2061,67 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         else:
             is_name_candidate = (
                 cand_name
-                and cand_name.lower() not in ["hi", "hello", "1", "2", "3"]
+                and cand_name.lower() not in ["hi", "hello", "1", "2", "3", "4", "5", "6", "menu", "start"]
                 and not any(w in cand_name.lower() for w in ["actually", "have", "packet", "meals", "change", "curry", "rice", "bread"])
-                and not re.search(r"\d", cand_name)
+                and not prompt.strip().isdigit()
             )
             if is_name_candidate:
-                draft_update = {"donor_name": cand_name, "business_name": cand_name}
+                clean_name = re.sub(r"^(?:my name is|i am|name is|this is)\s+", "", cand_name, flags=re.IGNORECASE).strip()
+                draft_update = {"donor_name": clean_name.title(), "business_name": clean_name.title()}
                 if phone:
                     existing_draft = database.save_draft_donation(phone, draft_update)
-                    database.create_or_update_user(phone=phone, display_name=cand_name)
+                    database.create_or_update_user(phone=phone, display_name=clean_name.title())
 
     elif curr_q in ["CITY", "DISTRICT"] or expected_type in ["CITY", "DISTRICT"]:
-
         dist_res = routing.resolve_district(prompt)
-        extracted_city = _extract_location(prompt) or voice_service.extract_donation_entities(prompt).get("city") or dist_res
-        if extracted_city:
-            draft_update = {"city": extracted_city, "location": extracted_city, "district": dist_res or extracted_city}
+        extracted_city = voice_service.extract_donation_entities(prompt).get("city") or dist_res
+        loc_val = prompt.strip().title() if ("colombo" in prompt.lower() or dist_res) else (extracted_city or dist_res)
+        if loc_val:
+            draft_update = {"city": loc_val, "location": loc_val, "district": dist_res or loc_val}
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
-        elif (
-            len(prompt.strip().split()) <= 4
-            and not any(w in prompt.lower() for w in ["rice", "meal", "packet", "food", "have", "curry", "bread"])
-            and not re.search(r"\d", prompt)
-        ):
-            cand_city = prompt.strip()
-            draft_update = {"city": cand_city, "location": cand_city, "district": dist_res or cand_city}
-            if phone:
-                existing_draft = database.save_draft_donation(phone, draft_update)
+        else:
+            cand_text = prompt.strip()
+            # If user provided a name instead of a district, save as donor_name
+            if (
+                not any(w in cand_text.lower() for w in ["rice", "meal", "packet", "food", "have", "curry", "bread"])
+                and not cand_text.isdigit()
+                and len(cand_text.split()) <= 4
+            ):
+                if not existing_draft.get("donor_name"):
+                    clean_name = re.sub(r"^(?:my name is|i am|name is|this is)\s+", "", cand_text, flags=re.IGNORECASE).strip()
+                    if phone:
+                        existing_draft = database.save_draft_donation(phone, {"donor_name": clean_name.title(), "business_name": clean_name.title()})
+                        database.create_or_update_user(phone=phone, display_name=clean_name.title())
 
     elif curr_q == "DEADLINE" or expected_type == "DEADLINE":
-        deadline_match = re.search(r"(?:before|until|by|at)?\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?)", prompt, re.IGNORECASE)
-        time_val = deadline_match.group(1).strip().upper() if (deadline_match and deadline_match.group(1)) else prompt.strip()
-        if "PM" not in time_val and "AM" not in time_val and re.match(r"^\d{1,2}$", time_val):
-            time_val = f"Today before {time_val} PM"
-        elif "before" in prompt.lower() and not time_val.lower().startswith("today"):
-            time_val = f"Today before {time_val}"
-        if phone:
-            existing_draft = database.save_draft_donation(phone, {"pickup_deadline": time_val})
+        # Check if user sent district instead during DEADLINE step
+        dist_res = routing.resolve_district(prompt)
+        if dist_res and not existing_draft.get("district"):
+            if phone:
+                existing_draft = database.save_draft_donation(phone, {"city": dist_res, "location": dist_res, "district": dist_res})
+        else:
+            deadline_match = re.search(
+                r"\b(?:today\s+before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?\s*today|before\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|until\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|by\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?|\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:pm|am|PM|AM))\b",
+                prompt,
+                re.IGNORECASE,
+            )
+            if deadline_match:
+                time_val = deadline_match.group(0).strip()
+                if not time_val.lower().startswith("today") and not time_val.lower().startswith("before") and not time_val.lower().startswith("until"):
+                    time_val = f"Today before {time_val}"
+                elif "before" in time_val.lower() and not time_val.lower().startswith("today"):
+                    time_val = f"Today {time_val}"
+                if phone:
+                    existing_draft = database.save_draft_donation(phone, {"pickup_deadline": time_val})
+            elif any(w in prompt.lower() for w in ["now", "immediate", "ready now", "දැන්", "இப்போது"]):
+                if phone:
+                    existing_draft = database.save_draft_donation(phone, {"pickup_deadline": "Today (Immediate)"})
+            elif re.match(r"^\s*(\d{1,2})\s*$", prompt.strip()):
+                hr = int(prompt.strip())
+                hr_str = f"{hr} PM" if hr <= 12 else f"{hr - 12} PM"
+                if phone:
+                    existing_draft = database.save_draft_donation(phone, {"pickup_deadline": f"Today before {hr_str}"})
 
     elif curr_q == "FOOD_TYPE" or expected_type == "FOOD_CHOICE":
         opt_map = {"1": "Rice & Curry", "2": "Bread & Bakery", "3": "Vegetarian Meals", "4": "Biryani", "5": "Prepared Meals"}
@@ -2078,7 +2147,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         ):
             m_b = re.search(r"\b((?:chicken|mutton|beef|veg|vegetable|egg|fish|dum)?\s*biryani)\b", clean_p, re.IGNORECASE)
             chosen_food = m_b.group(1).strip().title() if m_b else "Biryani"
-        elif "biryani" in clean_p or "briyani" in clean_p or "biriyani" in clean_p:
+        elif "biryani" in clean_p or "briyani" in clean_p or "biriyani" in clean_p or "பிரியாணி" in clean_p or "බිරියානි" in clean_p:
             chosen_food = "Biryani"
         elif "fried rice" in clean_p:
             chosen_food = "Fried Rice"
@@ -2092,8 +2161,20 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             chosen_food = "Rice"
         elif "bread" in clean_p or "bakery" in clean_p:
             chosen_food = "Bread & Bakery"
+        elif clean_p.isdigit() and clean_p not in ["1", "2", "3", "4", "5"]:
+            # User gave a pure number like 20 -> Save as quantity, do not treat as food type!
+            qty_val = float(clean_p)
+            if phone:
+                existing_draft = database.save_draft_donation(phone, {"quantity": qty_val, "unit": "portions"})
+            chosen_food = None
         else:
-            chosen_food = prompt.strip().title()
+            ent = voice_service.extract_donation_entities(prompt)
+            if ent.get("food_type"):
+                chosen_food = ent["food_type"]
+                if ent.get("quantity") and phone:
+                    existing_draft = database.save_draft_donation(phone, {"quantity": ent["quantity"], "unit": ent.get("unit", "portions")})
+            elif not clean_p.isdigit() and len(clean_p.split()) <= 4:
+                chosen_food = prompt.strip().title()
 
         if chosen_food:
             draft_update = {"food_type": chosen_food}
@@ -2122,6 +2203,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 draft_update["unit"] = "kg"
             else:
                 draft_update["unit"] = existing_draft.get("unit") or "portions"
+            
+            ent = voice_service.extract_donation_entities(prompt)
+            if ent.get("food_type") and not existing_draft.get("food_type"):
+                draft_update["food_type"] = ent["food_type"]
+
             if phone:
                 existing_draft = database.save_draft_donation(phone, draft_update)
 
@@ -2199,7 +2285,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     # 9d. If User Pressed "1" or says "I want to donate" with no draft yet, prompt for food:
     if (clean_p in ["1", "donate", "i want to donate", "donate food", "i have food", "පරිත්‍යාග", "தானம்"]) and not existing_draft.get("food_type"):
         if phone:
-            database.update_user_profile(phone=phone, user_role="donor")
+            database.create_or_update_user(phone=phone, user_role="donor")
             database.set_user_conversation_state(
                 phone,
                 {
@@ -2264,6 +2350,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             f"*Or ask any question about available food donations!*"
         )
 
+    disp_qty = int(qty_val) if isinstance(qty_val, (int, float)) and qty_val == int(qty_val) else qty_val
+
     # Step 1: Missing Food Type or Quantity
     if not food_val:
         if phone:
@@ -2281,14 +2369,14 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     if not donor_name_val:
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DONOR_NAME", "expected_input_type": "NAME"})
-        return translation_service.get_localized_message("donor_ask_name", lang=lang, quantity=qty_val, unit=unit_val, food_type=food_val)
+        return translation_service.get_localized_message("donor_ask_name", lang=lang, quantity=disp_qty, unit=unit_val, food_type=food_val)
 
     # Step 3: Missing District
     if not city_val:
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DISTRICT", "expected_input_type": "DISTRICT"})
         return translation_service.get_localized_message(
-            "donor_ask_district", lang=lang, name=donor_name_val, quantity=qty_val, unit=unit_val, food_type=food_val
+            "donor_ask_district", lang=lang, name=donor_name_val, quantity=disp_qty, unit=unit_val, food_type=food_val
         )
 
     # Step 4: Missing Food Pickup Deadline (Prompt for deadline if not provided)
@@ -2306,7 +2394,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         return translation_service.get_localized_message(
             "donor_ask_location_native",
             lang=lang,
-            quantity=qty_val or 20,
+            quantity=disp_qty or 20,
             unit=unit_val or "packets",
             food_type=food_val or "Food",
             city=city_val or "Sri Lanka",
@@ -2326,7 +2414,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         donor_name=donor_name_val,
         business_name=business_name_val,
         food_type=food_val,
-        quantity=qty_val,
+        quantity=disp_qty,
         unit=unit_val,
         city=city_val,
         deadline=final_deadline,

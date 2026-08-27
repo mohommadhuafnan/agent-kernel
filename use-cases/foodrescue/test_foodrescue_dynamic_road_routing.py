@@ -14,7 +14,7 @@ Verifies:
 11. Existing WhatsApp workflows continue working.
 12. Existing QR handover workflow continues working.
 13. Existing Agent Kernel workflow continues working.
-14. Existing MongoDB data remains compatible.
+14. Supabase PostgreSQL persistence compatibility.
 """
 
 import pytest

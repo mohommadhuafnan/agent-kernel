@@ -19,6 +19,7 @@ import whatsapp_handler
 def setup_test_db():
     database.setup_database()
     database.seed_test_data()
+    tools.clear_session_store()
     whatsapp_handler.clear_processed_message_cache()
 
 

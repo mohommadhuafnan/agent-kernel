@@ -7,7 +7,7 @@ Covers:
 4. Live GPS tracking, coordinate validation, and active lifecycle enforcement
 5. Volunteer reimbursement ledger accounting (PENDING ➔ APPROVED ➔ PAID)
 6. Agent Kernel tool binding & structured responses for all 21 tools
-7. Dual persistence parity (SQLite & MongoDB)
+7. Dual persistence parity (SQLite & Supabase PostgreSQL)
 8. Opt-in live Google Routes API check.
 """
 
@@ -20,7 +20,7 @@ import httpx
 import routing
 import database
 import db_sqlite
-import db_mongo
+import db_supabase
 import tools
 import app
 
@@ -340,21 +340,19 @@ def test_reimbursement_management_tools():
 
 
 # =========================================================================
-# 6. MONGODB REPOSITORY PARITY TESTS (MOCKED)
+# 6. SUPABASE REPOSITORY PARITY TESTS
 # =========================================================================
 
-def test_mongo_repository_logistics_parity():
-    """Verify MongoRepository parity for reimbursement and GPS location history operations."""
-    repo = db_mongo.MongoRepository()
-    
-    mock_db = MagicMock()
-    repo._db = mock_db
+def test_supabase_repository_logistics_parity():
+    """Verify SupabaseRepository parity for reimbursement and GPS location history operations."""
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    repo = db_supabase.SupabaseRepository(connection_instance=conn)
+    repo.setup_database()
     
     # Reimbursement create
-    mock_reimb_col = MagicMock()
-    mock_db.__getitem__.side_effect = lambda name: mock_reimb_col if name == "reimbursements" else MagicMock()
-    
-    repo.create_reimbursement_record(
+    rec = repo.create_reimbursement_record(
         reimbursement_id="reimb-m-1",
         pickup_task_id="task-m-1",
         volunteer_id="v1",
@@ -363,20 +361,19 @@ def test_mongo_repository_logistics_parity():
         transport_mode="motorbike",
         amount=250.0
     )
-    mock_reimb_col.insert_one.assert_called_once()
+    assert rec["id"] == "reimb-m-1"
+    assert rec["amount"] == 250.0
     
     # Location history record
-    mock_loc_col = MagicMock()
-    mock_db.__getitem__.side_effect = lambda name: mock_loc_col if name == "pickup_location_history" else MagicMock()
-    
-    repo.record_pickup_location(
+    loc = repo.record_pickup_location(
         location_id="loc-m-1",
         pickup_task_id="task-m-1",
         volunteer_id="v1",
         latitude=6.9056,
         longitude=79.8519
     )
-    mock_loc_col.insert_one.assert_called_once()
+    assert loc["id"] == "loc-m-1"
+    assert loc["latitude"] == 6.9056
 
 
 # =========================================================================

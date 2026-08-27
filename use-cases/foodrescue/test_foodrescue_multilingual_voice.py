@@ -29,7 +29,9 @@ import voice_service
 def setup_test_environment():
     """Reset database and caches for clean test isolation."""
     whatsapp_handler.clear_processed_message_cache()
+    tools.clear_session_store()
     database.setup_database()
+    database.reset_database_data()
     database.seed_test_data()
     # Reset users table for test isolation
     repo = database.get_repository()
@@ -37,6 +39,8 @@ def setup_test_environment():
         conn = repo._get_connection()
         with conn:
             conn.execute("DELETE FROM users")
+            conn.execute("DELETE FROM organizations WHERE id IN ('org-test', 'org-test-dummy') OR phone LIKE '%94770000002%'")
+            conn.execute("DELETE FROM donors WHERE id IN ('d-test', 'd-test-dummy') OR phone LIKE '%94770000001%'")
         conn.close()
     elif hasattr(repo, "users_col"):
         repo.users_col.delete_many({})
@@ -401,6 +405,8 @@ def test_valsea_translation_api_resilient_fallback():
 async def test_persistent_language_across_multiple_conversation_turns_tamil():
     """Scenario 17: User switches to Tamil once, and all subsequent turns remain in Tamil."""
     phone = "94770000017"
+    database.clear_draft_donation(phone)
+    database.clear_user_conversation_state(phone)
 
     with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"status": "sent"}

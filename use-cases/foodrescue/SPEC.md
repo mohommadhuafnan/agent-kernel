@@ -421,49 +421,56 @@ sequenceDiagram
 | Variable | Description | Required |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | Gemini API Key for Coordinator LLM | Yes (Live mode) |
-| `FOODRESCUE_DB_BACKEND` | Persistence backend: `sqlite` (default) or `mongodb` | Optional |
-| `FOODRESCUE_DB_PATH` | Path to SQLite database file (default `foodrescue.db`) | Optional (SQLite) |
-| `MONGODB_URI` | MongoDB Atlas or server connection string | Required for MongoDB |
-| `MONGODB_DATABASE` | MongoDB database name (default `foodrescue`) | Optional (MongoDB) |
+| `FOODRESCUE_DATABASE` | Persistence backend: `supabase` (default) or `sqlite` | Optional |
+| `SUPABASE_DB_URL` | Supabase PostgreSQL pooled/direct connection URL | Required for Supabase |
+| `SUPABASE_KEY` | Supabase publishable/service key | Required for Supabase |
 
 ---
 
-## 12. Dual-Backend Persistence Layer (Phase 4)
+## 12. Supabase PostgreSQL Persistence Layer
 
-FoodRescue AI provides a pluggable repository architecture supporting both local **SQLite** and cloud **MongoDB** backends.
+FoodRescue AI provides a clean repository architecture featuring **Supabase PostgreSQL** as its primary production cloud database, with an in-memory/local SQLite fallback for offline unit testing.
 
 ### Architecture
 
 ```text
-               Agent Kernel Coordinator / 14 Operational Tools / REST API
+               Agent Kernel Coordinator / 48+ Domain Tools / REST API / WhatsApp
                                            │
                                            ▼
                         database.py (Public Delegation Facade)
                                            │
                      ┌─────────────────────┴─────────────────────┐
                      ▼                                           ▼
-             [sqlite backend]                            [mongodb backend]
-          SQLiteRepository (db_sqlite.py)             MongoRepository (db_mongo.py)
+             [sqlite backend]                            [supabase backend]
+          SQLiteRepository (db_sqlite.py)             SupabaseRepository (db_supabase.py)
                      │                                           │
                      ▼                                           ▼
-             SQLite (foodrescue.db)                  MongoDB (MONGODB_URI)
+             SQLite (foodrescue.db)                  Supabase (SUPABASE_DB_URL)
+                                                     PostgreSQL 17 Relational Schema
 ```
 
-### MongoDB Collection Schema & Indexes
+### Supabase Relational Schema (13 Tables)
 
-| Collection | Key Fields | Indexes Created |
+| Table | Key Fields | Primary Indexes & Constraints |
 | --- | --- | --- |
-| `donors` | `id`, `name`, `phone`, `organization_name`, `location`, `created_at` | `id` (unique), `location` |
-| `organizations` | `id`, `name`, `phone`, `service_area`, `accepted_food_types`, `capacity`, `availability`, `location`, `created_at` | `id` (unique), `service_area`, `location` |
-| `volunteers` | `id`, `name`, `phone`, `service_area`, `availability`, `current_status`, `location`, `created_at` | `id` (unique), `current_status`, `service_area`, `location` |
-| `donations` | `id`, `donor_id`, `food_type`, `quantity`, `unit`, `dietary_information`, `pickup_location`, `available_from`, `pickup_deadline`, `status`, `created_at`, `updated_at` | `id` (unique), `status`, `pickup_location`, `created_at` (desc) |
-| `pickup_tasks` | `id`, `donation_id`, `organization_id`, `volunteer_id`, `pickup_location`, `delivery_location`, `scheduled_time`, `status`, `created_at`, `updated_at` | `id` (unique), `donation_id`, `organization_id`, `volunteer_id`, `status`, `created_at` |
-| `notifications` | `id`, `recipient_type`, `recipient_id`, `message`, `channel`, `status`, `created_at` | `id` (unique), `recipient_id`, `created_at` (desc) |
+| `users` | `phone_number`, `display_name`, `role`, `preferred_language`, `conversation_state` | `phone_number` (PK, unique), `role` |
+| `donors` | `id`, `name`, `phone`, `organization_name`, `location`, `created_at` | `id` (PK), `phone`, `location` |
+| `organizations` | `id`, `name`, `phone`, `service_area`, `accepted_food_types`, `capacity`, `location` | `id` (PK), `phone`, `service_area`, `location` |
+| `volunteers` | `id`, `name`, `phone`, `service_area`, `transport_mode`, `availability_status`, `location` | `id` (PK), `phone`, `availability_status`, `transport_mode` |
+| `donations` | `id`, `donor_id`, `food_type`, `quantity`, `unit`, `dietary_information`, `status`, `pickup_deadline` | `id` (PK), `donor_id`, `status`, `pickup_deadline` |
+| `pickup_tasks` | `id`, `donation_id`, `organization_id`, `volunteer_id`, `status`, `total_distance_km` | `id` (PK), `donation_id`, `organization_id`, `volunteer_id`, `status` |
+| `qr_codes` | `id`, `task_id`, `donation_id`, `code_type`, `token`, `verification_hash`, `verified_at` | `id` (PK), `token` (unique), `task_id`, `code_type` |
+| `notifications` | `id`, `recipient_type`, `recipient_id`, `message`, `channel`, `status`, `created_at` | `id` (PK), `recipient_id`, `created_at` (desc) |
+| `audit_events` | `id`, `event_type`, `actor_role`, `actor_id`, `details`, `created_at` | `id` (PK), `event_type`, `created_at` (desc) |
+| `reimbursements` | `id`, `pickup_task_id`, `volunteer_id`, `distance_km`, `amount`, `status` | `id` (PK), `pickup_task_id`, `volunteer_id`, `status` |
+| `pickup_location_history` | `id`, `pickup_task_id`, `volunteer_id`, `latitude`, `longitude`, `recorded_at` | `id` (PK), `pickup_task_id`, `volunteer_id`, `recorded_at` |
+| `messages` | `id`, `phone_number`, `role`, `message_text`, `created_at` | `id` (PK), `phone_number`, `created_at` |
+| `system_settings` | `setting_key`, `setting_value`, `updated_at` | `setting_key` (PK) |
 
 ### Backend Selection
-Controlled via the `FOODRESCUE_DB_BACKEND` environment variable:
-- `FOODRESCUE_DB_BACKEND=sqlite` (Default)
-- `FOODRESCUE_DB_BACKEND=mongodb`
+Controlled via the `FOODRESCUE_DATABASE` environment variable:
+- `FOODRESCUE_DATABASE=supabase` (Default production)
+- `FOODRESCUE_DATABASE=sqlite` (Offline test execution)
 
 ---
 
@@ -522,7 +529,7 @@ RouteProvider (Abstract Interface)
 
 ### D. Volunteer Reimbursement Ledger Schema
 - SQLite Table: `reimbursements`
-- MongoDB Collection: `reimbursements`
+- Supabase PostgreSQL Table: `reimbursements`
 - Fields: `id`, `pickup_task_id`, `volunteer_id`, `distance_km`, `rate_per_km`, `transport_mode`, `amount`, `currency`, `status`, `created_at`, `approved_at`, `paid_at`, `notes`.
 - Status Lifecycle: `PENDING` ➔ `APPROVED` ➔ `PAID` (or `CANCELLED`).
 - **Non-Payment Guarantee**: The reimbursement system is strictly an internal civic accounting ledger; it processes no credit cards, bank transfers, or monetary payouts.
