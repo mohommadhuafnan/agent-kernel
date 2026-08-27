@@ -300,7 +300,7 @@ class MongoRepository(BaseRepository):
         docs = self._clean_docs(list(self.donors_col.find({})))
         for d in docs:
             d_digits = self._normalize_phone(d.get("phone", ""))
-            if d_digits and norm_digits and (d_digits == norm_digits or d_digits.endswith(norm_digits) or norm_digits.endswith(d_digits)):
+            if d_digits and norm_digits and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:])):
                 return d
         return None
 
@@ -335,7 +335,7 @@ class MongoRepository(BaseRepository):
         docs = self._clean_docs(list(self.organizations_col.find({})))
         for o in docs:
             o_digits = self._normalize_phone(o.get("phone", ""))
-            if o_digits and norm_digits and (o_digits == norm_digits or o_digits.endswith(norm_digits) or norm_digits.endswith(o_digits)):
+            if o_digits and norm_digits and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:])):
                 return o
         return None
 
@@ -408,7 +408,7 @@ class MongoRepository(BaseRepository):
         docs = self._clean_docs(list(self.volunteers_col.find({})))
         for v in docs:
             v_digits = self._normalize_phone(v.get("phone", ""))
-            if v_digits and norm_digits and (v_digits == norm_digits or v_digits.endswith(norm_digits) or norm_digits.endswith(v_digits)):
+            if v_digits and norm_digits and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:])):
                 return v
         return None
 

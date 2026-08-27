@@ -305,3 +305,222 @@ def test_permanent_record_deletion_across_repositories():
     assert database.get_user_by_phone("94779993333") is not None
     assert database.delete_user_record("94779993333") is True
     assert database.get_user_by_phone("94779993333") is None
+
+
+# ==========================================
+# 7. SECTION 30 COMPREHENSIVE ISOLATION SUITE (Tests A - J)
+# ==========================================
+
+@pytest.mark.asyncio
+async def test_section_30_test_a_donor_isolation():
+    """Test A: Donor A's food/name/quantity cannot appear in another user session."""
+    phone_a = "94778880001"
+    phone_x = "94778880009"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Donor A registers a draft
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_a, "id": "m.a1", "type": "text", "text": {"body": "I have 50 boxes of Chicken Biryani in Kegalle"}
+        })
+        draft_a = database.get_draft_donation(phone_a)
+        assert draft_a is not None
+        assert "biryani" in draft_a["food_type"].lower()
+        assert float(draft_a["quantity"]) == 50.0
+
+        # User X starts fresh interaction
+        res_x = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_x, "id": "m.x1", "type": "text", "text": {"body": "Hi"}
+        })
+        draft_x = database.get_draft_donation(phone_x)
+        assert draft_x is None or draft_x == {}
+        assert "biryani" not in res_x["reply"].lower()
+        assert "50" not in res_x["reply"]
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_b_organization_isolation():
+    """Test B: Organization A's name/requirements cannot appear in another user session."""
+    phone_b = "94778880002"
+    phone_y = "94778880008"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Org B registers
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_b, "id": "m.b1", "type": "text", "text": {"body": "2"}
+        })
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_b, "id": "m.b2", "type": "text", "text": {"body": "Mawanella Hope Shelter"}
+        })
+        org_b = database.get_organization_by_phone(phone_b)
+        state_b = database.get_user_conversation_state(phone_b)
+        assert (org_b and "Hope Shelter" in org_b["name"]) or ("Hope Shelter" in state_b.get("org_name", ""))
+
+        # User Y starts volunteer registration
+        res_y = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_y, "id": "m.y1", "type": "text", "text": {"body": "3"}
+        })
+        assert "Hope Shelter" not in res_y["reply"]
+        assert "Mawanella Hope Shelter" not in res_y["reply"]
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_c_volunteer_isolation():
+    """Test C: Volunteer A's name/vehicle/location cannot appear in another user session."""
+    phone_c = "94778880003"
+    phone_z = "94778880007"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Volunteer C registers
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_c, "id": "m.c1", "type": "text", "text": {"body": "3"}
+        })
+        res_c2 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_c, "id": "m.c2", "type": "text", "text": {"body": "Afnab"}
+        })
+        # Volunteer C must get vehicle question, NEVER organization question!
+        assert "Afnab" in res_c2["reply"]
+        assert "vehicle" in res_c2["reply"].lower()
+        assert "Hope Food" not in res_c2["reply"]
+        assert "portions / meals per day" not in res_c2["reply"]
+
+        # User Z sends '1' for donation
+        res_z = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone_z, "id": "m.z1", "type": "text", "text": {"body": "1"}
+        })
+        assert "Afnab" not in res_z["reply"]
+        assert "Food" in res_z["reply"]
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_d_interleaved_conversations():
+    """Test D: Three users can communicate at the same time in interleaved order without contamination."""
+    phone_d1 = "94778880011"
+    phone_d2 = "94778880012"
+    phone_d3 = "94778880013"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Interleaved step 1: All 3 choose role
+        r1 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d1, "id": "i.1", "type": "text", "text": {"body": "1"}})
+        r2 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d2, "id": "i.2", "type": "text", "text": {"body": "2"}})
+        r3 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d3, "id": "i.3", "type": "text", "text": {"body": "3"}})
+
+        assert "food" in r1["reply"].lower()
+        assert "organization" in r2["reply"].lower() or "name" in r2["reply"].lower()
+        assert "full name" in r3["reply"].lower() or "volunteer" in r3["reply"].lower()
+
+        # Interleaved step 2: User 1 gives food, User 3 gives name, User 2 gives org name
+        r1_2 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d1, "id": "i.4", "type": "text", "text": {"body": "Chicken Biryani"}})
+        r3_2 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d3, "id": "i.5", "type": "text", "text": {"body": "Afnab"}})
+        r2_2 = await whatsapp_handler.process_incoming_whatsapp_message({"from": phone_d2, "id": "i.6", "type": "text", "text": {"body": "Sunshine Shelter"}})
+
+        assert "quantity" in r1_2["reply"].lower() or "packets" in r1_2["reply"].lower() or "how many" in r1_2["reply"].lower()
+        assert "vehicle" in r3_2["reply"].lower() and "Afnab" in r3_2["reply"]
+        assert "district" in r2_2["reply"].lower() and "Sunshine Shelter" in r2_2["reply"]
+
+
+def test_section_30_test_e_database_deletion_empty_state():
+    """Test E: Delete all records -> Database and queries return zero."""
+    database.reset_database_data(wipe_all=True)
+
+    assert len(database.get_all_donations()) == 0
+    assert len(database.get_all_organizations()) == 0
+    assert len(database.get_all_volunteers()) == 0
+    assert len(database.get_all_pickup_tasks()) == 0
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_f_fresh_conversation():
+    """Test F: A new WhatsApp number must never inherit an old conversation."""
+    old_phone = "94778880021"
+    new_phone = "94778880022"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Old phone sets state
+        await whatsapp_handler.process_incoming_whatsapp_message({"from": old_phone, "id": "f.1", "type": "text", "text": {"body": "1"}})
+        await whatsapp_handler.process_incoming_whatsapp_message({"from": old_phone, "id": "f.2", "type": "text", "text": {"body": "Kottu Roti"}})
+
+        # New phone sends 'Hi'
+        res = await whatsapp_handler.process_incoming_whatsapp_message({"from": new_phone, "id": "f.3", "type": "text", "text": {"body": "Hi"}})
+        assert "Kottu" not in res["reply"]
+        assert "Welcome to FoodRescue AI" in res["reply"] or "FoodRescue AI" in res["reply"]
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_g_existing_user_preservation():
+    """Test G: A registered user resumes only their own role and state."""
+    reg_phone = "94778880031"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        database.create_or_update_user(phone=reg_phone, display_name="Kasun Volunteer", user_role="volunteer", onboarding_completed=True, default_location="Kegalle")
+        database.create_volunteer_record(volunteer_id="v-reg-1", name="Kasun Volunteer", phone=reg_phone, service_area="Kegalle", transport_mode="Motorbike")
+
+        res = await whatsapp_handler.process_incoming_whatsapp_message({"from": reg_phone, "id": "g.1", "type": "text", "text": {"body": "Hi"}})
+        assert "volunteer" in res["reply"].lower() or "available" in res["reply"].lower() or "active" in res["reply"].lower() or "welcome" in res["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_section_30_test_h_user_input_preservation():
+    """Test H: '30 packets of Chicken Biryani' preserves exact food, quantity, and unit."""
+    phone = "94778880041"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": phone, "id": "h.1", "type": "text", "text": {"body": "30 packets of Chicken Biryani"}
+        })
+
+        draft = database.get_draft_donation(phone)
+        assert draft is not None
+        assert "biryani" in draft["food_type"].lower()
+        assert float(draft["quantity"]) == 30.0
+        assert draft.get("unit") in ["packets", "portions", "boxes"]
+
+
+def test_section_30_test_i_location_isolation():
+    """Test I: Donor GPS must never appear as Organization GPS."""
+    database.create_donor_record(donor_id="d-loc-1", name="Donor Loc", phone="94778880051", location="Kegalle")
+    database.create_organization_record(org_id="o-loc-1", name="Org Loc", phone="94778880052", service_area="Colombo", accepted_food_types="Meals", location="Colombo")
+
+    d = database.get_donor_record("d-loc-1")
+    o = database.get_organization_record("o-loc-1")
+
+    assert d["location"] != o["location"]
+    assert "Kegalle" in d["location"]
+    assert "Colombo" in o["location"]
+
+
+def test_section_30_test_j_dynamic_routing():
+    """Test J: Dynamic road distance calculation with actual coordinates."""
+    # Kegalle to Mawanella coordinates (~11.6 km Haversine / ~14 km road distance)
+    kegalle_coords = {"latitude": 7.2513, "longitude": 80.3464}
+    mawanella_coords = {"latitude": 7.2536, "longitude": 80.4447}
+
+    dist_km = routing.calculate_haversine_distance(
+        kegalle_coords["latitude"],
+        kegalle_coords["longitude"],
+        mawanella_coords["latitude"],
+        mawanella_coords["longitude"]
+    )
+    assert dist_km is not None
+    assert float(dist_km) > 5.0
+    assert float(dist_km) < 25.0
+
+    # Calculate dynamic transport reimbursement for Motorbike
+    reimb = routing.calculate_transport_estimate(distance_km=dist_km, transport_mode="motorbike")
+    assert reimb["status"] == "success"
+    assert reimb["currency"] == "LKR"
+    assert reimb["estimated_support_amount"] > 0
+

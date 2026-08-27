@@ -1291,6 +1291,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         ]
     ) and not any(v in clean_p for v in ["available to volunteer", "volunteer to deliver", "deliver food", "help with pickups", "for pickups"])
 
+    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    in_vol_workflow = (curr_state.get("workflow") in ["VOLUNTEER_REGISTRATION", "VOLUNTEER"]) or (user and user.get("user_role") == "volunteer")
+
     is_vol_standalone_avail = (
         clean_p in [
             "available",
@@ -1447,11 +1450,17 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         vol_vehicle = (existing_vol.get("transport_mode") if existing_vol else None) or curr_state.get("vol_vehicle")
         vol_loc = (existing_vol.get("service_area") if existing_vol else None) or curr_state.get("vol_loc") or curr_state.get("vol_district")
 
+        # If user explicitly sent menu option '3', start fresh volunteer registration
+        if clean_p == "3":
+            vol_name = None
+            vol_vehicle = None
+            vol_loc = None
+
         # Extract Volunteer Name
         v_name_match = re.search(r"(?:my\s*name\s*is|name\s*:|i\s*am)\s*([a-zA-Z\s]+)", prompt, re.IGNORECASE)
         if v_name_match and "kamal hotel" not in clean_p:
             vol_name = v_name_match.group(1).strip()
-        elif curr_state.get("expected_input_type") == "VOL_NAME" and len(clean_p.split()) <= 4:
+        elif curr_state.get("expected_input_type") == "VOL_NAME" and len(clean_p.split()) <= 4 and not prompt.strip().isdigit() and clean_p != "3":
             vol_name = prompt.strip().title()
 
         # Extract Vehicle / Transport Mode
@@ -1463,17 +1472,16 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             vol_vehicle = "Car"
         elif "van" in clean_p or "වෑන්" in clean_p or "வேன்" in clean_p:
             vol_vehicle = "Van"
-        elif "bicycle" in clean_p or "පාපැදි" in clean_p or "மிதிவண்டி" in clean_p:
+        elif "bicycle" in clean_p or "පාපැදි" in clean_p or "மிதிවண்டி" in clean_p:
             vol_vehicle = "Bicycle"
-        elif curr_state.get("expected_input_type") == "VOL_VEHICLE" and len(clean_p.split()) <= 3:
+        elif curr_state.get("expected_input_type") == "VOL_VEHICLE" and len(clean_p.split()) <= 3 and not prompt.strip().isdigit():
             vol_vehicle = prompt.strip().title()
 
         # Extract District / Location
-
         v_dist_resolved = routing.resolve_district(prompt)
         if v_dist_resolved:
             vol_loc = v_dist_resolved
-        elif curr_state.get("expected_input_type") in ["VOL_DISTRICT", "VOL_CITY"] and len(clean_p.split()) <= 4:
+        elif curr_state.get("expected_input_type") in ["VOL_DISTRICT", "VOL_CITY"] and len(clean_p.split()) <= 4 and not prompt.strip().isdigit():
             vol_loc = routing.resolve_district(prompt) or prompt.strip().title()
 
         # Check if volunteer has provided live location or ready to complete
@@ -1481,9 +1489,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
 
         # If name, vehicle, and district are present:
         if (
-            (vol_name or existing_vol)
-            and (vol_vehicle or (existing_vol and existing_vol.get("transport_mode")))
-            and (vol_loc or (existing_vol and existing_vol.get("service_area")))
+            (vol_name or (existing_vol and clean_p != "3"))
+            and (vol_vehicle or (existing_vol and existing_vol.get("transport_mode") and clean_p != "3"))
+            and (vol_loc or (existing_vol and existing_vol.get("service_area") and clean_p != "3"))
         ):
             final_vol_name = vol_name or (existing_vol.get("name") if existing_vol else "Volunteer Courier")
             final_vol_veh = vol_vehicle or (existing_vol.get("transport_mode") if existing_vol else "Three-Wheeler")
@@ -1629,14 +1637,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             "food for our",
             "for our shelter",
             "organization name:",
-            "hope food home",
-            "hope food",
             "charity",
             "feeding people",
         ]
     )
     curr_state = database.get_user_conversation_state(phone) if phone else {}
-    in_org_workflow = curr_state.get("workflow") == "RECIPIENT_REQUEST"
+    in_org_workflow = (curr_state.get("workflow") == "RECIPIENT_REQUEST") or (user and user.get("user_role") == "organization")
 
     if (is_org_inventory_query or is_org_menu_opt or is_org_intent or in_org_workflow) and not (
         clean_p in ["hi", "hello", "hey", "menu", "start"] and not in_org_workflow
@@ -1676,13 +1682,18 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         org_cap = (existing_org.get("capacity") if existing_org else None) or curr_state.get("org_capacity")
         food_needed = curr_state.get("food_needed")
 
+        # If user explicitly sent menu option '2', start fresh recipient request
+        if clean_p == "2":
+            org_name = None
+            org_loc = None
+            org_cap = None
+            food_needed = None
+
         # Extract Organization Name
         name_match = re.search(r"(?:organization\s*(?:name)?|name)\s*:\s*([^\n\r,]+)", prompt, re.IGNORECASE)
         if name_match:
             org_name = name_match.group(1).strip()
-        elif "hope food home" in clean_p or "hope food" in clean_p:
-            org_name = "Hope Food Home"
-        elif curr_state.get("expected_input_type") == "ORG_NAME" and len(clean_p.split()) <= 6 and not is_org_intent:
+        elif curr_state.get("expected_input_type") == "ORG_NAME" and len(clean_p.split()) <= 6 and clean_p != "2" and not prompt.strip().isdigit():
             org_name = prompt.strip()
 
         # Extract District / Location

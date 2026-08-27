@@ -569,7 +569,7 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM donors")
         for d in rows:
             d_digits = self._normalize_phone(d.get("phone", ""))
-            if d_digits and norm_digits and (d_digits == norm_digits or d_digits.endswith(norm_digits) or norm_digits.endswith(d_digits)):
+            if d_digits and norm_digits and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:])):
                 return d
         return None
 
@@ -603,7 +603,7 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM organizations")
         for o in rows:
             o_digits = self._normalize_phone(o.get("phone", ""))
-            if o_digits and norm_digits and (o_digits == norm_digits or o_digits.endswith(norm_digits) or norm_digits.endswith(o_digits)):
+            if o_digits and norm_digits and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:])):
                 return o
         return None
 
@@ -688,7 +688,7 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM volunteers")
         for v in rows:
             v_digits = self._normalize_phone(v.get("phone", ""))
-            if v_digits and norm_digits and (v_digits == norm_digits or v_digits.endswith(norm_digits) or norm_digits.endswith(v_digits)):
+            if v_digits and norm_digits and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:])):
                 if v.get("current_coordinates"):
                     v["current_coordinates"] = self._json_loads(v["current_coordinates"])
                 return v
@@ -700,27 +700,24 @@ class SupabaseRepository(BaseRepository):
         name: str,
         phone: str,
         service_area: str,
-        transport_mode: str = "Motorbike",
-        availability: str = "immediate, evenings",
-        current_status: str = "available",
+        transport_mode: Optional[str] = "Motorbike",
+        availability: Optional[str] = "available",
+        current_status: Optional[str] = "available",
         location: Optional[str] = None
     ) -> Dict[str, Any]:
         now = self._now()
+        mode = transport_mode or "Motorbike"
         loc = location or service_area.split(",")[0].strip()
-        existing = self.get_volunteer_record(volunteer_id)
-        if existing:
-            self._execute(
-                "UPDATE volunteers SET name = %s, phone = %s, service_area = %s, transport_mode = %s, "
-                "availability = %s, current_status = %s, location = %s WHERE id = %s",
-                (name, phone, service_area, transport_mode, availability, current_status, loc, volunteer_id)
-            )
-        else:
-            self._execute(
-                "INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, availability_status, location, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (volunteer_id, name, phone, service_area, transport_mode, availability, current_status, "AVAILABLE", loc, now)
-            )
-        return self.get_volunteer_record(volunteer_id) or {}
+        self._execute(
+            "INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability_status, current_status, location, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (volunteer_id, name, phone, service_area, mode, availability or "available", current_status or "available", loc, now)
+        )
+        return self.get_volunteer_record(volunteer_id) or {
+            "id": volunteer_id, "name": name, "phone": phone, "service_area": service_area,
+            "transport_mode": mode, "availability_status": availability, "current_status": current_status,
+            "location": loc, "created_at": now
+        }
 
     def update_volunteer_record(
         self,
@@ -731,7 +728,7 @@ class SupabaseRepository(BaseRepository):
         transport_mode: Optional[str] = None,
         availability: Optional[str] = None,
         current_status: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         fields = []
         params = []
@@ -740,7 +737,7 @@ class SupabaseRepository(BaseRepository):
             params.append(name)
         if phone is not None:
             fields.append("phone = %s")
-            params.append(self._normalize_phone(phone))
+            params.append(phone)
         if service_area is not None:
             fields.append("service_area = %s")
             params.append(service_area)
@@ -748,7 +745,7 @@ class SupabaseRepository(BaseRepository):
             fields.append("transport_mode = %s")
             params.append(transport_mode)
         if availability is not None:
-            fields.append("availability = %s")
+            fields.append("availability_status = %s")
             params.append(availability)
         if current_status is not None:
             fields.append("current_status = %s")
@@ -1400,7 +1397,7 @@ class SupabaseRepository(BaseRepository):
             all_users = self._fetchall("SELECT * FROM users")
             for u in all_users:
                 u_norm = self._normalize_phone(u.get("phone_number", ""))
-                if u_norm and (u_norm == norm or u_norm.endswith(norm) or norm.endswith(u_norm) or (len(u_norm) >= 9 and len(norm) >= 9 and u_norm[-9:] == norm[-9:])):
+                if u_norm and (u_norm == norm or (len(u_norm) >= 9 and len(norm) >= 9 and u_norm[-9:] == norm[-9:])):
                     row = u
                     break
 
