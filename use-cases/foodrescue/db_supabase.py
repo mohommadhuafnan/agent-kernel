@@ -108,15 +108,28 @@ class SupabaseRepository(BaseRepository):
         try:
             import pg8000.native
             import urllib.parse
+            import ssl
             parsed = urllib.parse.urlparse(clean_url)
-            conn = pg8000.native.Connection(
-                user=parsed.username or "postgres",
-                password=parsed.password or "",
-                host=parsed.hostname or "localhost",
-                port=parsed.port or 5432,
-                database=parsed.path.lstrip("/") or "postgres",
-                ssl_context=True if ("supabase.co" in (parsed.hostname or "") or parsed.port == 5432 or parsed.port == 6543) else None
-            )
+            unquoted_pw = urllib.parse.unquote(parsed.password or "") if parsed.password else ""
+            use_ssl = True if ("supabase" in (parsed.hostname or "") or parsed.port in [5432, 6543]) else None
+            try:
+                conn = pg8000.native.Connection(
+                    user=parsed.username or "postgres",
+                    password=unquoted_pw,
+                    host=parsed.hostname or "localhost",
+                    port=parsed.port or 5432,
+                    database=parsed.path.lstrip("/") or "postgres",
+                    ssl_context=ssl.create_default_context() if use_ssl else None
+                )
+            except Exception:
+                conn = pg8000.native.Connection(
+                    user=parsed.username or "postgres",
+                    password=unquoted_pw,
+                    host=parsed.hostname or "localhost",
+                    port=parsed.port or 5432,
+                    database=parsed.path.lstrip("/") or "postgres",
+                    ssl_context=True if use_ssl else None
+                )
             self._connection = conn
             return self._connection
         except Exception as e:

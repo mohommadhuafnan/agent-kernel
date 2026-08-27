@@ -6,6 +6,7 @@ uvicorn>=0.52.0
 psycopg2-binary>=2.9.12
 psycopg[binary]>=3.3.4
 pg8000>=1.31.5
+sqlalchemy>=2.0.0
 supabase>=2.31.0
 postgrest>=2.31.0
 pydantic>=2.13.0
