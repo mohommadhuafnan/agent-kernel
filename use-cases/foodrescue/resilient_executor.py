@@ -2049,9 +2049,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     if curr_q == "DONOR_NAME" or expected_type == "NAME":
         cand_name = prompt.strip()
         dist_cand = routing.resolve_district(cand_name)
-        if dist_cand:
-            # User answered location instead of name
-            loc_val = cand_name.title() if ("colombo" in cand_name.lower() or dist_cand.lower() in cand_name.lower()) else dist_cand
+        if dist_cand and len(cand_name.split()) == 1 and cand_name.lower() == dist_cand.lower():
+            # User answered pure location instead of name e.g. "Colombo"
+            loc_val = cand_name.title()
             draft_update = {"city": loc_val, "location": loc_val, "district": dist_cand}
             if not existing_draft.get("donor_name"):
                 draft_update["donor_name"] = "Donor Partner"
@@ -2303,14 +2303,14 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     unit_val = existing_draft.get("unit", "packets")
     donor_name_val = (
         existing_draft.get("donor_name")
-        or (donor.get("name") if donor else None)
+        or (donor_rec.get("name") if donor_rec else None)
         or (user.get("display_name") if user and not user.get("display_name", "").startswith("User_") else None)
     )
     business_name_val = existing_draft.get("business_name") or donor_name_val
     city_val = (
         existing_draft.get("city")
         or existing_draft.get("location")
-        or (donor.get("location") if donor else None)
+        or (donor_rec.get("location") if donor_rec else None)
         or (user.get("default_location") if user else None)
         or (user.get("location") if user else None)
         or (user.get("city") if user else None)
