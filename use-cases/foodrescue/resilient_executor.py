@@ -2530,9 +2530,32 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
     # Check if there is an active workflow, draft, or domain intent
     active_draft = database.get_draft_donation(phone) if phone else None
     conv_state = database.get_user_conversation_state(phone) if phone else {}
+    curr_q = conv_state.get("current_question", "")
+    expected_type = conv_state.get("expected_input_type", "")
     has_active_state = bool(
         (active_draft and active_draft.get("food_type")) or conv_state.get("workflow") in ["DONATION", "VOLUNTEER", "RECIPIENT", "LANGUAGE"]
     )
+
+    # Detect explicit user questions or general information requests
+    is_explicit_question = (
+        "?" in prompt
+        or any(
+            clean_p.startswith(qw)
+            for qw in [
+                "what", "how", "why", "when", "where", "who", "which", "can i", "can we",
+                "is there", "do you", "could", "tell me", "explain", "help with", "info",
+                "mokakda", "kohomada", "enna", "eppadi"
+            ]
+        )
+        or any(
+            kw in clean_p
+            for kw in [
+                "safety guidelines", "food safety", "reimbursement", "policy", "how does",
+                "what is", "tell me about", "who delivers", "how to get", "can i donate",
+                "how to volunteer", "guidelines"
+            ]
+        )
+    ) and clean_p not in ["1", "2", "3", "4", "5", "6", "yes", "no", "ok", "confirm", "accept", "reject", "collected", "delivered"]
 
     is_greeting = translation_service.is_greeting_message(clean_p)
     if is_greeting and not has_active_state:
@@ -2545,6 +2568,11 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
             "model_used": "stateful_coordinator_engine",
             "session_id": session_id,
         }
+
+    is_action_command = clean_p in [
+        "1", "2", "3", "4", "5", "6", "yes", "no", "ok", "confirm", "accept", "reject",
+        "collected", "delivered", "donate", "volunteer", "request food"
+    ] or (has_active_state and not is_explicit_question)
 
     is_domain_intent = (
         any(
@@ -2604,16 +2632,14 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
                 "kamal",
                 "three-wheeler",
                 "three wheeler",
-                "three wheeler",
                 "motorbike",
                 "car",
             ]
         )
-        or clean_p in ["1", "2", "3", "4", "5", "6", "yes", "no", "ok", "confirm", "accept", "reject", "collected", "delivered"]
-        or len(clean_p.split()) <= 4
+        or is_action_command
     )
 
-    if has_active_state or is_domain_intent:
+    if (has_active_state and not is_explicit_question) or (is_domain_intent and not is_explicit_question):
         logger.info(f"[Stateful Engine] Executing stateful coordinator for session '{session_id}' with prompt: '{prompt[:60]}'")
         fallback_result = await execute_deterministic_fallback(prompt, session_id)
         return {
@@ -2638,7 +2664,7 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
     for model_name in model_candidates:
         try:
             logger.info(f"[Resilient Run] Executing '{agent_name}' with model '{model_name}' for session '{session_id}'")
-            # Inject user role context so Gemini never confuses role perspective
+            # Inject user role context so Gemini answers from the exact role perspective
             user_obj = database.get_user_by_phone(phone) if phone else None
             org_obj = database.get_organization_by_phone(phone) if phone else None
             vol_obj = database.get_volunteer_by_phone(phone) if phone else None
@@ -2646,17 +2672,20 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
 
             role_ctx = ""
             if org_obj or (user_obj and user_obj.get("user_role") == "organization"):
-                o_name = (org_obj.get("name") if org_obj else None) or (user_obj.get("display_name") if user_obj else "Recipient Organization")
-                o_loc = (org_obj.get("location") if org_obj else None) or (user_obj.get("default_location") if user_obj else "Sri Lanka")
-                role_ctx = f"[User Role: Recipient Organization ({o_name}), Location: {o_loc}] "
+                o_name = (org_obj.get("name") if org_obj else None) or (user_obj.get("display_name") if user_obj else None) or "Recipient Organization"
+                o_loc = (org_obj.get("location") if org_obj else None) or (user_obj.get("default_location") if user_obj else None) or "Sri Lanka"
+                role_ctx = f"[User Context: Recipient Organization '{o_name}', Location: {o_loc}. Answer as FoodRescue AI coordinator assisting this recipient organization with surplus food requests, portion capacity, incoming delivery tracking, and QR handover verification.] "
             elif vol_obj or (user_obj and user_obj.get("user_role") == "volunteer"):
-                v_name = (vol_obj.get("name") if vol_obj else None) or (user_obj.get("display_name") if user_obj else "Volunteer Courier")
-                v_area = (vol_obj.get("service_area") if vol_obj else None) or (user_obj.get("default_location") if user_obj else "Sri Lanka")
-                v_veh = (vol_obj.get("transport_mode") if vol_obj else None) or "Motorbike"
-                role_ctx = f"[User Role: Volunteer Courier ({v_name}), Vehicle: {v_veh}, Service Area: {v_area}] "
+                v_name = (vol_obj.get("name") if vol_obj else None) or (user_obj.get("display_name") if user_obj else None) or "Volunteer Courier"
+                v_area = (vol_obj.get("service_area") if vol_obj else None) or (user_obj.get("default_location") if user_obj else None) or "Sri Lanka"
+                v_veh = (vol_obj.get("transport_mode") if vol_obj else None) or "Three-Wheeler / Motorbike"
+                role_ctx = f"[User Context: Volunteer Courier '{v_name}', Vehicle: {v_veh}, Service Area: {v_area}. Answer as FoodRescue AI coordinator assisting this courier with available pickup tasks, dynamic turn-by-turn road routing, transport support reimbursement, and QR scanning handover.] "
             elif donor_obj or (user_obj and user_obj.get("user_role") == "donor"):
-                d_name = (donor_obj.get("name") if donor_obj else None) or (user_obj.get("display_name") if user_obj else "Donor")
-                role_ctx = f"[User Role: Food Donor Partner ({d_name})] "
+                d_name = (donor_obj.get("name") if donor_obj else None) or (user_obj.get("display_name") if user_obj else None) or "Food Donor Partner"
+                d_loc = (donor_obj.get("location") if donor_obj else None) or (user_obj.get("default_location") if user_obj else None) or "Sri Lanka"
+                role_ctx = f"[User Context: Food Donor Partner '{d_name}', Location: {d_loc}. Answer as FoodRescue AI coordinator assisting this donor with surplus meal donations, food safety guidelines, pickup deadlines, and courier dispatch.] "
+            else:
+                role_ctx = "[User Context: General User. Answer as FoodRescue AI coordinator explaining surplus food donation, volunteer delivery courier roles, and recipient organization registration in Sri Lanka.] "
 
             full_prompt = f"{role_ctx}{prompt}" if role_ctx and not prompt.startswith("[User Role:") else prompt
             req = BaseChatRequest(agent=agent_name, prompt=full_prompt, session_id=session_id)

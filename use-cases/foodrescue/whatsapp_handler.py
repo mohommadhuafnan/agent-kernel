@@ -255,15 +255,17 @@ async def send_whatsapp_image(
             return await send_whatsapp_message(to_number=clean_to, text=fallback_text)
 
 
-# In-memory LRU/dedup set for processed Meta message IDs (prevents double processing of retried webhook deliveries)
+# In-memory bounded FIFO dedup cache for processed Meta message IDs
+from collections import deque
 PROCESSED_MESSAGE_IDS: set = set()
-MAX_DEDUP_CACHE_SIZE = 10000
+PROCESSED_MESSAGE_QUEUE: deque = deque(maxlen=5000)
 
 
 def clear_processed_message_cache() -> None:
     """Clear the processed message ID dedup cache (used in testing)."""
-    global PROCESSED_MESSAGE_IDS
+    global PROCESSED_MESSAGE_IDS, PROCESSED_MESSAGE_QUEUE
     PROCESSED_MESSAGE_IDS.clear()
+    PROCESSED_MESSAGE_QUEUE.clear()
 
 
 async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: str, from_number: str) -> None:
@@ -799,7 +801,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception as e:
                     logger.warning(f"Failed to send donor org accepted notification: {e}")
 
-            # Search available volunteers in this district and broadcast/offer
+            # Search best available volunteer in this district to offer the pickup task
             all_vols = database.get_all_volunteers()
             dist_vols = [
                 v
@@ -813,7 +815,9 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             ]
             import resilient_executor
 
-            for vol in dist_vols:
+            if dist_vols:
+                # Offer task to the first available district volunteer
+                vol = dist_vols[0]
                 v_phone = vol.get("phone")
                 if v_phone and v_phone != from_number and v_phone != org_phone and v_phone != donor_phone:
                     v_user = database.get_user_by_phone(v_phone)
@@ -841,7 +845,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
     # 6. Organization Match Proposed to Donor or Matched
     elif any(w in reply_text.lower() for w in ["matched an organization", "connected to", "we found a recipient organization", "found an available food match"]):
-        curr_state = database.get_user_conversation_state(from_number)
+        curr_state = database.get_user_conversation_state(from_number) or {}
         match_org_id = curr_state.get("matched_org_id")
         if match_org_id:
             org = database.get_organization_record(match_org_id)
@@ -860,52 +864,6 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
                     logger.warning(f"Failed to send waiting organization match notification: {e}")
-        else:
-            org = database.get_organization_by_phone(from_number)
-            org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
-            org_dist = (org.get("service_area") or org.get("location") or "Kegalle") if org else "Kegalle"
-            import routing
-
-            clean_dist = routing.resolve_district(org_dist) or "Kegalle"
-
-            all_dons = database.get_all_donations()
-            active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_ASSIGNED", "PICKUP_PENDING"]]
-            district_dons = [
-                d for d in active_dons
-                if routing.resolve_district(d.get("pickup_location") or d.get("location") or "") == clean_dist
-            ]
-            if not district_dons:
-                district_dons = active_dons
-
-            if district_dons:
-                top_don = district_dons[-1]
-                donor = database.get_donor_record(top_don.get("donor_id", "")) if top_don else None
-                donor_phone = donor.get("phone") if donor else (top_don.get("donor_phone") if top_don else None)
-                if not donor_phone and top_don.get("donor_id"):
-                    donor_user = database.get_user_by_phone(top_don.get("donor_id"))
-                    if donor_user:
-                        donor_phone = donor_user.get("phone")
-
-                if donor_phone and donor_phone != from_number:
-                    donor_user = database.get_user_by_phone(donor_phone)
-                    d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
-                    food_info = _format_food_info(top_don)
-                    d_msg = translation_service.get_localized_message(
-                        "org_matched_notify_donor",
-                        lang=d_lang,
-                        donation_id=top_don.get("id"),
-                        district=clean_dist,
-                        org_name=org_name,
-                        org_location=org.get("location", clean_dist) if org else clean_dist,
-                        org_capacity=org.get("capacity", "As needed") if org else "As needed",
-                        org_accepted_food=org.get("accepted_food_types", "Prepared meals") if org else "Prepared meals",
-                        org_phone=from_number,
-                        food_info=food_info,
-                    )
-                    try:
-                        await send_whatsapp_message(to_number=donor_phone, text=d_msg)
-                    except Exception as e:
-                        logger.warning(f"Failed to send WhatsApp donor matched notification: {e}")
 
 
 
@@ -1143,9 +1101,10 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             logger.info(f"Ignoring duplicate WhatsApp message '{message_id}' from '{from_number}'")
             return {"status": "ignored", "reason": "duplicate_message_id", "message_id": message_id}
 
-        # Add to processed set (bound size to prevent unbounded memory growth)
-        if len(PROCESSED_MESSAGE_IDS) >= MAX_DEDUP_CACHE_SIZE:
-            PROCESSED_MESSAGE_IDS.clear()
+        if len(PROCESSED_MESSAGE_QUEUE) == PROCESSED_MESSAGE_QUEUE.maxlen:
+            old_id = PROCESSED_MESSAGE_QUEUE.popleft()
+            PROCESSED_MESSAGE_IDS.discard(old_id)
+        PROCESSED_MESSAGE_QUEUE.append(message_id)
         PROCESSED_MESSAGE_IDS.add(message_id)
 
     # Stable session ID derived from WhatsApp sender identity
