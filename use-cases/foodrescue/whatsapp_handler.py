@@ -578,6 +578,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             don_id = target_task.get("donation_id")
             don = database.get_donation_record(don_id) if don_id else None
             donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+            donor_name = donor.get("name") if donor else (don.get("donor_name") if don else "Donor Partner")
             org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
 
@@ -606,7 +607,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             verif_url = qr_service.build_verification_url("PICKUP", pk_token)
             qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
 
-            # 1. Notify Donor with Pickup QR Image & Instructions (No verification URL link in chat)
+            # 1. Notify Donor with Pickup QR Image & Instructions
             donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
             if donor_phone:
                 donor_user = database.get_user_by_phone(donor_phone)
@@ -629,19 +630,30 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception:
                     pass
 
-            # 2. Notify Recipient Organization
+            # 2. Notify Recipient Organization to approve/confirm courier
             org_phone = org.get("phone") if org else None
             if org_phone:
                 org_user = database.get_user_by_phone(org_phone)
                 o_lang = org_user.get("preferred_language", "en") if org_user else "en"
                 o_msg = (
-                    f"🚚 *Courier Dispatched for Your Food Delivery!*\n\n"
-                    f"• 👤 *Courier*: {vol_name} ({vol_mode})\n"
-                    f"• 📞 *Contact*: {vol_phone}\n"
-                    f"• 🍱 *Food*: {food_info}\n"
-                    f"• 📍 *Status*: Courier is heading to the donor location to collect the meals."
+                    f"🚚 *Volunteer Courier Available for Your Food Delivery!*\n\n"
+                    f"Volunteer courier **{vol_name}** (Vehicle: **{vol_mode}**, Phone: **{vol_phone}**) has offered to pick up and deliver your surplus food donation ({food_info} from **{donor_name}**).\n\n"
+                    f"👉 Reply *'Accept'* (or *'1'*) to confirm this volunteer courier."
                 )
                 o_msg = translation_service.translate_message_if_needed(o_msg, target_lang=o_lang)
+                database.set_user_conversation_state(
+                    org_phone,
+                    {
+                        "workflow": "ORGANIZATION",
+                        "current_question": "CONFIRM_VOLUNTEER",
+                        "expected_input_type": "CHOICE",
+                        "task_id": task_id,
+                        "vol_id": vol.get("id") if vol else None,
+                        "vol_name": vol_name,
+                        "vol_phone": vol_phone,
+                        "vol_mode": vol_mode,
+                    },
+                )
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:

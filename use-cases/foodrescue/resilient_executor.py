@@ -959,9 +959,150 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
     existing_vol = database.get_volunteer_by_phone(phone) if phone else None
     user_role = user.get("user_role") if user else None
 
-    is_org_user = bool(org_rec or user_role == "organization" or user_state.get("workflow") == "ORGANIZATION" or curr_q == "ACCEPT_DONATION_OFFER")
+    is_org_user = bool(
+        org_rec
+        or user_role == "organization"
+        or user_state.get("workflow") == "ORGANIZATION"
+        or curr_q in ["ACCEPT_DONATION_OFFER", "CONFIRM_VOLUNTEER"]
+    )
     is_donor_user = bool(donor_rec or user_role == "donor" or user_state.get("workflow") == "DONATION" or curr_q == "ACCEPT_ORGANIZATION")
     is_vol_user = bool(existing_vol or user_role == "volunteer" or user_state.get("workflow") == "VOLUNTEER" or curr_q == "ACCEPT_TASK")
+
+    # 6a-0. Handle Organization Confirming a Volunteer Courier (CONFIRM_VOLUNTEER)
+    if (curr_q == "CONFIRM_VOLUNTEER" or (is_org_user and user_state.get("vol_phone"))) and any(
+        m in clean_p
+        for m in [
+            "accept",
+            "1",
+            "yes",
+            "confirm",
+            "ok",
+            "sure",
+            "y",
+            "agree",
+            "accept courier",
+            "accept volunteer",
+            "පිළිගන්නවා",
+            "ඔව්",
+            "භාරගන්නවා",
+            "ஏற்கிறேன்",
+            "ஆம்",
+            "ஏற்றுக்கொள்கிறேன்",
+        ]
+    ):
+        task_id = user_state.get("task_id")
+        vol_id = user_state.get("vol_id")
+        vol_phone = user_state.get("vol_phone")
+        vol_name = user_state.get("vol_name", "Volunteer Courier")
+        vol_mode = user_state.get("vol_mode", "Three-Wheeler")
+
+        task = database.get_pickup_task_record(task_id) if task_id else None
+        if not task:
+            all_tasks = database.get_all_pickup_tasks()
+            if all_tasks:
+                task = all_tasks[-1]
+                task_id = task["id"]
+
+        if task_id:
+            if vol_id:
+                database.assign_volunteer_record(task_id, vol_id)
+            elif vol_phone:
+                database.assign_volunteer_record(task_id, f"vol-{vol_phone}")
+
+        if phone:
+            database.clear_user_conversation_state(phone)
+
+        don_id = task.get("donation_id") if task else None
+        don = database.get_donation_record(don_id) if don_id else None
+        donor = database.get_donor_record(don.get("donor_id", "")) if don else None
+        donor_name = donor.get("name") if donor else (don.get("donor_name") if don else "Donor Partner")
+        donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
+        food_info = _format_food_info(don)
+
+        # 1. Send Pickup QR Code to Donor
+        if donor_phone:
+            task_qrs = database.get_qr_codes_for_task(task_id)
+            pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
+            if not pk_qr:
+                pk_token = qr_service.generate_secure_token("PK")
+                pk_qr = database.create_qr_code_record(
+                    qr_id=f"qr-pk-{task_id}",
+                    task_id=task_id,
+                    donation_id=don_id or "don-unknown",
+                    qr_type="PICKUP",
+                    token=pk_token,
+                    token_hash=qr_service.hash_token(pk_token),
+                    donor_id=donor.get("id") if donor else (don.get("donor_id") if don else None),
+                    organization_id=task.get("organization_id") if task else None,
+                    assigned_volunteer_id=vol_id,
+                    status="ACTIVE",
+                )
+            pk_token = pk_qr.get("token")
+            qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
+            donor_user = database.get_user_by_phone(donor_phone)
+            d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
+            d_msg = translation_service.get_localized_message(
+                "donor_pickup_qr_instructions",
+                lang=d_lang,
+                volunteer_name=vol_name,
+                transport_mode=vol_mode,
+                volunteer_phone=vol_phone or "+94 77 123 4567",
+                food_info=food_info,
+                task_id=task_id,
+            )
+            try:
+                import whatsapp_handler
+
+                await whatsapp_handler.send_whatsapp_image(to_number=donor_phone, image_url=qr_img_url, caption=d_msg)
+            except Exception:
+                pass
+            try:
+                database.record_message(phone=donor_phone, sender="agent", text=f"{d_msg}\n\n📷 [Pickup QR Code Image]({qr_img_url})")
+            except Exception:
+                pass
+
+        # 2. Send full task details & scanner link to Volunteer
+        if vol_phone:
+            ext = _get_task_extended_metrics(task, database.get_volunteer_by_phone(vol_phone))
+            vol_user = database.get_user_by_phone(vol_phone)
+            v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+            scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
+            v_msg = (
+                f"🎉 *The organization ({ext['recipient_name']}) has accepted your pickup!* 🚚\n\n"
+                f"📍 *1. Donor Pickup Point:*\n"
+                f"• 👤 *Donor*: {ext['donor_name']}\n"
+                f"• 📞 *Contact*: {ext['donor_contact'] or donor_phone}\n"
+                f"• 📍 *Location*: {ext['pickup_location']}\n"
+                f"• 🍱 *Food*: {ext['food_info']}\n"
+                f"• ⏰ *Deadline*: {ext['deadline']}\n"
+                f"• 🗺️ *Directions*: {ext['directions_link']}\n\n"
+                f"🏢 *2. Delivery Destination:*\n"
+                f"• 🏢 *Organization*: {ext['recipient_name']}\n"
+                f"• 📞 *Contact*: {ext['recipient_contact']}\n"
+                f"• 📍 *Location*: {ext['delivery_location']}\n\n"
+                f"📏 *Total Road Distance*: ~{ext['total_dist']} km | 💰 *Transport Support*: LKR {ext['est_cost']}\n\n"
+                f"🔐 *Handover Verification:*\n"
+                f"When you arrive at the donor's location, ask the donor to show their **Pickup QR Code** and scan it:\n"
+                f"👉 📷 *Open Camera Scanner:* {scanner_url}\n\n"
+                f"Once collected, reply *'Collected'*."
+            )
+            v_msg = translation_service.translate_message_if_needed(v_msg, target_lang=v_lang)
+            try:
+                import whatsapp_handler
+
+                await whatsapp_handler.send_whatsapp_message(to_number=vol_phone, text=v_msg)
+            except Exception:
+                pass
+            try:
+                database.record_message(phone=vol_phone, sender="agent", text=v_msg)
+            except Exception:
+                pass
+
+        return (
+            f"✅ **Volunteer Courier Confirmed!**\n\n"
+            f"Courier **{vol_name}** ({vol_mode}) is now proceeding to collect the food donation from **{donor_name}**.\n\n"
+            f"We have sent the Pickup QR Code to the donor. We will notify you and send your **Delivery QR Code** the moment the courier collects the food and is on the way to your door! 🚚"
+        )
 
     # 6a-1. Handle Organization Accepting/Declining Food Donation Offer
     if (curr_q == "ACCEPT_DONATION_OFFER" or (is_org_user and user_state.get("donation_id"))) and any(

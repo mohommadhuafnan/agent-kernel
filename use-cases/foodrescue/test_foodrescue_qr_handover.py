@@ -41,6 +41,7 @@ def setup_clean_db():
 # 1. PURE-PYTHON QR CODE GENERATION & PNG STREAMING TESTS
 # =============================================================================
 
+
 def test_secure_token_generation_and_hashing():
     """Verify cryptographically secure, opaque token generation without PII leakage."""
     pk_token = qr_service.generate_secure_token("PK")
@@ -85,6 +86,7 @@ def test_api_qr_png_endpoint():
 # 2. PICKUP QR VERIFICATION LIFECYCLE TESTS
 # =============================================================================
 
+
 def test_pickup_qr_creation_and_atomic_verification():
     """Test full Pickup QR generation, verification, and atomic transition to COLLECTED."""
     donor_phone = "94771110001"
@@ -111,7 +113,7 @@ def test_pickup_qr_creation_and_atomic_verification():
         donor_id="d-qr1",
         organization_id="org-qr1",
         assigned_volunteer_id="vol-qr1",
-        status="ACTIVE"
+        status="ACTIVE",
     )
 
     # 1. View Pickup Verification HTML page via GET
@@ -162,7 +164,7 @@ def test_rejection_of_duplicate_pickup_qr_scan():
         token=token,
         token_hash=qr_service.hash_token(token),
         assigned_volunteer_id="vol-qr2",
-        status="ACTIVE"
+        status="ACTIVE",
     )
 
     # First scan succeeds
@@ -193,7 +195,7 @@ def test_rejection_of_unauthorized_volunteer_on_pickup():
         token=token,
         token_hash=qr_service.hash_token(token),
         assigned_volunteer_id="vol-A",
-        status="ACTIVE"
+        status="ACTIVE",
     )
 
     # Volunteer B tries to verify
@@ -208,6 +210,7 @@ def test_rejection_of_unauthorized_volunteer_on_pickup():
 # =============================================================================
 # 3. DELIVERY QR VERIFICATION LIFECYCLE TESTS
 # =============================================================================
+
 
 def test_delivery_qr_verification_lifecycle():
     """Test Delivery QR lifecycle: collection required first, then delivery verification completes task and releases courier."""
@@ -235,7 +238,7 @@ def test_delivery_qr_verification_lifecycle():
         donor_id="d-dl1",
         organization_id="org-dl1",
         assigned_volunteer_id="vol-dl1",
-        status="ACTIVE"
+        status="ACTIVE",
     )
 
     # 1. Delivery scan BEFORE food is collected must fail
@@ -285,7 +288,7 @@ def test_rejection_of_duplicate_delivery_qr_scan():
         token=dl_token,
         token_hash=qr_service.hash_token(dl_token),
         assigned_volunteer_id="vol1",
-        status="ACTIVE"
+        status="ACTIVE",
     )
 
     # First delivery scan succeeds
@@ -301,6 +304,7 @@ def test_rejection_of_duplicate_delivery_qr_scan():
 # =============================================================================
 # 4. CROSS-PARTY WHATSAPP NOTIFICATIONS & AUDIT TRAIL TESTS
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_cross_party_notifications_on_pickup_verification():
@@ -321,8 +325,9 @@ async def test_cross_party_notifications_on_pickup_verification():
     task = database.create_pickup_task_record("task-five", "don-five", "org-five", "Kegalle", "Mawanella", "8 PM")
     database.assign_volunteer_record("task-five", "vol-five")
 
-    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
-         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, patch(
+        "whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock
+    ) as mock_img:
         mock_msg.return_value = {"status": "sent"}
         mock_img.return_value = {"status": "sent"}
 
@@ -379,7 +384,9 @@ def test_audit_events_created_on_qr_verification():
     database.assign_volunteer_record("task-aud", "vol-aud")
 
     pk_token = qr_service.generate_secure_token("PK")
-    database.create_qr_code_record("qr-pk-aud", "task-aud", "don-aud", "PICKUP", pk_token, qr_service.hash_token(pk_token), assigned_volunteer_id="vol-aud")
+    database.create_qr_code_record(
+        "qr-pk-aud", "task-aud", "don-aud", "PICKUP", pk_token, qr_service.hash_token(pk_token), assigned_volunteer_id="vol-aud"
+    )
 
     # Verify pickup
     database.verify_qr_code_record(pk_token, volunteer_id="vol-aud", gps_coords={"lat": 6.9, "lng": 79.8})
@@ -388,7 +395,9 @@ def test_audit_events_created_on_qr_verification():
 
     # Create and verify delivery
     dl_token = qr_service.generate_secure_token("DL")
-    database.create_qr_code_record("qr-dl-aud", "task-aud", "don-aud", "DELIVERY", dl_token, qr_service.hash_token(dl_token), assigned_volunteer_id="vol-aud")
+    database.create_qr_code_record(
+        "qr-dl-aud", "task-aud", "don-aud", "DELIVERY", dl_token, qr_service.hash_token(dl_token), assigned_volunteer_id="vol-aud"
+    )
     database.verify_qr_code_record(dl_token, volunteer_id="vol-aud", gps_coords={"lat": 6.91, "lng": 79.85})
     audits_after = database.get_all_audit_events()
     assert any(a["event_type"] == "DELIVERY_QR_VERIFIED" and a["related_id"] == "task-aud" for a in audits_after)
@@ -397,6 +406,7 @@ def test_audit_events_created_on_qr_verification():
 # =============================================================================
 # 5. AGENT KERNEL TOOLS INTEGRATION TESTS
 # =============================================================================
+
 
 def test_agent_kernel_qr_tools():
     """Verify generate_handover_qr, verify_handover_qr, and get_task_qr_verification tools."""
@@ -429,6 +439,7 @@ def test_agent_kernel_qr_tools():
 # =============================================================================
 # 6. QRCODER V4 API INTEGRATION, CACHING & RESILIENT FALLBACK TESTS
 # =============================================================================
+
 
 def test_qrcoder_api_key_loading(monkeypatch):
     """Verify QRCODER_API_KEY environment variable is properly loaded."""
@@ -504,6 +515,7 @@ async def test_volunteer_available_intent_and_response():
     vol = database.create_volunteer_record("vol-avail-1", "Rifqi Courier", vol_phone, "Kegalle", "Motorbike", current_status="busy")
 
     from resilient_executor import run_resilient_chat
+
     chat_res = await run_resilient_chat("Available", session_id=f"whatsapp:{vol_phone}")
     assert chat_res["status"] == "success"
     reply = chat_res["result"]
@@ -531,9 +543,7 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
     database.create_organization_record("org-fh", "Food Home", org_phone, "Mawanella Town", "Rice & Curry")
     database.create_volunteer_record("vol-mushan", "Mushan", vol_phone, "Kegalle", "Car", current_status="available")
 
-    don = database.create_donation_record(
-        "don-life-1", "d-afnan", "Rice & Curry", 20.0, "portions", "Halal", "Dewanagala, Mawanella", "Now", "8AM"
-    )
+    don = database.create_donation_record("don-life-1", "d-afnan", "Rice & Curry", 20.0, "portions", "Halal", "Dewanagala, Mawanella", "Now", "8AM")
 
     # 1. Donor is in ACCEPT_ORGANIZATION state and replies "1" (Accept)
     database.set_user_conversation_state(
@@ -550,8 +560,9 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         },
     )
 
-    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
-         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, patch(
+        "whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock
+    ) as mock_img:
         mock_msg.return_value = {"status": "sent"}
         mock_img.return_value = {"status": "sent"}
 
@@ -577,8 +588,9 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         assert len(vol_calls) >= 1
 
     # 2. Volunteer Mushan replies "Accept" to claim the task
-    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
-         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, patch(
+        "whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock
+    ) as mock_img:
         mock_msg.return_value = {"status": "sent"}
         mock_img.return_value = {"status": "sent"}
 
@@ -597,7 +609,7 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         org_disp_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == org_phone]
         assert len(org_disp_calls) >= 1
         disp_text = org_disp_calls[0].kwargs.get("text", "")
-        assert "Courier Dispatched" in disp_text
+        assert "Courier Available" in disp_text or "Courier Dispatched" in disp_text
         assert "Mushan" in disp_text
         assert vol_phone in disp_text
 
@@ -605,6 +617,7 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
 # =============================================================================
 # 9. MOBILE CAMERA SCANNER & VOLUNTEER AVAILABILITY TESTS
 # =============================================================================
+
 
 def test_scanner_endpoint_serves_mobile_camera_ui():
     """Verify that /scanner and /scan endpoints render the mobile camera QR scanner interface."""
@@ -687,8 +700,9 @@ async def test_3way_cross_notifications_for_pickup_and_delivery():
     task = database.create_pickup_task_record("task-3way", "don-3way", "org-3way", "Colombo 03", "Colombo 07", "9 PM")
     database.assign_volunteer_record("task-3way", v["id"])
 
-    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, \
-         patch("whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock) as mock_img:
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, patch(
+        "whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock
+    ) as mock_img:
         mock_msg.return_value = {"status": "sent"}
         mock_img.return_value = {"status": "sent"}
 
@@ -735,5 +749,3 @@ async def test_3way_cross_notifications_for_pickup_and_delivery():
         vol_del_text = vol_del_calls[0].kwargs.get("text", "")
         assert "Delivery Completed & Verified" in vol_del_text or "Delivery Verified" in vol_del_text
         assert "Transport Support" in vol_del_text or "LKR" in vol_del_text or "AVAILABLE" in vol_del_text
-
-
