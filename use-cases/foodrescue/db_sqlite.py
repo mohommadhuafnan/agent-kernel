@@ -2269,6 +2269,27 @@ class SQLiteRepository(BaseRepository):
                     WHERE id = ?
                     ''', (now, donation_id))
 
+                # Ensure active Delivery QR is generated for subsequent organization delivery
+                cursor.execute("SELECT * FROM qr_codes WHERE task_id = ? AND UPPER(qr_type) = 'DELIVERY' AND UPPER(status) = 'ACTIVE'", (task_id,))
+                dl_row = cursor.fetchone()
+                if not dl_row:
+                    import qr_service
+                    dl_token = qr_service.generate_secure_token("DL")
+                    cursor.execute('''
+                    INSERT INTO qr_codes (id, task_id, donation_id, qr_type, token, token_hash, donor_id, organization_id, assigned_volunteer_id, status, created_at)
+                    VALUES (?, ?, ?, 'DELIVERY', ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                    ''', (
+                        f"qr-dl-{task_id}",
+                        task_id,
+                        donation_id or "don-unknown",
+                        dl_token,
+                        qr_service.hash_token(dl_token),
+                        task.get("donor_id"),
+                        task.get("organization_id"),
+                        effective_vol_id,
+                        now
+                    ))
+
                 # 4. Audit Log
                 audit_id = f"aud-{uuid.uuid4().hex[:8]}"
                 cursor.execute('''

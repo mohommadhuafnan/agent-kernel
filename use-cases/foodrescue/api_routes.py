@@ -7,13 +7,26 @@ session state diagnostics, and web UI asset delivery mounted on Agent Kernel RES
 import os
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse as BaseJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel, Field
 import database
 from agentkernel.core import Session
 from agentkernel.core.session import SessionStore
+
+
+class JSONResponse(BaseJSONResponse):
+    """Dynamic API response with strict no-cache headers to prevent CDN/browser stale states."""
+    def __init__(self, content: Any, status_code: int = 200, headers: Optional[Dict[str, str]] = None, **kwargs):
+        no_cache_headers = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        if headers:
+            no_cache_headers.update(headers)
+        super().__init__(content=content, status_code=status_code, headers=no_cache_headers, **kwargs)
 
 
 router = APIRouter()

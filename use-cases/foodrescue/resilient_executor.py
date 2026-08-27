@@ -460,16 +460,21 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     org_rec = database.get_organization_by_phone(phone) if phone else None
     donor_rec = database.get_donor_by_phone(phone) if phone else None
 
-    # Handle volunteer availability declaration ("AVAILABLE", "I am free", "ready", "online", "BUSY")
+    # Handle volunteer availability declaration ("AVAILABLE", "I am free", "online", "BUSY") for volunteers
     clean_p_norm = clean_p.rstrip(".!?,;:")
-    is_avail_intent = (
-        clean_p in ["available", "yes", "ready", "i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "online", "free", "active"]
-        or clean_p_norm in ["available", "yes", "ready", "i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "online", "free", "active"]
-        or any(w in clean_p for w in ["i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "mark as available", "mark me available"])
+    has_food_words = any(w in clean_p for w in ["donate", "donation", "food", "packet", "packets", "meals", "rice", "curry", "box", "kg"])
+    is_explicit_vol_avail = not has_food_words and (
+        clean_p_norm in ["available", "available now", "i am available", "i'm available", "im available", "i am free", "i'm free", "im free", "online", "ready to deliver", "ready for pickups"]
+        or any(w in clean_p for w in ["available to volunteer", "free to volunteer", "ready to deliver", "ready for pickups", "mark as available", "mark me available", "available for pickup", "i am available", "i'm available", "im available", "i am free", "i'm free", "im free"])
     )
-    is_busy_intent = clean_p in ["busy", "not available", "offline", "take a break", "break"] or clean_p_norm in ["busy", "not available", "offline", "take a break", "break"] or any(w in clean_p for w in ["i am busy", "not available now", "offline now"])
+    is_avail_intent = not in_active_workflow and is_explicit_vol_avail
+    is_busy_intent = not in_active_workflow and (
+        clean_p in ["busy", "not available", "offline", "take a break", "break"]
+        or clean_p_norm in ["busy", "not available", "offline", "take a break", "break"]
+        or any(w in clean_p for w in ["i am busy", "not available now", "offline now"])
+    )
 
-    if is_avail_intent or is_busy_intent:
+    if (is_avail_intent or is_busy_intent) and (vol_rec or (user and user.get("user_role") == "volunteer") or is_explicit_vol_avail):
         if not (vol_rec or (user and user.get("user_role") == "volunteer")):
             if phone:
                 user = database.create_or_update_user(
@@ -1072,6 +1077,24 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                     assigned_volunteer_id=vol_id or (existing_vol.get("id") if existing_vol else None),
                     status="ACTIVE",
                 )
+
+            # Also generate or retrieve active Delivery QR for Organization handover
+            dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
+            if not dl_qr:
+                dl_token = qr_service.generate_secure_token("DL")
+                dl_qr = database.create_qr_code_record(
+                    qr_id=f"qr-dl-{task_id}",
+                    task_id=task_id,
+                    donation_id=task_rec.get("donation_id") or "don-unknown",
+                    qr_type="DELIVERY",
+                    token=dl_token,
+                    token_hash=qr_service.hash_token(dl_token),
+                    donor_id=task_rec.get("donor_id"),
+                    organization_id=task_rec.get("organization_id"),
+                    assigned_volunteer_id=vol_id or (existing_vol.get("id") if existing_vol else None),
+                    status="ACTIVE",
+                )
+
             pk_token = pk_qr.get("token")
             verif_url = qr_service.build_verification_url("PICKUP", pk_token)
             scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)

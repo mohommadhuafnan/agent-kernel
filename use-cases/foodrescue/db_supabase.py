@@ -10,6 +10,7 @@ import datetime
 import json
 import uuid
 import logging
+import threading
 from typing import List, Dict, Any, Optional, Union
 from db_base import BaseRepository
 
@@ -45,6 +46,7 @@ class SupabaseRepository(BaseRepository):
         self._connection: Optional[Any] = connection_instance
         self._engine: Optional[Any] = None
         self._supabase_client: Optional[Any] = None
+        self._lock = threading.RLock()
 
     def get_supabase_client(self) -> Optional[Any]:
         """Return initialized supabase.Client SDK instance if URL and Key are configured."""
@@ -183,88 +185,112 @@ class SupabaseRepository(BaseRepository):
     def _execute(self, query: str, params: Optional[Union[tuple, list, dict]] = None) -> Any:
         """Execute a SQL query, adapting to the underlying connection dialect with auto-reconnect."""
         params = params or ()
-        for attempt in range(2):
-            try:
-                conn = self._get_connection()
+        with self._lock:
+            for attempt in range(2):
+                try:
+                    conn = self._get_connection()
 
-                # If it's a sqlite connection (used in test isolation)
-                if self._is_sqlite(conn):
-                    sqlite_query = self._adapt_query_for_sqlite(query)
-                    cursor = conn.cursor()
-                    cursor.execute(sqlite_query, params)
-                    if not getattr(conn, "autocommit", False):
+                    # If it's a sqlite connection (used in test isolation)
+                    if self._is_sqlite(conn):
+                        sqlite_query = self._adapt_query_for_sqlite(query)
+                        cursor = conn.cursor()
                         try:
-                            conn.commit()
+                            cursor.execute(sqlite_query, params)
+                            if not getattr(conn, "autocommit", False):
+                                try:
+                                    conn.commit()
+                                except Exception:
+                                    pass
+                            return cursor
+                        finally:
+                            pass
+
+                    # If it's pg8000.native.Connection
+                    if hasattr(conn, "run"):
+                        return conn.run(query, *(params if isinstance(params, (tuple, list)) else (params,)))
+
+                    # Standard DB-API connection (psycopg / psycopg2 / standard)
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute(query, params)
+                        return cursor
+                    finally:
+                        cursor.close()
+                except Exception as err:
+                    if attempt == 0 and not self._is_sqlite(getattr(self, "_connection", None)):
+                        logger.warning(f"SQL execute failed ({err}); attempting auto-reconnection...")
+                        try:
+                            if self._connection and hasattr(self._connection, "close"):
+                                self._connection.close()
                         except Exception:
                             pass
-                    return cursor
-
-                # If it's pg8000.native.Connection
-                if hasattr(conn, "run"):
-                    return conn.run(query, *(params if isinstance(params, (tuple, list)) else (params,)))
-
-                # Standard DB-API connection (psycopg / psycopg2 / standard)
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                return cursor
-            except Exception as err:
-                if attempt == 0 and not self._is_sqlite(getattr(self, "_connection", None)):
-                    logger.warning(f"SQL execute failed ({err}); attempting auto-reconnection...")
-                    self._connection = None
-                    continue
-                raise
+                        self._connection = None
+                        continue
+                    raise
 
     def _fetchall(self, query: str, params: Optional[Union[tuple, list, dict]] = None) -> List[Dict[str, Any]]:
         """Execute query and return list of dictionaries with auto-reconnect."""
         params = params or ()
-        for attempt in range(2):
-            try:
-                conn = self._get_connection()
+        with self._lock:
+            for attempt in range(2):
+                try:
+                    conn = self._get_connection()
 
-                # SQLite connection
-                if self._is_sqlite(conn):
-                    sqlite_query = self._adapt_query_for_sqlite(query)
-                    cursor = conn.cursor()
-                    cursor.execute(sqlite_query, params)
-                    columns = [col[0] for col in cursor.description] if cursor.description else []
-                    rows = cursor.fetchall()
-                    result = []
-                    for row in rows:
-                        if isinstance(row, dict):
-                            result.append(dict(row))
-                        else:
-                            result.append(dict(zip(columns, row)))
-                    return result
-
-                # pg8000.native.Connection
-                if hasattr(conn, "run"):
-                    rows = conn.run(query, *(params if isinstance(params, (tuple, list)) else (params,)))
-                    columns = [c["name"] for c in conn.columns] if hasattr(conn, "columns") else []
-                    return [dict(zip(columns, r)) for r in rows]
-
-                # psycopg / psycopg2
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                columns = [col[0] for col in cursor.description] if cursor.description else []
-                rows = cursor.fetchall()
-                result = []
-                for row in rows:
-                    if isinstance(row, dict):
-                        result.append(dict(row))
-                    elif isinstance(row, (tuple, list)):
-                        result.append(dict(zip(columns, row)))
-                    else:
+                    # SQLite connection
+                    if self._is_sqlite(conn):
+                        sqlite_query = self._adapt_query_for_sqlite(query)
+                        cursor = conn.cursor()
                         try:
-                            result.append(dict(zip(columns, row)))
+                            cursor.execute(sqlite_query, params)
+                            columns = [col[0] for col in cursor.description] if cursor.description else []
+                            rows = cursor.fetchall()
+                            result = []
+                            for row in rows:
+                                if isinstance(row, dict):
+                                    result.append(dict(row))
+                                else:
+                                    result.append(dict(zip(columns, row)))
+                            return result
+                        finally:
+                            cursor.close()
+
+                    # pg8000.native.Connection
+                    if hasattr(conn, "run"):
+                        rows = conn.run(query, *(params if isinstance(params, (tuple, list)) else (params,)))
+                        columns = [c["name"] for c in conn.columns] if hasattr(conn, "columns") else []
+                        return [dict(zip(columns, r)) for r in rows]
+
+                    # psycopg / psycopg2
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute(query, params)
+                        columns = [col[0] for col in cursor.description] if cursor.description else []
+                        rows = cursor.fetchall()
+                        result = []
+                        for row in rows:
+                            if isinstance(row, dict):
+                                result.append(dict(row))
+                            elif isinstance(row, (tuple, list)):
+                                result.append(dict(zip(columns, row)))
+                            else:
+                                try:
+                                    result.append(dict(zip(columns, row)))
+                                except Exception:
+                                    result.append(row)
+                        return result
+                    finally:
+                        cursor.close()
+                except Exception as err:
+                    if attempt == 0 and not self._is_sqlite(getattr(self, "_connection", None)):
+                        logger.warning(f"SQL fetchall failed ({err}); attempting auto-reconnection...")
+                        try:
+                            if self._connection and hasattr(self._connection, "close"):
+                                self._connection.close()
                         except Exception:
-                            result.append(row)
-                return result
-            except Exception as err:
-                if attempt == 0 and not self._is_sqlite(getattr(self, "_connection", None)):
-                    logger.warning(f"SQL fetchall failed ({err}); attempting auto-reconnection...")
-                    self._connection = None
-                    continue
-                raise
+                            pass
+                        self._connection = None
+                        continue
+                    raise
 
     def _fetchone(self, query: str, params: Optional[Union[tuple, list, dict]] = None) -> Optional[Dict[str, Any]]:
         """Execute query and return single dictionary or None."""
@@ -2095,6 +2121,25 @@ class SupabaseRepository(BaseRepository):
                     (now, donation_id)
                 )
 
+            # Ensure active Delivery QR is generated for subsequent organization delivery
+            task_qrs = self.get_qr_codes_for_task(task_id)
+            dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
+            if not dl_qr:
+                import qr_service
+                dl_token = qr_service.generate_secure_token("DL")
+                self.create_qr_code_record(
+                    qr_id=f"qr-dl-{task_id}",
+                    task_id=task_id,
+                    donation_id=donation_id or "don-unknown",
+                    qr_type="DELIVERY",
+                    token=dl_token,
+                    token_hash=qr_service.hash_token(dl_token),
+                    donor_id=task.get("donor_id"),
+                    organization_id=task.get("organization_id"),
+                    assigned_volunteer_id=effective_vol_id,
+                    status="ACTIVE"
+                )
+
             self.create_audit_event_record(
                 event_id=f"aud-{uuid.uuid4().hex[:8]}",
                 event_type="PICKUP_QR_VERIFIED",
@@ -2188,9 +2233,16 @@ class SupabaseRepository(BaseRepository):
 
     def delete_user_record(self, phone: str) -> bool:
         """Delete a user profile and active state."""
+        norm = self._normalize_phone(phone)
+        raw = phone.replace("whatsapp:", "").strip()
+        if not norm and not raw:
+            return False
         try:
-            clean_phone = phone.replace("whatsapp:", "").strip()
-            self._execute("DELETE FROM users WHERE phone = %s", (clean_phone,))
+            self._execute("DELETE FROM users WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("DELETE FROM volunteers WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("DELETE FROM donors WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("DELETE FROM organizations WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("DELETE FROM messages WHERE phone_number = %s OR phone_number = %s", (norm, raw))
             return True
         except Exception as err:
             logger.error(f"Error deleting user {phone}: {err}")

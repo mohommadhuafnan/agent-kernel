@@ -41,18 +41,23 @@ def get_repository() -> BaseRepository:
             return _CURRENT_REPO
 
     # Supabase PostgreSQL (Default production backend)
-    try:
-        from db_supabase import SupabaseRepository
-        supabase_repo = SupabaseRepository()
-        supabase_repo.setup_database()
-        _CURRENT_REPO = supabase_repo
-        return _CURRENT_REPO
-    except Exception as exc:
-        import logging
-        logging.getLogger("foodrescue.db").warning(f"Supabase connection notice ({exc}); falling back to local SQLite.")
+    from db_supabase import SupabaseRepository
+    supabase_repo = SupabaseRepository()
+
+    # If Supabase URL is not configured (e.g. offline unit tests without env vars), use local SQLite
+    if not supabase_repo._db_url:
         from db_sqlite import SQLiteRepository
         _CURRENT_REPO = SQLiteRepository()
         return _CURRENT_REPO
+
+    try:
+        supabase_repo.setup_database()
+    except Exception as exc:
+        import logging
+        logging.getLogger("foodrescue.db").warning(f"Supabase database setup notice ({exc}); proceeding with Supabase backend.")
+
+    _CURRENT_REPO = supabase_repo
+    return _CURRENT_REPO
 
 
 def set_repository(repo: Optional[BaseRepository]) -> None:

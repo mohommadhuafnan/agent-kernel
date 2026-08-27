@@ -210,7 +210,7 @@ const App = (function () {
     });
   }
 
-  function switchTab(tabId) {
+  async function switchTab(tabId) {
     if (!tabMetadata[tabId]) return;
 
     state.activeTab = tabId;
@@ -241,8 +241,11 @@ const App = (function () {
     // Smooth scroll to top of content
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Trigger tab-specific refresh/render
+    // Trigger immediate render of current cached state
     renderCurrentTab();
+
+    // Fetch fresh data for newly selected tab
+    await fetchAllData();
 
     // Re-trigger scroll reveal for newly rendered view
     setTimeout(() => {
@@ -302,57 +305,100 @@ const App = (function () {
     }
   }
 
-  // Data Fetchers
-  async function fetchAllData() {
+  // Resilient API Fetch Helper with Cache Busting
+  async function safeFetch(url) {
     try {
-      const [
-        statsRes,
-        opsRes,
-        donsRes,
-        donorsRes,
-        orgsRes,
-        volsRes,
-        usersRes,
-        convsRes,
-        pickupsRes,
-        eventsRes,
-        notifsRes,
-        reportsRes,
-        settingsRes
-      ] = await Promise.all([
-        fetch('/api/dashboard').then(r => r.json()),
-        fetch('/api/live-operations').then(r => r.json()),
-        fetch('/api/donations').then(r => r.json()),
-        fetch('/api/donors').then(r => r.json()),
-        fetch('/api/organizations').then(r => r.json()),
-        fetch('/api/volunteers').then(r => r.json()),
-        fetch('/api/users').then(r => r.json()),
-        fetch('/api/conversations').then(r => r.json()),
-        fetch('/api/pickups').then(r => r.json()),
-        fetch('/api/agent-events').then(r => r.json()),
-        fetch('/api/notifications').then(r => r.json()),
-        fetch('/api/reports').then(r => r.json()),
-        fetch('/api/settings').then(r => r.json())
-      ]);
+      const res = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (!res.ok) {
+        console.warn(`[SafeFetch] HTTP ${res.status} on ${url}`);
+        return null;
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn(`[SafeFetch] Network exception on ${url}:`, err);
+      return null;
+    }
+  }
 
-      if (statsRes.stats) state.stats = statsRes.stats;
-      if (opsRes.operations) state.liveOperations = opsRes.operations;
-      if (donsRes.donations) state.donations = donsRes.donations;
-      if (donorsRes.donors) state.donors = donorsRes.donors;
-      if (orgsRes.organizations) state.organizations = orgsRes.organizations;
-      if (volsRes.volunteers) state.volunteers = volsRes.volunteers;
-      if (usersRes.users) state.users = usersRes.users;
-      if (convsRes.conversations) state.conversations = convsRes.conversations;
-      if (pickupsRes.pickup_tasks) state.pickups = pickupsRes.pickup_tasks;
-      if (eventsRes.events) state.agentEvents = eventsRes.events;
-      if (notifsRes.notifications) state.notifications = notifsRes.notifications;
-      if (reportsRes) state.reports = reportsRes;
-      if (settingsRes) state.settings = settingsRes;
+  // Data Fetchers with Mutex Guard to prevent overlapping race conditions
+  async function fetchAllData() {
+    if (state.isSyncing) return;
+    state.isSyncing = true;
+    try {
+      // 1. Always fetch primary dashboard aggregated stats
+      const statsRes = await safeFetch('/api/dashboard');
+      if (statsRes && statsRes.stats) {
+        state.stats = statsRes.stats;
+      }
+
+      // 2. Fetch data required for active tab and general view
+      const tab = state.activeTab;
+
+      if (tab === 'dashboard' || tab === 'live-operations') {
+        const opsRes = await safeFetch('/api/live-operations');
+        if (opsRes && Array.isArray(opsRes.operations)) state.liveOperations = opsRes.operations;
+        const eventsRes = await safeFetch('/api/agent-events');
+        if (eventsRes && Array.isArray(eventsRes.events)) state.agentEvents = eventsRes.events;
+      }
+
+      if (tab === 'donations' || tab === 'dashboard') {
+        const donsRes = await safeFetch('/api/donations');
+        if (donsRes && Array.isArray(donsRes.donations)) state.donations = donsRes.donations;
+        const donorsRes = await safeFetch('/api/donors');
+        if (donorsRes && Array.isArray(donorsRes.donors)) state.donors = donorsRes.donors;
+      }
+
+      if (tab === 'organizations' || tab === 'dashboard') {
+        const orgsRes = await safeFetch('/api/organizations');
+        if (orgsRes && Array.isArray(orgsRes.organizations)) state.organizations = orgsRes.organizations;
+      }
+
+      if (tab === 'volunteers' || tab === 'dashboard') {
+        const volsRes = await safeFetch('/api/volunteers');
+        if (volsRes && Array.isArray(volsRes.volunteers)) state.volunteers = volsRes.volunteers;
+      }
+
+      if (tab === 'users' || tab === 'dashboard') {
+        const usersRes = await safeFetch('/api/users');
+        if (usersRes && Array.isArray(usersRes.users)) state.users = usersRes.users;
+      }
+
+      if (tab === 'conversations') {
+        const convsRes = await safeFetch('/api/conversations');
+        if (convsRes && Array.isArray(convsRes.conversations)) state.conversations = convsRes.conversations;
+      }
+
+      if (tab === 'pickups') {
+        const pickupsRes = await safeFetch('/api/pickups');
+        if (pickupsRes && Array.isArray(pickupsRes.pickup_tasks)) state.pickups = pickupsRes.pickup_tasks;
+      }
+
+      if (tab === 'notifications') {
+        const notifsRes = await safeFetch('/api/notifications');
+        if (notifsRes && Array.isArray(notifsRes.notifications)) state.notifications = notifsRes.notifications;
+      }
+
+      if (tab === 'reports') {
+        const reportsRes = await safeFetch('/api/reports');
+        if (reportsRes && reportsRes.summary) state.reports = reportsRes;
+      }
+
+      if (tab === 'settings') {
+        const settingsRes = await safeFetch('/api/settings');
+        if (settingsRes && settingsRes.transport_cost) state.settings = settingsRes;
+      }
 
       updateBadges();
       renderCurrentTab();
     } catch (err) {
       console.warn('Sync polling network notice:', err);
+    } finally {
+      state.isSyncing = false;
     }
   }
 
@@ -382,23 +428,29 @@ const App = (function () {
   }
 
   function updateBadges() {
-    const s = state.stats;
-    setText('badge-live-ops-count', (state.liveOperations || []).filter(o => o.status !== 'COMPLETED').length);
-    setText('badge-donations-count', (state.donations || []).length);
-    setText('badge-orgs-count', (state.organizations || []).length);
-    setText('badge-vols-count', (state.volunteers || []).length);
-    setText('badge-users-count', (state.users || []).length);
+    const s = state.stats || {};
+    const liveOpsCount = (state.liveOperations || []).filter(o => o.status !== 'COMPLETED').length;
+    const donCount = s.total_donations !== undefined ? s.total_donations : (state.donations || []).length;
+    const orgCount = s.registered_organizations !== undefined ? s.registered_organizations : (state.organizations || []).length;
+    const volCount = s.total_volunteers !== undefined ? s.total_volunteers : (state.volunteers || []).length;
+    const userCount = s.active_users !== undefined ? s.active_users : (state.users || []).length;
+
+    setText('badge-live-ops-count', liveOpsCount);
+    setText('badge-donations-count', donCount);
+    setText('badge-orgs-count', orgCount);
+    setText('badge-vols-count', volCount);
+    setText('badge-users-count', userCount);
   }
 
   // 1. Render Dashboard View
   function renderDashboard() {
     const s = state.stats || {};
-    setText('kpi-total-donations', s.total_donations || state.donations.length || 0);
-    setText('kpi-available-donations', s.available_donations || 0);
-    setText('kpi-active-pickups', s.active_pickups || 0);
-    setText('kpi-completed-rescues', s.completed_deliveries || 0);
-    setText('kpi-avail-vols', s.available_volunteers || 0);
-    setText('kpi-total-orgs', s.registered_organizations || (state.organizations ? state.organizations.length : 0));
+    setText('kpi-total-donations', s.total_donations !== undefined ? s.total_donations : (state.donations ? state.donations.length : 0));
+    setText('kpi-available-donations', s.available_donations !== undefined ? s.available_donations : 0);
+    setText('kpi-active-pickups', s.active_pickups !== undefined ? s.active_pickups : 0);
+    setText('kpi-completed-rescues', s.completed_deliveries !== undefined ? s.completed_deliveries : 0);
+    setText('kpi-avail-vols', s.available_volunteers !== undefined ? s.available_volunteers : 0);
+    setText('kpi-total-orgs', s.registered_organizations !== undefined ? s.registered_organizations : (state.organizations ? state.organizations.length : 0));
     const userCount = (s.active_users !== undefined && s.active_users !== null) ? s.active_users : ((state.users || []).length);
     setText('kpi-active-users', userCount);
     setText('kpi-co2-saved', `${s.co2_saved_kg || 0} kg`);

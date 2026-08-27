@@ -1712,6 +1712,25 @@ class MongoRepository(BaseRepository):
             if donation_id:
                 self.donations_col.update_one({"id": donation_id}, {"$set": {"status": "COLLECTED", "updated_at": now}})
 
+            # Ensure active Delivery QR is generated for subsequent organization delivery
+            task_qrs = self.get_qr_codes_for_task(task_id)
+            dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
+            if not dl_qr:
+                import qr_service
+                dl_token = qr_service.generate_secure_token("DL")
+                self.create_qr_code_record(
+                    qr_id=f"qr-dl-{task_id}",
+                    task_id=task_id,
+                    donation_id=donation_id or "don-unknown",
+                    qr_type="DELIVERY",
+                    token=dl_token,
+                    token_hash=qr_service.hash_token(dl_token),
+                    donor_id=task.get("donor_id"),
+                    organization_id=task.get("organization_id"),
+                    assigned_volunteer_id=effective_vol_id,
+                    status="ACTIVE"
+                )
+
             self.create_audit_event_record(
                 event_id=f"aud-{now}",
                 event_type="PICKUP_QR_VERIFIED",
