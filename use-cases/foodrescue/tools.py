@@ -81,25 +81,24 @@ def _get_session_cache():
 
 
 def _get_context_val(key: str, default: Any = None) -> Any:
-    """Retrieve a value from the active session cache or global fallback."""
+    """Retrieve a value from the active session cache or session-specific fallback."""
     cache = _get_session_cache()
     if cache is not None and cache.has(key):
         return cache.get(key)
     sess_key = _EXPLICIT_SESSION_ID or "__default__"
     if sess_key in _GLOBAL_FALLBACK_CONTEXT and key in _GLOBAL_FALLBACK_CONTEXT[sess_key]:
         return _GLOBAL_FALLBACK_CONTEXT[sess_key][key]
-    return _GLOBAL_FALLBACK_CONTEXT.get("__default__", {}).get(key, default)
+    if "__default__" in _GLOBAL_FALLBACK_CONTEXT and key in _GLOBAL_FALLBACK_CONTEXT["__default__"]:
+        return _GLOBAL_FALLBACK_CONTEXT["__default__"][key]
+    return default
 
 
 def _set_context_val(key: str, val: Any) -> None:
-    """Store a value into the active session cache and global fallback."""
+    """Store a value into the active session cache and session-specific fallback."""
     sess_key = _EXPLICIT_SESSION_ID or "__default__"
     if sess_key not in _GLOBAL_FALLBACK_CONTEXT:
         _GLOBAL_FALLBACK_CONTEXT[sess_key] = {}
     _GLOBAL_FALLBACK_CONTEXT[sess_key][key] = val
-    if "__default__" not in _GLOBAL_FALLBACK_CONTEXT:
-        _GLOBAL_FALLBACK_CONTEXT["__default__"] = {}
-    _GLOBAL_FALLBACK_CONTEXT["__default__"][key] = val
     cache = _get_session_cache()
     if cache is not None:
         cache.set(key, val)
@@ -446,6 +445,7 @@ def create_pickup_task(
         task_id=task_id, donation_id=clean_don_id, org_id=clean_org_id, pickup_loc=clean_pickup_loc, delivery_loc=clean_delivery_loc, time=clean_time
     )
     import routing
+
     p_c = routing.geocode_location(clean_pickup_loc)
     d_c = routing.geocode_location(clean_delivery_loc)
     if p_c and d_c:
@@ -580,7 +580,12 @@ def accept_pickup_task_atomic(pickup_task_id: Optional[str] = None, volunteer_id
                 )
             except Exception:
                 pass
-            task = database.get_pickup_task_record(clean_task_id) or {"id": clean_task_id, "donation_id": "don-test-dummy", "organization_id": "org-test-dummy", "status": "OPEN"}
+            task = database.get_pickup_task_record(clean_task_id) or {
+                "id": clean_task_id,
+                "donation_id": "don-test-dummy",
+                "organization_id": "org-test-dummy",
+                "status": "OPEN",
+            }
         else:
             return json.dumps({"status": "error", "message": f"Pickup task '{clean_task_id}' not found."})
 
@@ -1174,14 +1179,17 @@ def register_organization(
     existing = database.get_organization_by_phone(clean_phone) if clean_phone else None
     if existing:
         org_id = existing["id"]
-        record = database.update_organization_record(
-            org_id=org_id,
-            name=clean_name,
-            service_area=clean_area,
-            accepted_food_types=clean_types,
-            capacity=clean_cap,
-            location=clean_loc,
-        ) or existing
+        record = (
+            database.update_organization_record(
+                org_id=org_id,
+                name=clean_name,
+                service_area=clean_area,
+                accepted_food_types=clean_types,
+                capacity=clean_cap,
+                location=clean_loc,
+            )
+            or existing
+        )
     else:
         org_id = f"o-{uuid.uuid4().hex[:6]}"
         record = database.create_organization_record(
@@ -1264,16 +1272,19 @@ def register_volunteer(
     existing = database.get_volunteer_by_phone(clean_phone) if clean_phone else None
     if existing:
         vol_id = existing["id"]
-        record = database.update_volunteer_record(
-            volunteer_id=vol_id,
-            name=clean_name,
-            phone=clean_phone,
-            service_area=clean_area,
-            transport_mode=clean_mode,
-            availability=clean_avail,
-            current_status="available",
-            location=clean_loc,
-        ) or existing
+        record = (
+            database.update_volunteer_record(
+                volunteer_id=vol_id,
+                name=clean_name,
+                phone=clean_phone,
+                service_area=clean_area,
+                transport_mode=clean_mode,
+                availability=clean_avail,
+                current_status="available",
+                location=clean_loc,
+            )
+            or existing
+        )
     else:
         vol_id = f"v-{uuid.uuid4().hex[:6]}"
         record = database.create_volunteer_record(
@@ -2436,9 +2447,11 @@ def clear_draft_donation(phone: Optional[str] = None) -> str:
 # QR CODE HANDOVER VERIFICATION TOOLS
 # =============================================================================
 
+
 def generate_handover_qr(task_id: str, qr_type: str = "PICKUP") -> str:
     """Generate a task-specific physical handover verification QR code record and token."""
     import qr_service
+
     clean_task_id = str(task_id).strip()
     clean_type = qr_type.strip().upper()
     if clean_type not in ["PICKUP", "DELIVERY"]:
@@ -2472,22 +2485,25 @@ def generate_handover_qr(task_id: str, qr_type: str = "PICKUP") -> str:
             donor_id=donor_id,
             organization_id=org_id,
             assigned_volunteer_id=vol_id,
-            status="ACTIVE"
+            status="ACTIVE",
         )
 
     verif_url = qr_service.build_verification_url(clean_type, token)
     img_url = f"{qr_service.get_base_url()}/api/qr/{token}.png"
 
-    return json.dumps({
-        "status": "success",
-        "qr_id": active_qr.get("id"),
-        "task_id": clean_task_id,
-        "qr_type": clean_type,
-        "token": token,
-        "verification_url": verif_url,
-        "qr_image_url": img_url,
-        "qr_status": active_qr.get("status", "ACTIVE")
-    }, indent=2)
+    return json.dumps(
+        {
+            "status": "success",
+            "qr_id": active_qr.get("id"),
+            "task_id": clean_task_id,
+            "qr_type": clean_type,
+            "token": token,
+            "verification_url": verif_url,
+            "qr_image_url": img_url,
+            "qr_status": active_qr.get("status", "ACTIVE"),
+        },
+        indent=2,
+    )
 
 
 def verify_handover_qr(token: str, volunteer_id: Optional[str] = None, current_coordinates: Optional[str] = None) -> str:
@@ -2512,15 +2528,13 @@ def get_task_qr_verification(task_id: str) -> str:
     """Retrieve all physical handover QR codes and verification statuses for a task."""
     clean_id = str(task_id).strip()
     import qr_service
+
     qrs = database.get_qr_codes_for_task(clean_id)
     enriched = []
     for q in qrs:
         t = q.get("token", "")
         qr_type = q.get("qr_type", "PICKUP")
-        enriched.append({
-            **q,
-            "verification_url": qr_service.build_verification_url(qr_type, t),
-            "qr_image_url": f"{qr_service.get_base_url()}/api/qr/{t}.png"
-        })
+        enriched.append(
+            {**q, "verification_url": qr_service.build_verification_url(qr_type, t), "qr_image_url": f"{qr_service.get_base_url()}/api/qr/{t}.png"}
+        )
     return json.dumps({"status": "success", "task_id": clean_id, "qr_codes": enriched}, indent=2)
-

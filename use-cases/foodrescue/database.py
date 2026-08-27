@@ -5,12 +5,14 @@ Dispatches all database operations to the active repository backend
 """
 
 import os
+import sys
+import threading
 from typing import List, Dict, Any, Optional
 from db_base import BaseRepository
 
 DB_PATH = "foodrescue.db"
 _CURRENT_REPO: Optional[BaseRepository] = None
-
+_REPO_LOCK = threading.Lock()
 
 
 def get_repository() -> BaseRepository:
@@ -19,34 +21,43 @@ def get_repository() -> BaseRepository:
     if _CURRENT_REPO is not None:
         return _CURRENT_REPO
 
-    backend = (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).strip().lower()
-    
-    if backend == "sqlite":
-        from db_sqlite import SQLiteRepository
-        _CURRENT_REPO = SQLiteRepository()
-        return _CURRENT_REPO
+    with _REPO_LOCK:
+        if _CURRENT_REPO is not None:
+            return _CURRENT_REPO
+
+        backend = (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).strip().lower()
 
     if backend in ["mongodb", "mongo"]:
         try:
             from db_mongo import MongoRepository
+
             mongo_repo = MongoRepository()
             mongo_repo.setup_database()
             _CURRENT_REPO = mongo_repo
             return _CURRENT_REPO
         except Exception as exc:
             import logging
+
             logging.getLogger("foodrescue.db").warning(f"MongoDB connection notice ({exc}); falling back to local SQLite.")
             from db_sqlite import SQLiteRepository
+
             _CURRENT_REPO = SQLiteRepository()
             return _CURRENT_REPO
 
     # Supabase PostgreSQL (Default production backend)
     from db_supabase import SupabaseRepository
+
     supabase_repo = SupabaseRepository()
 
     # If Supabase URL is not configured (e.g. offline unit tests without env vars), use local SQLite
     if not supabase_repo._db_url:
+        # Prevent silent SQLite fallback in production when Supabase is requested
+        if backend == "supabase" and "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
+            if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+                raise ValueError("SUPABASE_DB_URL is missing on serverless deployment. Cannot silently fall back to ephemeral SQLite.")
+
         from db_sqlite import SQLiteRepository
+
         _CURRENT_REPO = SQLiteRepository()
         return _CURRENT_REPO
 
@@ -54,6 +65,7 @@ def get_repository() -> BaseRepository:
         supabase_repo.setup_database()
     except Exception as exc:
         import logging
+
         logging.getLogger("foodrescue.db").warning(f"Supabase database setup notice ({exc}); proceeding with Supabase backend.")
 
     _CURRENT_REPO = supabase_repo
@@ -69,10 +81,12 @@ def set_repository(repo: Optional[BaseRepository]) -> None:
 def reset_repository() -> None:
     """Reset the cached repository singleton so it re-evaluates the environment variable."""
     global _CURRENT_REPO
-    _CURRENT_REPO = None
+    with _REPO_LOCK:
+        _CURRENT_REPO = None
 
 
 # Module-level delegation functions
+
 
 def setup_database() -> None:
     get_repository().setup_database()
@@ -90,20 +104,8 @@ def get_donor_by_phone(phone: str) -> Optional[Dict[str, Any]]:
     return get_repository().get_donor_by_phone(phone)
 
 
-def create_donor_record(
-    donor_id: str,
-    name: str,
-    phone: str,
-    location: str,
-    organization_name: Optional[str] = None
-) -> Dict[str, Any]:
-    return get_repository().create_donor_record(
-        donor_id=donor_id,
-        name=name,
-        phone=phone,
-        location=location,
-        organization_name=organization_name
-    )
+def create_donor_record(donor_id: str, name: str, phone: str, location: str, organization_name: Optional[str] = None) -> Dict[str, Any]:
+    return get_repository().create_donor_record(donor_id=donor_id, name=name, phone=phone, location=location, organization_name=organization_name)
 
 
 def get_organization_record(org_id: str) -> Optional[Dict[str, Any]]:
@@ -122,7 +124,7 @@ def create_organization_record(
     accepted_food_types: str,
     capacity: Optional[str] = None,
     availability: Optional[str] = "daytime",
-    location: Optional[str] = None
+    location: Optional[str] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_organization_record(
         org_id=org_id,
@@ -132,7 +134,7 @@ def create_organization_record(
         accepted_food_types=accepted_food_types,
         capacity=capacity,
         availability=availability,
-        location=location
+        location=location,
     )
 
 
@@ -144,7 +146,7 @@ def update_organization_record(
     accepted_food_types: Optional[str] = None,
     capacity: Optional[str] = None,
     availability: Optional[str] = None,
-    location: Optional[str] = None
+    location: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     return get_repository().update_organization_record(
         org_id=org_id,
@@ -154,7 +156,7 @@ def update_organization_record(
         accepted_food_types=accepted_food_types,
         capacity=capacity,
         availability=availability,
-        location=location
+        location=location,
     )
 
 
@@ -166,7 +168,7 @@ def create_volunteer_record(
     transport_mode: str = "Motorbike",
     availability: str = "immediate, evenings",
     current_status: str = "available",
-    location: Optional[str] = None
+    location: Optional[str] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_volunteer_record(
         volunteer_id=volunteer_id,
@@ -176,7 +178,7 @@ def create_volunteer_record(
         transport_mode=transport_mode,
         availability=availability,
         current_status=current_status,
-        location=location
+        location=location,
     )
 
 
@@ -211,15 +213,7 @@ def update_volunteer_record(
 
 
 def create_donation_record(
-    donation_id: str,
-    donor_id: str,
-    food_type: str,
-    quantity: float,
-    unit: str,
-    dietary_info: str,
-    location: str,
-    available_from: str,
-    deadline: str
+    donation_id: str, donor_id: str, food_type: str, quantity: float, unit: str, dietary_info: str, location: str, available_from: str, deadline: str
 ) -> Dict[str, Any]:
     return get_repository().create_donation_record(
         donation_id=donation_id,
@@ -230,7 +224,7 @@ def create_donation_record(
         dietary_info=dietary_info,
         location=location,
         available_from=available_from,
-        deadline=deadline
+        deadline=deadline,
     )
 
 
@@ -250,7 +244,7 @@ def update_donation_details_record(
     dietary_info: Optional[str] = None,
     location: Optional[str] = None,
     available_from: Optional[str] = None,
-    deadline: Optional[str] = None
+    deadline: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     return get_repository().update_donation_details_record(
         donation_id=donation_id,
@@ -260,7 +254,7 @@ def update_donation_details_record(
         dietary_info=dietary_info,
         location=location,
         available_from=available_from,
-        deadline=deadline
+        deadline=deadline,
     )
 
 
@@ -276,21 +270,9 @@ def find_volunteers_by_criteria(location: str) -> List[Dict[str, Any]]:
     return get_repository().find_volunteers_by_criteria(location)
 
 
-def create_pickup_task_record(
-    task_id: str,
-    donation_id: str,
-    org_id: str,
-    pickup_loc: str,
-    delivery_loc: str,
-    time: str
-) -> Dict[str, Any]:
+def create_pickup_task_record(task_id: str, donation_id: str, org_id: str, pickup_loc: str, delivery_loc: str, time: str) -> Dict[str, Any]:
     return get_repository().create_pickup_task_record(
-        task_id=task_id,
-        donation_id=donation_id,
-        org_id=org_id,
-        pickup_loc=pickup_loc,
-        delivery_loc=delivery_loc,
-        time=time
+        task_id=task_id, donation_id=donation_id, org_id=org_id, pickup_loc=pickup_loc, delivery_loc=delivery_loc, time=time
     )
 
 
@@ -322,19 +304,9 @@ def update_pickup_status_record(task_id: str, status: str) -> bool:
     return get_repository().update_pickup_status_record(task_id, status)
 
 
-def create_notification_record(
-    notif_id: str,
-    recipient_type: str,
-    recipient_id: str,
-    message: str,
-    channel: str
-) -> None:
+def create_notification_record(notif_id: str, recipient_type: str, recipient_id: str, message: str, channel: str) -> None:
     get_repository().create_notification_record(
-        notif_id=notif_id,
-        recipient_type=recipient_type,
-        recipient_id=recipient_id,
-        message=message,
-        channel=channel
+        notif_id=notif_id, recipient_type=recipient_type, recipient_id=recipient_id, message=message, channel=channel
     )
 
 
@@ -362,7 +334,7 @@ def create_volunteer_record(
     transport_mode: str = "Motorbike",
     availability: str = "immediate, evenings",
     current_status: str = "available",
-    location: Optional[str] = None
+    location: Optional[str] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_volunteer_record(
         volunteer_id=volunteer_id,
@@ -385,7 +357,7 @@ def update_volunteer_record(
     availability: Optional[str] = None,
     current_status: Optional[str] = None,
     location: Optional[str] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     return get_repository().update_volunteer_record(
         volunteer_id=volunteer_id,
@@ -425,7 +397,7 @@ def create_reimbursement_record(
     transport_mode: str,
     amount: float,
     currency: str = "LKR",
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_reimbursement_record(
         reimbursement_id=reimbursement_id,
@@ -436,7 +408,7 @@ def create_reimbursement_record(
         transport_mode=transport_mode,
         amount=amount,
         currency=currency,
-        notes=notes
+        notes=notes,
     )
 
 
@@ -456,11 +428,7 @@ def get_all_reimbursements(status: Optional[str] = None) -> List[Dict[str, Any]]
     return get_repository().get_all_reimbursements(status)
 
 
-def update_reimbursement_status_record(
-    reimbursement_id: str,
-    status: str,
-    notes: Optional[str] = None
-) -> bool:
+def update_reimbursement_status_record(reimbursement_id: str, status: str, notes: Optional[str] = None) -> bool:
     return get_repository().update_reimbursement_status_record(reimbursement_id, status, notes)
 
 
@@ -472,7 +440,7 @@ def record_pickup_location(
     latitude: float,
     longitude: float,
     accuracy_m: Optional[float] = None,
-    timestamp: Optional[str] = None
+    timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     return get_repository().record_pickup_location(
         location_id=location_id,
@@ -481,7 +449,7 @@ def record_pickup_location(
         latitude=latitude,
         longitude=longitude,
         accuracy_m=accuracy_m,
-        timestamp=timestamp
+        timestamp=timestamp,
     )
 
 
@@ -494,27 +462,15 @@ def get_pickup_location_history(pickup_task_id: str, limit: int = 50) -> List[Di
 
 
 def update_volunteer_availability(
-    volunteer_id: str,
-    status: str,
-    current_location: Optional[str] = None,
-    current_coordinates: Optional[Dict[str, Any]] = None
+    volunteer_id: str, status: str, current_location: Optional[str] = None, current_coordinates: Optional[Dict[str, Any]] = None
 ) -> bool:
     return get_repository().update_volunteer_availability(
-        volunteer_id=volunteer_id,
-        status=status,
-        current_location=current_location,
-        current_coordinates=current_coordinates
+        volunteer_id=volunteer_id, status=status, current_location=current_location, current_coordinates=current_coordinates
     )
 
 
-def get_available_volunteers(
-    service_area: Optional[str] = None,
-    min_capacity: Optional[int] = None
-) -> List[Dict[str, Any]]:
-    return get_repository().get_available_volunteers(
-        service_area=service_area,
-        min_capacity=min_capacity
-    )
+def get_available_volunteers(service_area: Optional[str] = None, min_capacity: Optional[int] = None) -> List[Dict[str, Any]]:
+    return get_repository().get_available_volunteers(service_area=service_area, min_capacity=min_capacity)
 
 
 def update_pickup_task_logistics(
@@ -526,7 +482,7 @@ def update_pickup_task_logistics(
     delivery_distance_km: Optional[float] = None,
     delivery_duration_minutes: Optional[int] = None,
     total_distance_km: Optional[float] = None,
-    estimated_transport_cost: Optional[float] = None
+    estimated_transport_cost: Optional[float] = None,
 ) -> bool:
     return get_repository().update_pickup_task_logistics(
         task_id=task_id,
@@ -537,24 +493,14 @@ def update_pickup_task_logistics(
         delivery_distance_km=delivery_distance_km,
         delivery_duration_minutes=delivery_duration_minutes,
         total_distance_km=total_distance_km,
-        estimated_transport_cost=estimated_transport_cost
+        estimated_transport_cost=estimated_transport_cost,
     )
 
 
 def create_audit_event_record(
-    event_id: str,
-    event_type: str,
-    actor: str,
-    related_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    event_id: str, event_type: str, actor: str, related_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    return get_repository().create_audit_event_record(
-        event_id=event_id,
-        event_type=event_type,
-        actor=actor,
-        related_id=related_id,
-        metadata=metadata
-    )
+    return get_repository().create_audit_event_record(event_id=event_id, event_type=event_type, actor=actor, related_id=related_id, metadata=metadata)
 
 
 def get_audit_events_for_task(related_id: str) -> List[Dict[str, Any]]:
@@ -574,7 +520,7 @@ def create_or_update_user(
     user_role: str = "unknown",
     onboarding_completed: bool = False,
     default_location: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_or_update_user(
         phone=phone,
@@ -584,7 +530,7 @@ def create_or_update_user(
         user_role=user_role,
         onboarding_completed=onboarding_completed,
         default_location=default_location,
-        metadata=metadata
+        metadata=metadata,
     )
 
 
@@ -609,7 +555,7 @@ def update_user_profile(
     default_location: Optional[str] = None,
     active_donation_id: Optional[str] = None,
     active_task_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return get_repository().update_user_profile(
         phone=phone,
@@ -620,7 +566,7 @@ def update_user_profile(
         default_location=default_location,
         active_donation_id=active_donation_id,
         active_task_id=active_task_id,
-        metadata=metadata
+        metadata=metadata,
     )
 
 
@@ -657,21 +603,9 @@ def get_all_donors() -> List[Dict[str, Any]]:
 
 
 def record_message(
-    phone: str,
-    sender: str,
-    text: str,
-    is_voice: bool = False,
-    transcript: Optional[str] = None,
-    timestamp: Optional[str] = None
+    phone: str, sender: str, text: str, is_voice: bool = False, transcript: Optional[str] = None, timestamp: Optional[str] = None
 ) -> Dict[str, Any]:
-    return get_repository().record_message(
-        phone=phone,
-        sender=sender,
-        text=text,
-        is_voice=is_voice,
-        transcript=transcript,
-        timestamp=timestamp
-    )
+    return get_repository().record_message(phone=phone, sender=sender, text=text, is_voice=is_voice, transcript=transcript, timestamp=timestamp)
 
 
 def get_all_conversations() -> List[Dict[str, Any]]:
@@ -708,7 +642,7 @@ def create_qr_code_record(
     status: str = "ACTIVE",
     created_at: Optional[str] = None,
     expires_at: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return get_repository().create_qr_code_record(
         qr_id=qr_id,
@@ -723,7 +657,7 @@ def create_qr_code_record(
         status=status,
         created_at=created_at,
         expires_at=expires_at,
-        metadata=metadata
+        metadata=metadata,
     )
 
 
@@ -739,31 +673,18 @@ def get_qr_code_by_id(qr_id: str) -> Optional[Dict[str, Any]]:
     return get_repository().get_qr_code_by_id(qr_id=qr_id)
 
 
-def verify_qr_code_record(
-    token: str,
-    volunteer_id: Optional[str] = None,
-    gps_coords: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    return get_repository().verify_qr_code_record(
-        token=token,
-        volunteer_id=volunteer_id,
-        gps_coords=gps_coords
-    )
+def verify_qr_code_record(token: str, volunteer_id: Optional[str] = None, gps_coords: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return get_repository().verify_qr_code_record(token=token, volunteer_id=volunteer_id, gps_coords=gps_coords)
 
 
-def get_all_qr_codes(
-    status: Optional[str] = None,
-    qr_type: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    return get_repository().get_all_qr_codes(
-        status=status,
-        qr_type=qr_type
-    )
+def get_all_qr_codes(status: Optional[str] = None, qr_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    return get_repository().get_all_qr_codes(status=status, qr_type=qr_type)
 
 
 # SQLite backwards-compatibility helpers
 def get_db_path() -> str:
     from db_sqlite import DB_PATH
+
     return os.environ.get("FOODRESCUE_DB_PATH", DB_PATH)
 
 
@@ -772,6 +693,7 @@ def get_connection():
     if hasattr(repo, "_get_connection"):
         return repo._get_connection()
     from db_sqlite import SQLiteRepository
+
     return SQLiteRepository()._get_connection()
 
 
@@ -837,7 +759,3 @@ def delete_user_record(phone: str) -> bool:
 
 def delete_pickup_task_record(task_id: str) -> bool:
     return get_repository().delete_pickup_task_record(task_id)
-
-
-
-

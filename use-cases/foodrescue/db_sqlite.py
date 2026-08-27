@@ -26,15 +26,14 @@ class SQLiteRepository(BaseRepository):
         if self._custom_db_path:
             return self._custom_db_path
         import database
-        return os.environ.get("FOODRESCUE_DB_PATH", getattr(database, "DB_PATH", DB_PATH))
 
+        return os.environ.get("FOODRESCUE_DB_PATH", getattr(database, "DB_PATH", DB_PATH))
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
-
 
     def _now(self) -> str:
         return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -45,7 +44,7 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
 
             # Donors
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS donors (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -54,10 +53,10 @@ class SQLiteRepository(BaseRepository):
                 location TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Organizations
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS organizations (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -69,10 +68,10 @@ class SQLiteRepository(BaseRepository):
                 location TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Volunteers
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS volunteers (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -90,10 +89,10 @@ class SQLiteRepository(BaseRepository):
                 last_available_at TEXT,
                 created_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Donations
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS donations (
                 id TEXT PRIMARY KEY,
                 donor_id TEXT NOT NULL,
@@ -108,10 +107,10 @@ class SQLiteRepository(BaseRepository):
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Pickup Tasks
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS pickup_tasks (
                 id TEXT PRIMARY KEY,
                 donation_id TEXT NOT NULL,
@@ -139,10 +138,10 @@ class SQLiteRepository(BaseRepository):
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Notifications
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS notifications (
                 id TEXT PRIMARY KEY,
                 recipient_type TEXT NOT NULL,
@@ -152,10 +151,10 @@ class SQLiteRepository(BaseRepository):
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Audit Events
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS audit_events (
                 id TEXT PRIMARY KEY,
                 event_type TEXT NOT NULL,
@@ -164,10 +163,10 @@ class SQLiteRepository(BaseRepository):
                 metadata TEXT,
                 created_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Reimbursements (Accounting Ledger)
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS reimbursements (
                 id TEXT PRIMARY KEY,
                 pickup_task_id TEXT NOT NULL,
@@ -183,10 +182,10 @@ class SQLiteRepository(BaseRepository):
                 paid_at TEXT,
                 notes TEXT
             )
-            ''')
+            """)
 
             # Pickup Location History (GPS Breadcrumbs)
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS pickup_location_history (
                 id TEXT PRIMARY KEY,
                 pickup_task_id TEXT NOT NULL,
@@ -196,10 +195,10 @@ class SQLiteRepository(BaseRepository):
                 accuracy_m REAL,
                 timestamp TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Persistent Users & Onboarding Profiles
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 phone_number TEXT PRIMARY KEY,
                 display_name TEXT,
@@ -216,10 +215,10 @@ class SQLiteRepository(BaseRepository):
                 last_seen_at TEXT NOT NULL,
                 metadata TEXT
             )
-            ''')
+            """)
 
             # WhatsApp & Web Chat Message History
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
                 phone_number TEXT NOT NULL,
@@ -229,19 +228,19 @@ class SQLiteRepository(BaseRepository):
                 transcript TEXT,
                 timestamp TEXT NOT NULL
             )
-            ''')
+            """)
 
             # System Settings & Dynamic Transport Configuration
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS system_settings (
                 setting_key TEXT PRIMARY KEY,
                 setting_value TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-            ''')
+            """)
 
             # Physical Handover QR Codes
-            cursor.execute('''
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS qr_codes (
                 id TEXT PRIMARY KEY,
                 task_id TEXT NOT NULL,
@@ -259,9 +258,9 @@ class SQLiteRepository(BaseRepository):
                 verified_by TEXT,
                 metadata TEXT
             )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes (token)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_task ON qr_codes (task_id)')
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes (token)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_task ON qr_codes (task_id)")
 
             # Table migrations for existing sqlite databases
             vol_cols = [
@@ -324,26 +323,26 @@ class SQLiteRepository(BaseRepository):
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
                     "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)",
-                    ("transport_cost", json.dumps({
-                        "base_fare": 100.0,
-                        "cost_per_km": 80.0,
-                        "currency": "LKR",
-                        "rates_by_vehicle": {
-                            "Motorbike": 50.0,
-                            "Three-Wheeler": 90.0,
-                            "Car": 80.0,
-                            "Van": 120.0,
-                            "Bicycle": 25.0,
-                            "Electric Bike": 25.0
-                        },
-                        "vehicle_multipliers": {
-                            "Motorbike": 1.0,
-                            "Bicycle": 0.6,
-                            "Car": 1.5,
-                            "Van": 2.0,
-                            "Three-Wheeler": 1.2
-                        }
-                    }), self._now())
+                    (
+                        "transport_cost",
+                        json.dumps(
+                            {
+                                "base_fare": 100.0,
+                                "cost_per_km": 80.0,
+                                "currency": "LKR",
+                                "rates_by_vehicle": {
+                                    "Motorbike": 50.0,
+                                    "Three-Wheeler": 90.0,
+                                    "Car": 80.0,
+                                    "Van": 120.0,
+                                    "Bicycle": 25.0,
+                                    "Electric Bike": 25.0,
+                                },
+                                "vehicle_multipliers": {"Motorbike": 1.0, "Bicycle": 0.6, "Car": 1.5, "Van": 2.0, "Three-Wheeler": 1.2},
+                            }
+                        ),
+                        self._now(),
+                    ),
                 )
 
         conn.close()
@@ -354,29 +353,67 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT OR IGNORE INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", self._now())
+                ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", self._now()),
             )
             cursor.execute(
                 "INSERT OR IGNORE INTO donors (id, name, phone, organization_name, location, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", self._now())
+                ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", self._now()),
             )
 
             cursor.execute(
                 "INSERT OR IGNORE INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("o1", "Community Kitchen Colombo", "+9419876543", "Colombo, Dehiwala", "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items", "200 meals", "always", "Colombo 7", self._now())
+                (
+                    "o1",
+                    "Community Kitchen Colombo",
+                    "+9419876543",
+                    "Colombo, Dehiwala",
+                    "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items",
+                    "200 meals",
+                    "always",
+                    "Colombo 7",
+                    self._now(),
+                ),
             )
             cursor.execute(
                 "INSERT OR IGNORE INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("o2", "Hope Food Bank", "+9419876544", "Colombo 3, Colombo 4, Wellawatte", "dry rations, bakery items, vegetarian", "100 meals", "daytime", "Colombo 4", self._now())
+                (
+                    "o2",
+                    "Hope Food Bank",
+                    "+9419876544",
+                    "Colombo 3, Colombo 4, Wellawatte",
+                    "dry rations, bakery items, vegetarian",
+                    "100 meals",
+                    "daytime",
+                    "Colombo 4",
+                    self._now(),
+                ),
             )
 
             cursor.execute(
                 "INSERT OR IGNORE INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                ("v1", "Amara Silva", "+94771234567", "Colombo, Colombo 3, Colombo 4, Colombo 7", "immediate, evenings", "available", "Colombo 3", self._now())
+                (
+                    "v1",
+                    "Amara Silva",
+                    "+94771234567",
+                    "Colombo, Colombo 3, Colombo 4, Colombo 7",
+                    "immediate, evenings",
+                    "available",
+                    "Colombo 3",
+                    self._now(),
+                ),
             )
             cursor.execute(
                 "INSERT OR IGNORE INTO volunteers (id, name, phone, service_area, availability, current_status, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "weekends, evenings", "available", "Colombo 5", self._now())
+                (
+                    "v2",
+                    "Kamal Perera",
+                    "+94771234568",
+                    "Colombo, Dehiwala, Mount Lavinia",
+                    "weekends, evenings",
+                    "available",
+                    "Colombo 5",
+                    self._now(),
+                ),
             )
 
         conn.close()
@@ -406,28 +443,28 @@ class SQLiteRepository(BaseRepository):
         for row in rows:
             d = dict(row)
             d_digits = self._normalize_phone(d.get("phone", ""))
-            if d_digits and norm_digits and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:])):
+            if (
+                d_digits
+                and norm_digits
+                and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:]))
+            ):
                 return d
         return None
 
-    def create_donor_record(
-        self,
-        donor_id: str,
-        name: str,
-        phone: str,
-        location: str,
-        organization_name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def create_donor_record(self, donor_id: str, name: str, phone: str, location: str, organization_name: Optional[str] = None) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         org_name = organization_name or name
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
-            INSERT INTO donors (id, name, phone, organization_name, location, created_at)
+            cursor.execute(
+                """
+            INSERT OR REPLACE INTO donors (id, name, phone, organization_name, location, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-            ''', (donor_id, name, phone, org_name, location, now))
-        
+            """,
+                (donor_id, name, phone, org_name, location, now),
+            )
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM donors WHERE id = ?", (donor_id,))
         row = cursor.fetchone()
@@ -454,7 +491,11 @@ class SQLiteRepository(BaseRepository):
         for row in rows:
             o = dict(row)
             o_digits = self._normalize_phone(o.get("phone", ""))
-            if o_digits and norm_digits and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:])):
+            if (
+                o_digits
+                and norm_digits
+                and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:]))
+            ):
                 return o
         return None
 
@@ -467,7 +508,7 @@ class SQLiteRepository(BaseRepository):
         accepted_food_types: str,
         capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
@@ -475,10 +516,13 @@ class SQLiteRepository(BaseRepository):
         cap_val = capacity if (capacity and str(capacity).strip()) else "As needed"
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (org_id, name, phone, service_area, accepted_food_types, cap_val, availability or "daytime", loc, now))
+            """,
+                (org_id, name, phone, service_area, accepted_food_types, cap_val, availability or "daytime", loc, now),
+            )
 
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
@@ -495,7 +539,7 @@ class SQLiteRepository(BaseRepository):
         accepted_food_types: Optional[str] = None,
         capacity: Optional[str] = None,
         availability: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         conn = self._get_connection()
         fields = []
@@ -558,7 +602,11 @@ class SQLiteRepository(BaseRepository):
         for row in rows:
             v = dict(row)
             v_digits = self._normalize_phone(v.get("phone", ""))
-            if v_digits and norm_digits and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:])):
+            if (
+                v_digits
+                and norm_digits
+                and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:]))
+            ):
                 return v
         return None
 
@@ -571,18 +619,21 @@ class SQLiteRepository(BaseRepository):
         transport_mode: str = "Motorbike",
         availability: str = "immediate, evenings",
         current_status: str = "available",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         loc = location or service_area.split(",")[0].strip()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT OR REPLACE INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, location, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (volunteer_id, name, phone, service_area, transport_mode, availability, current_status, loc, now))
-        
+            """,
+                (volunteer_id, name, phone, service_area, transport_mode, availability, current_status, loc, now),
+            )
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM volunteers WHERE id = ?", (volunteer_id,))
         row = cursor.fetchone()
@@ -598,7 +649,7 @@ class SQLiteRepository(BaseRepository):
         transport_mode: Optional[str] = None,
         availability: Optional[str] = None,
         current_status: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         conn = self._get_connection()
         updates = []
@@ -640,7 +691,6 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return dict(row) if row else None
 
-
     def create_donation_record(
         self,
         donation_id: str,
@@ -651,16 +701,19 @@ class SQLiteRepository(BaseRepository):
         dietary_info: str,
         location: str,
         available_from: str,
-        deadline: str
+        deadline: str,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO donations (id, donor_id, food_type, quantity, unit, dietary_information, pickup_location, available_from, pickup_deadline, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?)
-            ''', (donation_id, donor_id, food_type, quantity, unit, dietary_info, location, available_from, deadline, now, now))
+            """,
+                (donation_id, donor_id, food_type, quantity, unit, dietary_info, location, available_from, deadline, now, now),
+            )
 
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM donations WHERE id = ?", (donation_id,))
@@ -695,7 +748,7 @@ class SQLiteRepository(BaseRepository):
         dietary_info: Optional[str] = None,
         location: Optional[str] = None,
         available_from: Optional[str] = None,
-        deadline: Optional[str] = None
+        deadline: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         conn = self._get_connection()
         now = self._now()
@@ -754,6 +807,7 @@ class SQLiteRepository(BaseRepository):
         food_clean = food_type.strip().lower()
 
         import routing
+
         target_district = (routing.resolve_district(location) or "").lower()
 
         cursor.execute("SELECT * FROM organizations")
@@ -811,6 +865,7 @@ class SQLiteRepository(BaseRepository):
         loc_clean = location.strip().lower()
 
         import routing
+
         target_district = (routing.resolve_district(location) or "").lower()
 
         cursor.execute("SELECT * FROM volunteers WHERE current_status = 'available'")
@@ -839,23 +894,18 @@ class SQLiteRepository(BaseRepository):
         matched_vols.sort(key=lambda x: x.get("match_score", 0), reverse=True)
         return matched_vols if matched_vols else all_vols
 
-    def create_pickup_task_record(
-        self,
-        task_id: str,
-        donation_id: str,
-        org_id: str,
-        pickup_loc: str,
-        delivery_loc: str,
-        time: str
-    ) -> Dict[str, Any]:
+    def create_pickup_task_record(self, task_id: str, donation_id: str, org_id: str, pickup_loc: str, delivery_loc: str, time: str) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO pickup_tasks (id, donation_id, organization_id, volunteer_id, pickup_location, delivery_location, scheduled_time, status, created_at, updated_at)
             VALUES (?, ?, ?, NULL, ?, ?, ?, 'PENDING', ?, ?)
-            ''', (task_id, donation_id, org_id, pickup_loc, delivery_loc, time, now, now))
+            """,
+                (task_id, donation_id, org_id, pickup_loc, delivery_loc, time, now, now),
+            )
 
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM pickup_tasks WHERE id = ?", (task_id,))
@@ -911,10 +961,12 @@ class SQLiteRepository(BaseRepository):
             if atomic_claim:
                 cursor.execute(
                     "UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ? AND (status IN ('PENDING', 'OFFERED', 'OPEN') OR volunteer_id IS NULL OR volunteer_id = '')",
-                    (volunteer_id, now, task_id)
+                    (volunteer_id, now, task_id),
                 )
             else:
-                cursor.execute("UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ?", (volunteer_id, now, task_id))
+                cursor.execute(
+                    "UPDATE pickup_tasks SET volunteer_id = ?, status = 'ASSIGNED', updated_at = ? WHERE id = ?", (volunteer_id, now, task_id)
+                )
             rows = cursor.rowcount
         conn.close()
         return rows > 0
@@ -929,22 +981,18 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return rows > 0
 
-    def create_notification_record(
-        self,
-        notif_id: str,
-        recipient_type: str,
-        recipient_id: str,
-        message: str,
-        channel: str
-    ) -> None:
+    def create_notification_record(self, notif_id: str, recipient_type: str, recipient_id: str, message: str, channel: str) -> None:
         conn = self._get_connection()
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO notifications (id, recipient_type, recipient_id, message, channel, status, created_at)
             VALUES (?, ?, ?, ?, ?, 'SENT', ?)
-            ''', (notif_id, recipient_type, recipient_id, message, channel, now))
+            """,
+                (notif_id, recipient_type, recipient_id, message, channel, now),
+            )
         conn.close()
 
     def get_notifications_for_recipient(self, recipient_id: str) -> List[Dict[str, Any]]:
@@ -1065,7 +1113,7 @@ class SQLiteRepository(BaseRepository):
                 "notifications",
                 "donations",
                 "audit_events",
-                "users"
+                "users",
             ]
             if wipe_all:
                 tables.extend(["volunteers", "organizations", "donors"])
@@ -1075,30 +1123,26 @@ class SQLiteRepository(BaseRepository):
                 except sqlite3.OperationalError:
                     pass
             try:
-                default_settings = json.dumps({
-                    "base_fare": 100.0,
-                    "cost_per_km": 80.0,
-                    "currency": "LKR",
-                    "rates_by_vehicle": {
-                        "Motorbike": 50.0,
-                        "Three-Wheeler": 90.0,
-                        "Car": 80.0,
-                        "Van": 120.0,
-                        "Bicycle": 25.0,
-                        "Electric Bike": 25.0
-                    },
-                    "vehicle_multipliers": {
-                        "Motorbike": 1.0,
-                        "Bicycle": 0.6,
-                        "Car": 1.5,
-                        "Van": 2.0,
-                        "Three-Wheeler": 1.2
+                default_settings = json.dumps(
+                    {
+                        "base_fare": 100.0,
+                        "cost_per_km": 80.0,
+                        "currency": "LKR",
+                        "rates_by_vehicle": {
+                            "Motorbike": 50.0,
+                            "Three-Wheeler": 90.0,
+                            "Car": 80.0,
+                            "Van": 120.0,
+                            "Bicycle": 25.0,
+                            "Electric Bike": 25.0,
+                        },
+                        "vehicle_multipliers": {"Motorbike": 1.0, "Bicycle": 0.6, "Car": 1.5, "Van": 2.0, "Three-Wheeler": 1.2},
                     }
-                })
+                )
                 cursor.execute(
                     "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('transport_cost', ?, ?) "
                     "ON CONFLICT(setting_key) DO UPDATE SET setting_value = ?, updated_at = ?",
-                    (default_settings, self._now(), default_settings, self._now())
+                    (default_settings, self._now(), default_settings, self._now()),
                 )
             except Exception:
                 pass
@@ -1115,17 +1159,31 @@ class SQLiteRepository(BaseRepository):
         transport_mode: str,
         amount: float,
         currency: str = "LKR",
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO reimbursements (id, pickup_task_id, volunteer_id, distance_km, rate_per_km, transport_mode, amount, currency, status, created_at, approved_at, paid_at, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL, NULL, ?)
-            ''', (reimbursement_id, pickup_task_id, volunteer_id, float(distance_km), float(rate_per_km), str(transport_mode), float(amount), str(currency), now, notes))
-        
+            """,
+                (
+                    reimbursement_id,
+                    pickup_task_id,
+                    volunteer_id,
+                    float(distance_km),
+                    float(rate_per_km),
+                    str(transport_mode),
+                    float(amount),
+                    str(currency),
+                    now,
+                    notes,
+                ),
+            )
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM reimbursements WHERE id = ?", (reimbursement_id,))
         row = cursor.fetchone()
@@ -1160,13 +1218,16 @@ class SQLiteRepository(BaseRepository):
         conn = self._get_connection()
         cursor = conn.cursor()
         if status and status.strip():
-            cursor.execute("""
+            cursor.execute(
+                """
             SELECT r.*, v.name as volunteer_name
             FROM reimbursements r
             LEFT JOIN volunteers v ON r.volunteer_id = v.id
             WHERE r.status = ?
             ORDER BY r.created_at DESC
-            """, (status.strip().upper(),))
+            """,
+                (status.strip().upper(),),
+            )
         else:
             cursor.execute("""
             SELECT r.*, v.name as volunteer_name
@@ -1178,12 +1239,7 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return [dict(r) for r in rows]
 
-    def update_reimbursement_status_record(
-        self,
-        reimbursement_id: str,
-        status: str,
-        notes: Optional[str] = None
-    ) -> bool:
+    def update_reimbursement_status_record(self, reimbursement_id: str, status: str, notes: Optional[str] = None) -> bool:
         conn = self._get_connection()
         now = self._now()
         norm_status = str(status).strip().upper()
@@ -1195,17 +1251,16 @@ class SQLiteRepository(BaseRepository):
             if approved_at:
                 cursor.execute(
                     "UPDATE reimbursements SET status = ?, approved_at = ?, notes = COALESCE(?, notes) WHERE id = ?",
-                    (norm_status, approved_at, notes, reimbursement_id)
+                    (norm_status, approved_at, notes, reimbursement_id),
                 )
             elif paid_at:
                 cursor.execute(
                     "UPDATE reimbursements SET status = ?, paid_at = ?, notes = COALESCE(?, notes) WHERE id = ?",
-                    (norm_status, paid_at, notes, reimbursement_id)
+                    (norm_status, paid_at, notes, reimbursement_id),
                 )
             else:
                 cursor.execute(
-                    "UPDATE reimbursements SET status = ?, notes = COALESCE(?, notes) WHERE id = ?",
-                    (norm_status, notes, reimbursement_id)
+                    "UPDATE reimbursements SET status = ?, notes = COALESCE(?, notes) WHERE id = ?", (norm_status, notes, reimbursement_id)
                 )
             rows = cursor.rowcount
         conn.close()
@@ -1220,17 +1275,28 @@ class SQLiteRepository(BaseRepository):
         latitude: float,
         longitude: float,
         accuracy_m: Optional[float] = None,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         ts = timestamp or self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO pickup_location_history (id, pickup_task_id, volunteer_id, latitude, longitude, accuracy_m, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (location_id, pickup_task_id, volunteer_id, float(latitude), float(longitude), float(accuracy_m) if accuracy_m is not None else None, ts))
-        
+            """,
+                (
+                    location_id,
+                    pickup_task_id,
+                    volunteer_id,
+                    float(latitude),
+                    float(longitude),
+                    float(accuracy_m) if accuracy_m is not None else None,
+                    ts,
+                ),
+            )
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM pickup_location_history WHERE id = ?", (location_id,))
         row = cursor.fetchone()
@@ -1255,11 +1321,7 @@ class SQLiteRepository(BaseRepository):
 
     # Volunteer Availability & Location Coordination
     def update_volunteer_availability(
-        self,
-        volunteer_id: str,
-        status: str,
-        current_location: Optional[str] = None,
-        current_coordinates: Optional[Dict[str, Any]] = None
+        self, volunteer_id: str, status: str, current_location: Optional[str] = None, current_coordinates: Optional[Dict[str, Any]] = None
     ) -> bool:
         conn = self._get_connection()
         norm_status = str(status).strip().upper()
@@ -1267,7 +1329,8 @@ class SQLiteRepository(BaseRepository):
         coords_json = json.dumps(current_coordinates) if current_coordinates else None
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             UPDATE volunteers
             SET availability_status = ?,
                 current_status = ?,
@@ -1275,22 +1338,20 @@ class SQLiteRepository(BaseRepository):
                 current_coordinates = COALESCE(?, current_coordinates),
                 last_available_at = CASE WHEN ? = 'AVAILABLE' THEN ? ELSE last_available_at END
             WHERE id = ?
-            ''', (norm_status, norm_status.lower(), current_location, coords_json, norm_status, now, volunteer_id))
+            """,
+                (norm_status, norm_status.lower(), current_location, coords_json, norm_status, now, volunteer_id),
+            )
             rows = cursor.rowcount
         conn.close()
         return rows > 0
 
-    def get_available_volunteers(
-        self,
-        service_area: Optional[str] = None,
-        min_capacity: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_available_volunteers(self, service_area: Optional[str] = None, min_capacity: Optional[int] = None) -> List[Dict[str, Any]]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM volunteers WHERE availability_status = 'AVAILABLE' OR current_status = 'available'")
         rows = cursor.fetchall()
         conn.close()
-        
+
         vols = []
         for r in rows:
             v = dict(r)
@@ -1323,7 +1384,7 @@ class SQLiteRepository(BaseRepository):
         delivery_distance_km: Optional[float] = None,
         delivery_duration_minutes: Optional[int] = None,
         total_distance_km: Optional[float] = None,
-        estimated_transport_cost: Optional[float] = None
+        estimated_transport_cost: Optional[float] = None,
     ) -> bool:
         conn = self._get_connection()
         p_coords_json = json.dumps(pickup_coordinates) if pickup_coordinates else None
@@ -1331,7 +1392,8 @@ class SQLiteRepository(BaseRepository):
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             UPDATE pickup_tasks
             SET pickup_coordinates = COALESCE(?, pickup_coordinates),
                 pickup_location_confirmed = CASE WHEN ? IS NOT NULL THEN 1 ELSE pickup_location_confirmed END,
@@ -1345,37 +1407,43 @@ class SQLiteRepository(BaseRepository):
                 estimated_transport_cost = COALESCE(?, estimated_transport_cost),
                 updated_at = ?
             WHERE id = ?
-            ''', (
-                p_coords_json, p_coords_json,
-                d_coords_json, d_coords_json,
-                pickup_distance_km, pickup_duration_minutes,
-                delivery_distance_km, delivery_duration_minutes,
-                total_distance_km, estimated_transport_cost,
-                now, task_id
-            ))
+            """,
+                (
+                    p_coords_json,
+                    p_coords_json,
+                    d_coords_json,
+                    d_coords_json,
+                    pickup_distance_km,
+                    pickup_duration_minutes,
+                    delivery_distance_km,
+                    delivery_duration_minutes,
+                    total_distance_km,
+                    estimated_transport_cost,
+                    now,
+                    task_id,
+                ),
+            )
             rows = cursor.rowcount
         conn.close()
         return rows > 0
 
     # Audit Trail Event Logging
     def create_audit_event_record(
-        self,
-        event_id: str,
-        event_type: str,
-        actor: str,
-        related_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        self, event_id: str, event_type: str, actor: str, related_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = self._now()
         meta_json = json.dumps(metadata) if metadata else None
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-            ''', (event_id, event_type, actor, related_id, meta_json, now))
-        
+            """,
+                (event_id, event_type, actor, related_id, meta_json, now),
+            )
+
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM audit_events WHERE id = ?", (event_id,))
         row = cursor.fetchone()
@@ -1602,7 +1670,7 @@ class SQLiteRepository(BaseRepository):
         default_location: Optional[str] = None,
         active_donation_id: Optional[str] = None,
         active_task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
         conn = self._get_connection()
@@ -1613,24 +1681,28 @@ class SQLiteRepository(BaseRepository):
             cursor.execute("SELECT * FROM users WHERE phone_number = ?", (norm,))
             existing = cursor.fetchone()
             if not existing:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, user_role, default_location, active_donation_id, active_task_id, first_seen_at, last_seen_at, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    norm,
-                    display_name or f"User_{norm[-4:]}",
-                    preferred_language or "en",
-                    preferred_response_mode or "text",
-                    user_role or "unknown",
-                    default_location,
-                    active_donation_id,
-                    active_task_id,
-                    now,
-                    now,
-                    meta_json
-                ))
+                """,
+                    (
+                        norm,
+                        display_name or f"User_{norm[-4:]}",
+                        preferred_language or "en",
+                        preferred_response_mode or "text",
+                        user_role or "unknown",
+                        default_location,
+                        active_donation_id,
+                        active_task_id,
+                        now,
+                        now,
+                        meta_json,
+                    ),
+                )
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET
                     display_name = COALESCE(?, display_name),
                     preferred_language = COALESCE(?, preferred_language),
@@ -1642,18 +1714,20 @@ class SQLiteRepository(BaseRepository):
                     metadata = COALESCE(?, metadata),
                     last_seen_at = ?
                 WHERE phone_number = ?
-                ''', (
-                    display_name,
-                    preferred_language,
-                    preferred_response_mode,
-                    user_role,
-                    default_location,
-                    active_donation_id,
-                    active_task_id,
-                    meta_json,
-                    now,
-                    norm
-                ))
+                """,
+                    (
+                        display_name,
+                        preferred_language,
+                        preferred_response_mode,
+                        user_role,
+                        default_location,
+                        active_donation_id,
+                        active_task_id,
+                        meta_json,
+                        now,
+                        norm,
+                    ),
+                )
         conn.close()
         return self.get_user_by_phone(norm) or {}
 
@@ -1665,15 +1739,21 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
             if not cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, preferred_language, first_seen_at, last_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (norm, f"User_{norm[-4:]}", language.lower().strip(), now, now))
+                """,
+                    (norm, f"User_{norm[-4:]}", language.lower().strip(), now, now),
+                )
                 updated = True
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET preferred_language = ?, last_seen_at = ? WHERE phone_number = ?
-                ''', (language.lower().strip(), now, norm))
+                """,
+                    (language.lower().strip(), now, norm),
+                )
                 updated = cursor.rowcount > 0
         conn.close()
         return updated
@@ -1687,15 +1767,21 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
             if not cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, preferred_response_mode, first_seen_at, last_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (norm, f"User_{norm[-4:]}", clean_mode, now, now))
+                """,
+                    (norm, f"User_{norm[-4:]}", clean_mode, now, now),
+                )
                 updated = True
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET preferred_response_mode = ?, last_seen_at = ? WHERE phone_number = ?
-                ''', (clean_mode, now, norm))
+                """,
+                    (clean_mode, now, norm),
+                )
                 updated = cursor.rowcount > 0
         conn.close()
         return updated
@@ -1706,9 +1792,12 @@ class SQLiteRepository(BaseRepository):
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             UPDATE users SET onboarding_completed = ?, last_seen_at = ? WHERE phone_number = ?
-            ''', (1 if completed else 0, now, norm))
+            """,
+                (1 if completed else 0, now, norm),
+            )
             updated = cursor.rowcount > 0
         conn.close()
         return updated
@@ -1728,15 +1817,21 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
             if not cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, conversation_state, first_seen_at, last_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (norm, f"User_{norm[-4:]}", state_json, now, now))
+                """,
+                    (norm, f"User_{norm[-4:]}", state_json, now, now),
+                )
                 updated = True
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET conversation_state = ?, last_seen_at = ? WHERE phone_number = ?
-                ''', (state_json, now, norm))
+                """,
+                    (state_json, now, norm),
+                )
                 updated = cursor.rowcount > 0
         conn.close()
         return updated
@@ -1763,14 +1858,20 @@ class SQLiteRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
             if not cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, active_draft, first_seen_at, last_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ''', (norm, f"User_{norm[-4:]}", draft_json, now, now))
+                """,
+                    (norm, f"User_{norm[-4:]}", draft_json, now, now),
+                )
             else:
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE users SET active_draft = ?, last_seen_at = ? WHERE phone_number = ?
-                ''', (draft_json, now, norm))
+                """,
+                    (draft_json, now, norm),
+                )
         conn.close()
         return merged
 
@@ -1788,9 +1889,12 @@ class SQLiteRepository(BaseRepository):
         now = self._now()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             UPDATE users SET active_draft = NULL, last_seen_at = ? WHERE phone_number = ?
-            ''', (now, norm))
+            """,
+                (now, norm),
+            )
             updated = cursor.rowcount > 0
         conn.close()
         return updated
@@ -1843,60 +1947,66 @@ class SQLiteRepository(BaseRepository):
         for vol in self.get_all_volunteers():
             v_phone = self._normalize_phone(vol.get("phone", ""))
             if v_phone and v_phone not in seen_phones:
-                users.append({
-                    "phone_number": v_phone,
-                    "display_name": vol.get("name", "Volunteer"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "volunteer",
-                    "onboarding_completed": True,
-                    "default_location": vol.get("service_area") or vol.get("location"),
-                    "created_at": vol.get("created_at") or self._now(),
-                    "last_seen_at": vol.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": v_phone,
+                        "display_name": vol.get("name", "Volunteer"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "volunteer",
+                        "onboarding_completed": True,
+                        "default_location": vol.get("service_area") or vol.get("location"),
+                        "created_at": vol.get("created_at") or self._now(),
+                        "last_seen_at": vol.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(v_phone)
 
         # Include registered organizations not explicitly in users table
         for org in self.get_all_organizations():
             o_phone = self._normalize_phone(org.get("phone", ""))
             if o_phone and o_phone not in seen_phones:
-                users.append({
-                    "phone_number": o_phone,
-                    "display_name": org.get("name", "Organization"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "organization",
-                    "onboarding_completed": True,
-                    "default_location": org.get("location") or org.get("service_area"),
-                    "created_at": org.get("created_at") or self._now(),
-                    "last_seen_at": org.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": o_phone,
+                        "display_name": org.get("name", "Organization"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "organization",
+                        "onboarding_completed": True,
+                        "default_location": org.get("location") or org.get("service_area"),
+                        "created_at": org.get("created_at") or self._now(),
+                        "last_seen_at": org.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(o_phone)
 
         # Include registered donors not explicitly in users table
         for don in self.get_all_donors():
             d_phone = self._normalize_phone(don.get("phone", ""))
             if d_phone and d_phone not in seen_phones:
-                users.append({
-                    "phone_number": d_phone,
-                    "display_name": don.get("name", "Donor"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "donor",
-                    "onboarding_completed": True,
-                    "default_location": don.get("location"),
-                    "created_at": don.get("created_at") or self._now(),
-                    "last_seen_at": don.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": d_phone,
+                        "display_name": don.get("name", "Donor"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "donor",
+                        "onboarding_completed": True,
+                        "default_location": don.get("location"),
+                        "created_at": don.get("created_at") or self._now(),
+                        "last_seen_at": don.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(d_phone)
 
         return users
@@ -1910,33 +2020,34 @@ class SQLiteRepository(BaseRepository):
         return [dict(r) for r in rows]
 
     def record_message(
-        self,
-        phone: str,
-        sender: str,
-        text: str,
-        is_voice: bool = False,
-        transcript: Optional[str] = None,
-        timestamp: Optional[str] = None
+        self, phone: str, sender: str, text: str, is_voice: bool = False, transcript: Optional[str] = None, timestamp: Optional[str] = None
     ) -> Dict[str, Any]:
         import uuid
+
         norm = self._normalize_phone(phone)
         msg_id = f"msg-{uuid.uuid4().hex[:8]}"
         ts = timestamp or self._now()
         conn = self._get_connection()
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (msg_id, norm, sender, text, 1 if is_voice else 0, transcript, ts))
+            """,
+                (msg_id, norm, sender, text, 1 if is_voice else 0, transcript, ts),
+            )
             # Also ensure user record exists and update last_seen_at
             cursor.execute("SELECT phone_number FROM users WHERE phone_number = ?", (norm,))
             resp_mode = "voice" if is_voice else "text"
             if not cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO users (phone_number, display_name, preferred_language, preferred_response_mode, first_seen_at, last_seen_at)
                 VALUES (?, ?, 'en', ?, ?, ?)
-                ''', (norm, f"User_{norm[-4:]}", resp_mode, ts, ts))
+                """,
+                    (norm, f"User_{norm[-4:]}", resp_mode, ts, ts),
+                )
             else:
                 cursor.execute("UPDATE users SET last_seen_at = ? WHERE phone_number = ?", (ts, norm))
         conn.close()
@@ -1947,13 +2058,13 @@ class SQLiteRepository(BaseRepository):
             "message_text": text,
             "is_voice": bool(is_voice),
             "transcript": transcript,
-            "timestamp": ts
+            "timestamp": ts,
         }
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute("""
         SELECT 
             m.phone_number,
             COUNT(m.id) as message_count,
@@ -1961,7 +2072,7 @@ class SQLiteRepository(BaseRepository):
         FROM messages m
         GROUP BY m.phone_number
         ORDER BY last_activity DESC
-        ''')
+        """)
         rows = cursor.fetchall()
         conv_phones = {r["phone_number"]: dict(r) for r in rows}
 
@@ -1977,7 +2088,7 @@ class SQLiteRepository(BaseRepository):
             u = dict(u_row)
             norm = u["phone_number"]
             seen_phones.add(norm)
-            
+
             # Fetch latest message
             latest_msg = None
             msg_count = 0
@@ -2009,19 +2120,21 @@ class SQLiteRepository(BaseRepository):
                             disp_name = org_rec["name"]
                             u_role = "organization"
 
-            conversations.append({
-                "phone_number": norm,
-                "display_name": disp_name,
-                "user_role": u_role,
-                "preferred_language": u.get("preferred_language", "en"),
-                "preferred_response_mode": u.get("preferred_response_mode", "text"),
-                "message_count": msg_count,
-                "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
-                "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
-                "last_message_is_voice": bool(latest_msg.get("is_voice", 0)) if latest_msg else False,
-                "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
-                "onboarding_completed": bool(u.get("onboarding_completed", 0)),
-            })
+            conversations.append(
+                {
+                    "phone_number": norm,
+                    "display_name": disp_name,
+                    "user_role": u_role,
+                    "preferred_language": u.get("preferred_language", "en"),
+                    "preferred_response_mode": u.get("preferred_response_mode", "text"),
+                    "message_count": msg_count,
+                    "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
+                    "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
+                    "last_message_is_voice": bool(latest_msg.get("is_voice", 0)) if latest_msg else False,
+                    "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
+                    "onboarding_completed": bool(u.get("onboarding_completed", 0)),
+                }
+            )
 
         return conversations
 
@@ -2072,7 +2185,7 @@ class SQLiteRepository(BaseRepository):
                         "Car": 80.0,
                         "Van": 120.0,
                         "Bicycle": 25.0,
-                        "Electric Bike": 25.0
+                        "Electric Bike": 25.0,
                     }
                 return data
             except Exception:
@@ -2081,21 +2194,8 @@ class SQLiteRepository(BaseRepository):
             "base_fare": 100.0,
             "cost_per_km": 80.0,
             "currency": "LKR",
-            "rates_by_vehicle": {
-                "Motorbike": 50.0,
-                "Three-Wheeler": 90.0,
-                "Car": 80.0,
-                "Van": 120.0,
-                "Bicycle": 25.0,
-                "Electric Bike": 25.0
-            },
-            "vehicle_multipliers": {
-                "Motorbike": 1.0,
-                "Bicycle": 0.6,
-                "Car": 1.5,
-                "Van": 2.0,
-                "Three-Wheeler": 1.2
-            }
+            "rates_by_vehicle": {"Motorbike": 50.0, "Three-Wheeler": 90.0, "Car": 80.0, "Van": 120.0, "Bicycle": 25.0, "Electric Bike": 25.0},
+            "vehicle_multipliers": {"Motorbike": 1.0, "Bicycle": 0.6, "Car": 1.5, "Van": 2.0, "Three-Wheeler": 1.2},
         }
 
     def update_transport_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -2104,11 +2204,14 @@ class SQLiteRepository(BaseRepository):
         val_json = json.dumps(settings)
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT INTO system_settings (setting_key, setting_value, updated_at)
             VALUES ('transport_cost', ?, ?)
             ON CONFLICT(setting_key) DO UPDATE SET setting_value = ?, updated_at = ?
-            ''', (val_json, now, val_json, now))
+            """,
+                (val_json, now, val_json, now),
+            )
         conn.close()
         return settings
 
@@ -2127,24 +2230,37 @@ class SQLiteRepository(BaseRepository):
         status: str = "ACTIVE",
         created_at: Optional[str] = None,
         expires_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         conn = self._get_connection()
         now = created_at or self._now()
         meta_json = json.dumps(metadata) if metadata else None
         with conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
             INSERT OR REPLACE INTO qr_codes (
                 id, task_id, donation_id, qr_type, token, token_hash,
                 donor_id, organization_id, assigned_volunteer_id,
                 status, created_at, expires_at, metadata
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                qr_id, task_id, donation_id, qr_type.upper(), token, token_hash,
-                donor_id, organization_id, assigned_volunteer_id,
-                status.upper(), now, expires_at, meta_json
-            ))
+            """,
+                (
+                    qr_id,
+                    task_id,
+                    donation_id,
+                    qr_type.upper(),
+                    token,
+                    token_hash,
+                    donor_id,
+                    organization_id,
+                    assigned_volunteer_id,
+                    status.upper(),
+                    now,
+                    expires_at,
+                    meta_json,
+                ),
+            )
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM qr_codes WHERE id = ?", (qr_id,))
         row = cursor.fetchone()
@@ -2177,11 +2293,7 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return dict(row) if row else None
 
-    def get_all_qr_codes(
-        self,
-        status: Optional[str] = None,
-        qr_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_all_qr_codes(self, status: Optional[str] = None, qr_type: Optional[str] = None) -> List[Dict[str, Any]]:
         conn = self._get_connection()
         cursor = conn.cursor()
         query = "SELECT * FROM qr_codes WHERE 1=1"
@@ -2198,12 +2310,7 @@ class SQLiteRepository(BaseRepository):
         conn.close()
         return [dict(r) for r in rows]
 
-    def verify_qr_code_record(
-        self,
-        token: str,
-        volunteer_id: Optional[str] = None,
-        gps_coords: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def verify_qr_code_record(self, token: str, volunteer_id: Optional[str] = None, gps_coords: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Atomically verify a physical handover QR code and advance task lifecycle status."""
         qr = self.get_qr_code_by_token(token)
         if not qr:
@@ -2245,104 +2352,139 @@ class SQLiteRepository(BaseRepository):
                     return {"success": False, "error": "ALREADY_COLLECTED", "message": "This donation has already been collected."}
 
                 # 1. Update QR Code status
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE qr_codes
                 SET status = 'VERIFIED', verified_at = ?, verified_by = ?
                 WHERE token = ? AND status = 'ACTIVE'
-                ''', (now, effective_vol_id, token.strip()))
+                """,
+                    (now, effective_vol_id, token.strip()),
+                )
 
                 if cursor.rowcount == 0:
                     return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
 
                 # 2. Update Pickup Task to COLLECTED
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE pickup_tasks
                 SET status = 'COLLECTED', delivery_status = 'IN_TRANSIT', food_collected_at = ?, updated_at = ?
                 WHERE id = ?
-                ''', (now, now, task_id))
+                """,
+                    (now, now, task_id),
+                )
 
                 # 3. Update Donation to COLLECTED
                 if donation_id:
-                    cursor.execute('''
+                    cursor.execute(
+                        """
                     UPDATE donations
                     SET status = 'COLLECTED', updated_at = ?
                     WHERE id = ?
-                    ''', (now, donation_id))
+                    """,
+                        (now, donation_id),
+                    )
 
                 # Ensure active Delivery QR is generated for subsequent organization delivery
                 cursor.execute("SELECT * FROM qr_codes WHERE task_id = ? AND UPPER(qr_type) = 'DELIVERY' AND UPPER(status) = 'ACTIVE'", (task_id,))
                 dl_row = cursor.fetchone()
                 if not dl_row:
                     import qr_service
+
                     dl_token = qr_service.generate_secure_token("DL")
-                    cursor.execute('''
+                    cursor.execute(
+                        """
                     INSERT INTO qr_codes (id, task_id, donation_id, qr_type, token, token_hash, donor_id, organization_id, assigned_volunteer_id, status, created_at)
                     VALUES (?, ?, ?, 'DELIVERY', ?, ?, ?, ?, ?, 'ACTIVE', ?)
-                    ''', (
-                        f"qr-dl-{task_id}",
-                        task_id,
-                        donation_id or "don-unknown",
-                        dl_token,
-                        qr_service.hash_token(dl_token),
-                        task.get("donor_id"),
-                        task.get("organization_id"),
-                        effective_vol_id,
-                        now
-                    ))
+                    """,
+                        (
+                            f"qr-dl-{task_id}",
+                            task_id,
+                            donation_id or "don-unknown",
+                            dl_token,
+                            qr_service.hash_token(dl_token),
+                            task.get("donor_id"),
+                            task.get("organization_id"),
+                            effective_vol_id,
+                            now,
+                        ),
+                    )
 
                 # 4. Audit Log
                 audit_id = f"aud-{uuid.uuid4().hex[:8]}"
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at)
                 VALUES (?, 'PICKUP_QR_VERIFIED', ?, ?, ?, ?)
-                ''', (audit_id, str(effective_vol_id or 'volunteer'), task_id, json.dumps({"token": token, "gps": gps_coords}), now))
+                """,
+                    (audit_id, str(effective_vol_id or "volunteer"), task_id, json.dumps({"token": token, "gps": gps_coords}), now),
+                )
 
             elif qr_type == "DELIVERY":
                 # Check that pickup was already done
                 if task.get("status") not in ["COLLECTED", "IN_TRANSIT"]:
                     if task.get("status") in ["DELIVERED", "COMPLETED"]:
                         return {"success": False, "error": "ALREADY_DELIVERED", "message": "This delivery has already been completed."}
-                    return {"success": False, "error": "NOT_YET_COLLECTED", "message": "Cannot verify delivery before the food has been collected from the donor."}
+                    return {
+                        "success": False,
+                        "error": "NOT_YET_COLLECTED",
+                        "message": "Cannot verify delivery before the food has been collected from the donor.",
+                    }
 
                 # 1. Update QR Code status
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE qr_codes
                 SET status = 'VERIFIED', verified_at = ?, verified_by = ?
                 WHERE token = ? AND status = 'ACTIVE'
-                ''', (now, effective_vol_id, token.strip()))
+                """,
+                    (now, effective_vol_id, token.strip()),
+                )
 
                 if cursor.rowcount == 0:
                     return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
 
                 # 2. Update Pickup Task to DELIVERED & COMPLETED
-                cursor.execute('''
+                cursor.execute(
+                    """
                 UPDATE pickup_tasks
                 SET status = 'COMPLETED', delivery_status = 'DELIVERED', food_delivered_at = ?, updated_at = ?
                 WHERE id = ?
-                ''', (now, now, task_id))
+                """,
+                    (now, now, task_id),
+                )
 
                 # 3. Update Donation to DELIVERED
                 if donation_id:
-                    cursor.execute('''
+                    cursor.execute(
+                        """
                     UPDATE donations
                     SET status = 'DELIVERED', updated_at = ?
                     WHERE id = ?
-                    ''', (now, donation_id))
+                    """,
+                        (now, donation_id),
+                    )
 
                 # 4. Release Volunteer back to AVAILABLE
                 if effective_vol_id:
-                    cursor.execute('''
+                    cursor.execute(
+                        """
                     UPDATE volunteers
                     SET current_status = 'available', availability_status = 'AVAILABLE'
                     WHERE id = ? OR phone = ?
-                    ''', (effective_vol_id, effective_vol_id))
+                    """,
+                        (effective_vol_id, effective_vol_id),
+                    )
 
                 # 5. Audit Log
                 audit_id = f"aud-{uuid.uuid4().hex[:8]}"
-                cursor.execute('''
+                cursor.execute(
+                    """
                 INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at)
                 VALUES (?, 'DELIVERY_QR_VERIFIED', ?, ?, ?, ?)
-                ''', (audit_id, str(effective_vol_id or 'volunteer'), task_id, json.dumps({"token": token, "gps": gps_coords}), now))
+                """,
+                    (audit_id, str(effective_vol_id or "volunteer"), task_id, json.dumps({"token": token, "gps": gps_coords}), now),
+                )
 
             conn.commit()
         finally:
@@ -2428,7 +2570,3 @@ class SQLiteRepository(BaseRepository):
                 return cursor.rowcount > 0
         finally:
             conn.close()
-
-
-
-

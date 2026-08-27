@@ -23,76 +23,55 @@ META_GRAPH_API_VERSION = "v21.0"
 
 def download_whatsapp_media(media_id: str, access_token: Optional[str] = None) -> bytes:
     """Download audio/voice binary file from WhatsApp Cloud API securely.
-    
+
     Step 1: Query Graph API for media URL.
     Step 2: Stream download binary payload with Authorization header.
     """
     token = access_token or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
     if not token:
         raise ValueError("WHATSAPP_ACCESS_TOKEN is required to download WhatsApp media.")
-        
+
     # 1. Fetch Media Metadata
     meta_url = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}/{media_id}"
     headers = {"Authorization": f"Bearer {token}"}
-    
+
     meta_resp = requests.get(meta_url, headers=headers, timeout=15)
     meta_resp.raise_for_status()
     meta_data = meta_resp.json()
-    
+
     download_url = meta_data.get("url")
     if not download_url:
         raise ValueError(f"No download URL returned by Meta Graph API for media {media_id}")
-        
+
     # 2. Download Media Binary
     bin_resp = requests.get(download_url, headers=headers, timeout=30)
     bin_resp.raise_for_status()
-    
+
     return bin_resp.content
 
 
-def transcribe_audio(
-    audio_bytes: bytes,
-    filename: str = "voice.ogg",
-    language_hint: Optional[str] = None
-) -> Dict[str, Any]:
+def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg", language_hint: Optional[str] = None) -> Dict[str, Any]:
     """Transcribe voice note audio using VALSEA Speech Intelligence API with resilient fallbacks."""
     valsea_key = os.environ.get("VALSEA_API_KEY", "")
-    
+
     # 1. Primary: VALSEA AI Speech-to-Text
     if valsea_key and not valsea_key.startswith("your_"):
         try:
             logger.info(f"Submitting audio ({len(audio_bytes)} bytes) to VALSEA AI Speech API...")
-            headers = {
-                "Authorization": f"Bearer {valsea_key}"
-            }
-            files = {
-                "file": (filename, audio_bytes, "audio/ogg")
-            }
-            data = {
-                "model": "valsea-transcribe"
-            }
+            headers = {"Authorization": f"Bearer {valsea_key}"}
+            files = {"file": (filename, audio_bytes, "audio/ogg")}
+            data = {"model": "valsea-transcribe"}
             if language_hint:
                 data["language"] = language_hint
-                
-            resp = requests.post(
-                VALSEA_TRANSCRIPTION_ENDPOINT,
-                headers=headers,
-                files=files,
-                data=data,
-                timeout=25
-            )
-            
+
+            resp = requests.post(VALSEA_TRANSCRIPTION_ENDPOINT, headers=headers, files=files, data=data, timeout=25)
+
             if resp.status_code == 200:
                 res_json = resp.json()
                 text = res_json.get("text", "").strip()
                 detected_lang = res_json.get("language") or translation_service.detect_language(text) or "en"
                 logger.info(f"VALSEA Transcription succeeded: '{text[:80]}' [lang={detected_lang}]")
-                return {
-                    "status": "success",
-                    "text": text,
-                    "language": detected_lang,
-                    "provider": "valsea"
-                }
+                return {"status": "success", "text": text, "language": detected_lang, "provider": "valsea"}
             else:
                 logger.warning(f"VALSEA API responded with status {resp.status_code}: {resp.text}")
         except Exception as exc:
@@ -106,20 +85,19 @@ def transcribe_audio(
     except Exception:
         pass
 
-    clean_text = sample_text.strip() if len(sample_text) > 5 and not sample_text.startswith("\x00") else "I have 15 packets of rice and curry available from our restaurant available until 7 PM"
+    clean_text = (
+        sample_text.strip()
+        if len(sample_text) > 5 and not sample_text.startswith("\x00")
+        else "I have 15 packets of rice and curry available from our restaurant available until 7 PM"
+    )
     detected_lang = translation_service.detect_language(clean_text) or "en"
-    
-    return {
-        "status": "success",
-        "text": clean_text,
-        "language": detected_lang,
-        "provider": "fallback"
-    }
+
+    return {"status": "success", "text": clean_text, "language": detected_lang, "provider": "fallback"}
 
 
 def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     """Extract structured donation fields from natural language voice transcript or text.
-    
+
     Identifies:
     - food_type
     - quantity
@@ -140,12 +118,12 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
             "donor_name": None,
             "dietary_info": "Standard",
             "is_complete": False,
-            "missing_fields": ["food_type", "quantity", "location", "pickup_deadline"]
+            "missing_fields": ["food_type", "quantity", "location", "pickup_deadline"],
         }
 
     text = transcript.strip()
     text_lower = text.lower()
-    
+
     # 1. Quantity & Unit
     qty = None
     unit = "packets"
@@ -197,96 +175,148 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
 
     # 3. Food Type Extraction (Supports ANY food name, specific dishes, or custom items)
     food_type = None
-    if re.search(r"\b(?:vegetable\s+rice|veg\s+rice|vegetarian\s+rice)\b", text, re.IGNORECASE):
-        food_type = "Vegetable Rice"
-    elif re.search(
-        r"\b(?:chicken\s+biryani|mutton\s+biryani|beef\s+biryani|veg\s+biryani|vegetable\s+biryani|egg\s+biryani|fish\s+biryani|dum\s+biryani)\b",
-        text,
-        re.IGNORECASE,
-    ):
-        m_b = re.search(r"\b((?:chicken|mutton|beef|veg|vegetable|egg|fish|dum)?\s*biryani)\b", text, re.IGNORECASE)
-        food_type = m_b.group(1).strip().title() if m_b else "Biryani"
-    elif re.search(r"\b(?:biryani|briyani|biriyani|பிரியாணி|බිරියානි)\b", text, re.IGNORECASE):
-        food_type = "Biryani"
-    elif re.search(r"\b(?:fried\s+rice|chicken\s+rice|egg\s+rice|mixed\s+rice|nasigoreng|nasi\s+goreng)\b", text, re.IGNORECASE):
-        m_r = re.search(r"\b((?:fried|chicken|egg|mixed|vegetable)?\s*rice)\b", text, re.IGNORECASE)
-        food_type = m_r.group(1).strip().title() if m_r else "Fried Rice"
-    elif re.search(r"\b(?:rice\s*(?:&|and)\s*curry|rice\s+curry|rice\s*&\s*curry)\b", text, re.IGNORECASE):
-        food_type = "Rice & Curry"
-    elif re.search(r"\b(?:koththu|kottu|kothu|roti\s+kottu|cheese\s+kottu|chicken\s+kottu|கொத்து|කොත්තු)\b", text, re.IGNORECASE):
-        food_type = "Kottu Roti"
-    elif re.search(r"\b(?:noodles|pasta|spaghetti|macaroni|chowmein|chow\s+mein)\b", text, re.IGNORECASE):
-        food_type = "Noodles & Pasta"
-    elif re.search(r"\b(?:bread|bakery|pastry|pastries|buns?|sandwiches?|short\s+eats|rolls?|patties|cutlets|පාන්|බේකරි|ரொட்டி)\b", text, re.IGNORECASE):
-        food_type = "Bakery & Bread"
-    elif re.search(r"\b(?:fresh\s+vegetables?|vegetables?|produce|එළවළු)\b", text, re.IGNORECASE):
-        food_type = "Vegetables"
-    elif re.search(r"\b(?:fruits?|fresh\s+fruits?)\b", text, re.IGNORECASE):
-        food_type = "Fruits"
-    elif re.search(r"\b(?:vegetarian(?:\s+meals?)?|veg(?:\s+meals?)?|salads?|சைவ)\b", text, re.IGNORECASE):
-        food_type = "Vegetarian Meals"
-    elif re.search(r"\b(?:rice|බත්|சோறு|சாதம்)\b", text, re.IGNORECASE):
-        food_type = "Rice"
-    elif re.search(r"\b(?:cooked\s+meals?|meal\s+packets?|prepared\s+meals?|lunch\s+packets?|dinner\s+packets?)\b", text, re.IGNORECASE):
-        food_type = "Prepared Meals"
-    else:
-        # Regex search for custom food names (e.g. "I have 30 portions of beef curry", "have soup", "giving cutlets")
+    # Check specific dish compounds first (preserve exact food name)
+    specific_dishes = [
+        (r"\b(?:chicken\s+biryani)\b", "Chicken Biryani"),
+        (r"\b(?:mutton\s+biryani)\b", "Mutton Biryani"),
+        (r"\b(?:beef\s+biryani)\b", "Beef Biryani"),
+        (r"\b(?:vegetable\s+biryani|veg\s+biryani)\b", "Vegetable Biryani"),
+        (r"\b(?:dum\s+biryani)\b", "Dum Biryani"),
+        (r"\b(?:egg\s+biryani)\b", "Egg Biryani"),
+        (r"\b(?:fish\s+biryani)\b", "Fish Biryani"),
+        (r"\b(?:chicken\s+kottu)\b", "Chicken Kottu"),
+        (r"\b(?:mutton\s+kottu)\b", "Mutton Kottu"),
+        (r"\b(?:cheese\s+kottu)\b", "Cheese Kottu"),
+        (r"\b(?:vegetable\s+kottu|veg\s+kottu)\b", "Vegetable Kottu"),
+        (r"\b(?:kottu\s+roti|koththu|kottu|kothu|කොත්තු|கொத்து)\b", "Kottu Roti"),
+        (r"\b(?:rice\s*(?:&|and)\s*curry|rice\s+curry|rice\s*&\s*curry)\b", "Rice & Curry"),
+        (r"\b(?:fried\s+rice|chicken\s+fried\s+rice|egg\s+fried\s+rice|veg\s+fried\s+rice)\b", "Fried Rice"),
+        (r"\b(?:vegetable\s+rice|veg\s+rice|vegetarian\s+rice)\b", "Vegetable Rice"),
+        (r"\b(?:biryani|briyani|biriyani|පිරියානි|බිරියානි)\b", "Biryani"),
+        (r"\b(?:noodles|pasta|spaghetti|macaroni|chowmein|chow\s+mein)\b", "Noodles & Pasta"),
+        (r"\b(?:short\s+eats|pastries|pastry|patties|cutlets|rolls)\b", "Short Eats & Pastries"),
+        (r"\b(?:bread|bakery\s+items?|bakery|buns?|sandwiches?|පාන්|බේකරි|ரொட்டி)\b", "Bakery & Bread"),
+        (r"\b(?:fresh\s+vegetables?|vegetables?|produce|එළවළු|காய்கறிகள்)\b", "Vegetables"),
+        (r"\b(?:fruits?|fresh\s+fruits?|පලතුරු|பழங்கள்)\b", "Fruits"),
+        (r"\b(?:groceries|dry\s+rations|රලා ගබඩා)\b", "Groceries"),
+        (r"\b(?:vegetarian(?:\s+meals?)?|veg(?:\s+meals?)?|salads?|சைவ)\b", "Vegetarian Meals"),
+        (r"\b(?:rice|බත්|சோறு|சாதம்)\b", "Rice"),
+        (r"\b(?:cooked\s+meals?|meal\s+packets?|prepared\s+meals?|lunch\s+packets?|dinner\s+packets?)\b", "Prepared Meals"),
+    ]
+
+    for pat, label in specific_dishes:
+        if re.search(pat, text, re.IGNORECASE):
+            food_type = label
+            break
+
+    if not food_type:
+        # Regex search for custom food names (e.g. "I have 30 packets of Mutton Biryani", "100 kg of vegetables", "giving cutlets")
         food_patterns = [
-            r"(?:have|donate|giving|prepared|made|surplus)\s+(?:about\s+)?(?:\d+\s+\w+\s+of\s+)?([a-zA-Z\s,]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)",
-            r"(?:packets?|boxes?|portions?|meals?|plates?)\s+of\s+([a-zA-Z\s]+?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)",
-            r"([a-zA-Z\s]+(?:rice|curry|bread|vegetable|meal|sandwiches|food|pastries|buns|biryani|rotis?|hoppers?|fruits?|dessert|soup))",
+            r"(?:packets?|boxes?|portions?|meals?|plates?|kg|kilograms?|containers?|trays?)\s+of\s+([a-zA-Z\s&]{3,40}?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)",
+            r"(?:have|donate|giving|prepared|made|surplus)\s+(?:about\s+)?(?:\d+\s+(?:packets?|boxes?|portions?|meals?|plates?|kg)?\s*(?:of\s+)?)?([a-zA-Z\s&]{3,40}?)(?:\s+(?:available|ready|from|before|until|in|at)|\.|$)",
+            r"([a-zA-Z\s]+(?:rice|curry|bread|vegetable|meal|sandwiches|food|pastries|buns|biryani|kottu|rotis?|hoppers?|fruits?|dessert|soup))",
         ]
         for pat in food_patterns:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 candidate = m.group(1).strip()
-                if candidate.lower() not in ["our restaurant", "today", "now", "here", "available", "we", "i have", "there are", "packets", "portions"]:
+                if len(candidate) >= 3 and candidate.lower() not in [
+                    "our restaurant",
+                    "today",
+                    "now",
+                    "here",
+                    "available",
+                    "we",
+                    "i have",
+                    "there are",
+                    "packets",
+                    "portions",
+                    "boxes",
+                    "meals",
+                    "food",
+                    "packet",
+                    "portion",
+                    "box",
+                    "meal",
+                    "items",
+                    "packets of",
+                    "boxes of",
+                ]:
                     food_type = candidate.title()
                     break
 
-    # 4. Location / City / Area
+    # 4. Location / City / Area (including Sri Lankan towns & Kegalle localities)
     location = None
     city = None
-    loc_patterns = [
-        r"(?:in|at|location\s+is|area\s+is|city\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kegalle|Rambukkana|Warakapola|Kurunegala|Negombo|Matara|Jaffna|கொழும்பு|කොළඹ|[A-Z][a-zA-Z\s]{2,20}))",
-        r"\b((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kegalle|Rambukkana|Warakapola|Kurunegala|Negombo|Matara|Jaffna))\b",
-        r"(கொழும்பு(?:\s*\d+)?)",
-        r"(කොළඹ(?:\s*\d+)?)",
-    ]
-    for pat in loc_patterns:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            cand_loc = m.group(1).strip()
-            if "கொழும்பு" in cand_loc:
-                cand_loc = cand_loc.replace("கொழும்பு", "Colombo")
-            if "කොළඹ" in cand_loc:
-                cand_loc = cand_loc.replace("කොළඹ", "Colombo")
-            if cand_loc.lower() not in [
-                "today",
-                "now",
-                "before",
-                "rice",
-                "curry",
-                "packets",
-                "meals",
-                "portions",
-                "biryani",
-                "our",
-                "our restaurant",
-                "restaurant",
-                "hotel",
-                "kitchen",
-                "a",
-                "the",
-                "my",
-                "this",
-                "us",
-                "here",
-                "there",
-            ]:
-                location = cand_loc.title()
-                city = location
+    import routing
+
+    # Check for Colombo sub-areas (e.g. Colombo 05, Colombo 3) first to preserve full postal area
+    colombo_sub = re.search(r"\b(?:colombo\s*\d+|කොළඹ\s*\d+|கொழும்பு\s*\d+)\b", text, re.IGNORECASE)
+    if colombo_sub:
+        c_raw = colombo_sub.group(0).strip()
+        c_clean = c_raw.replace("කොළඹ", "Colombo").replace("கொழும்பு", "Colombo").title()
+        city = c_clean
+        location = c_clean
+
+    if not city:
+        # Check for known towns in Sri Lanka
+        text_clean_loc = re.sub(r"[^\w\s]", " ", text_lower)
+        words = text_clean_loc.split()
+        for w_len in range(3, 0, -1):
+            for i in range(len(words) - w_len + 1):
+                phrase = " ".join(words[i : i + w_len])
+                if phrase in routing.TOWN_TO_DISTRICT_MAP:
+                    city = phrase.title()
+                    location = city
+                    break
+            if city:
                 break
+
+    if not city:
+        loc_patterns = [
+            r"(?:in|at|from|location\s+is|area\s+is|city\s+is|town\s+is)\s+((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kegalle|Rambukkana|Warakapola|Ruwanwella|Yatiyantota|Dehiowita|Deraniyagala|Galigamuwa|Aranayaka|Bulathkohupitiya|Kitulgala|Aluthnuwara|Ambepussa|Kurunegala|Negombo|Matara|Jaffna|Gampaha|Kalutara|Matale|Nuwara Eliya|Badulla|Ratnapura|කොළඹ|කෑගල්ල|මාවනැල්ල|கொழும்பு|கேகாலை))",
+            r"\b((?:Colombo(?:\s*\d+)?|Kandy|Galle|Dehiwala|Nugegoda|Mount Lavinia|Rajagiriya|Bambalapitiya|Kollupitiya|Fort|Cinnamon Gardens|Wellawatte|Battaramulla|Mawanella|Kegalle|Rambukkana|Warakapola|Ruwanwella|Yatiyantota|Dehiowita|Deraniyagala|Galigamuwa|Aranayaka|Bulathkohupitiya|Kitulgala|Aluthnuwara|Ambepussa|Kurunegala|Negombo|Matara|Jaffna|Gampaha|Kalutara|Matale|Nuwara Eliya|Badulla|Ratnapura))\b",
+            r"(කොළඹ(?:\s*\d+)?)",
+            r"(කෑගල්ල)",
+            r"(මාවනැල්ල)",
+            r"(கொழும்பு(?:\s*\d+)?)",
+            r"(கேகாலை)",
+        ]
+        for pat in loc_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                cand_loc = m.group(1).strip()
+                cand_loc = cand_loc.replace("කොළඹ", "Colombo").replace("கொழும்பு", "Colombo")
+                cand_loc = cand_loc.replace("කෑගල්ල", "Kegalle").replace("கேகாலை", "Kegalle")
+                cand_loc = cand_loc.replace("මාවනැල්ල", "Mawanella")
+                if cand_loc.lower() not in [
+                    "today",
+                    "now",
+                    "before",
+                    "rice",
+                    "curry",
+                    "packets",
+                    "meals",
+                    "portions",
+                    "biryani",
+                    "our",
+                    "our restaurant",
+                    "restaurant",
+                    "hotel",
+                    "kitchen",
+                    "a",
+                    "the",
+                    "my",
+                    "this",
+                    "us",
+                    "here",
+                    "there",
+                    "boxes",
+                    "food",
+                ]:
+                    location = cand_loc.title()
+                    city = location
+                    break
 
     # 5. Pickup Deadline / Availability Time
     deadline = None
@@ -319,11 +349,11 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
     elif any(w in text_lower for w in ["ready now", "available now", "immediately", "දැන්", "இப்போது"]):
         deadline = "Today (Immediate)"
 
-    # 6. Donor Name / Business Name (Safe extraction requiring explicit name indicators)
+    # 6. Donor Name / Business Name (Safe extraction requiring explicit name indicators or self-introduction)
     donor_name = None
     name_patterns = [
-        r"(?:my name is|i am|i\'m|this is|donor name is)\s+([A-Z][a-zA-Z\s]{1,30}?)(?:\s+(?:and|with|from|have|calling|donating|in|at)|\.|$)",
-        r"(?:from)\s+([A-Z][a-zA-Z\s]+(?:Hotel|Kitchen|Restaurant|Catering|Grand Hotel|Inn|Food House|Cafe|Caterers|Lodge|Banquets|Foods))\b",
+        r"(?:my\s*name\s*is|i\s*am|i\'m|this\s*is|donor\s*name\s*is|name\s*:)\s+([a-zA-Z\s]{1,30}?)(?:\s+(?:and|with|from|have|calling|donating|in|at)|\.|$)",
+        r"(?:from)\s+([a-zA-Z\s]+(?:Hotel|Kitchen|Restaurant|Catering|Grand Hotel|Inn|Food House|Cafe|Caterers|Lodge|Banquets|Foods))\b",
     ]
     for pat in name_patterns:
         m = re.search(pat, text, re.IGNORECASE)
@@ -342,6 +372,8 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
                 "portions",
                 "packets",
                 "food",
+                "mawanella",
+                "kegalle",
             ]:
                 donor_name = cand_name.title()
                 break
@@ -367,5 +399,5 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
         "donor_name": donor_name,
         "dietary_info": dietary_info,
         "is_complete": len(missing) == 0,
-        "missing_fields": missing
+        "missing_fields": missing,
     }
