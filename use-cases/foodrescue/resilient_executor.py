@@ -405,32 +405,52 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     donor_rec = database.get_donor_by_phone(phone) if phone else None
 
     # Handle volunteer availability declaration ("AVAILABLE", "I am free", "ready", "online", "BUSY")
+    clean_p_norm = clean_p.rstrip(".!?,;:")
     is_avail_intent = (
-        clean_p in ["available", "yes", "ready", "i am free", "i'm free", "im free", "available now", "ready to deliver", "ready for pickups", "online", "free", "active"]
-        or any(w in clean_p for w in ["i am free", "i'm free", "im free", "available now", "ready to deliver", "ready for pickups", "mark as available", "mark me available"])
+        clean_p in ["available", "yes", "ready", "i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "online", "free", "active"]
+        or clean_p_norm in ["available", "yes", "ready", "i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "online", "free", "active"]
+        or any(w in clean_p for w in ["i am free", "i'm free", "im free", "i am available", "i'm available", "im available", "available now", "ready to deliver", "ready for pickups", "mark as available", "mark me available"])
     )
-    is_busy_intent = clean_p in ["busy", "not available", "offline", "take a break", "break"] or any(w in clean_p for w in ["i am busy", "not available now", "offline now"])
+    is_busy_intent = clean_p in ["busy", "not available", "offline", "take a break", "break"] or clean_p_norm in ["busy", "not available", "offline", "take a break", "break"] or any(w in clean_p for w in ["i am busy", "not available now", "offline now"])
 
-    if (is_avail_intent or is_busy_intent) and (vol_rec or (user and user.get("user_role") == "volunteer")):
-        v_name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
-        s_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "Kegalle")
-        clean_dist = routing.resolve_district(s_area) or "Kegalle"
-
-        if is_busy_intent:
-            if vol_rec and vol_rec.get("id"):
-                database.update_volunteer_record(vol_rec["id"], current_status="BUSY")
+    if is_avail_intent or is_busy_intent:
+        if not (vol_rec or (user and user.get("user_role") == "volunteer")):
             if phone:
-                database.clear_user_conversation_state(phone)
-            return (
-                f"⏸️ **Status Updated: BUSY / OFFLINE**\n\n"
-                f"Hi {v_name}! You have been marked as **BUSY** in **{clean_dist}**.\n"
-                f"We won't send you pickup notifications while you're taking a break.\n"
-                f"Reply *AVAILABLE* anytime you are ready to deliver again! 🚚"
-            )
+                user = database.create_or_update_user(
+                    phone=phone,
+                    display_name=f"Volunteer_{phone[-4:]}",
+                    user_role="volunteer"
+                )
+                vol_rec = database.create_volunteer_record(
+                    volunteer_id=f"vol-{phone[-6:]}",
+                    name=f"Volunteer {phone[-4:]}",
+                    phone=phone,
+                    service_area="Colombo",
+                    transport_mode="Motorbike",
+                    availability="immediate",
+                    current_status="available"
+                )
 
-        # Mark AVAILABLE
-        if vol_rec and vol_rec.get("id"):
-            database.update_volunteer_record(vol_rec["id"], current_status="AVAILABLE")
+        if vol_rec or (user and user.get("user_role") == "volunteer"):
+            v_name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
+            s_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "Kegalle")
+            clean_dist = routing.resolve_district(s_area) or "Kegalle"
+
+            if is_busy_intent:
+                if vol_rec and vol_rec.get("id"):
+                    database.update_volunteer_record(vol_rec["id"], current_status="busy")
+                if phone:
+                    database.clear_user_conversation_state(phone)
+                return (
+                    f"⏸️ **Status Updated: BUSY / OFFLINE**\n\n"
+                    f"Hi {v_name}! You have been marked as **BUSY** in **{clean_dist}**.\n"
+                    f"We won't send you pickup notifications while you're taking a break.\n"
+                    f"Reply *AVAILABLE* anytime you are ready to deliver again! 🚚"
+                )
+
+            # Mark AVAILABLE
+            if vol_rec and vol_rec.get("id"):
+                database.update_volunteer_record(vol_rec["id"], current_status="available")
 
         pending = database.get_all_pickup_tasks()
         available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
@@ -459,12 +479,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
                 f"*Reply **Accept** or **Reject***"
             )
         else:
-            return translation_service.get_localized_message(
-                "volunteer_status_updated_available",
-                lang=lang,
-                volunteer_name=v_name,
-                service_area=clean_dist,
-                pending_count=0
+            return (
+                f"📍 **Status: ACTIVE & AVAILABLE in {clean_dist}** 🟢\n\n"
+                f"Thank you, {v_name}! You are now marked as AVAILABLE in **{clean_dist}**.\n\n"
+                f"📦 Currently 0 pending pickups in your area (no active pickups ready for dispatch right now).\n"
+                f"Our AI coordinator will immediately send you a task offer the moment food is ready! 🚚"
             )
 
 

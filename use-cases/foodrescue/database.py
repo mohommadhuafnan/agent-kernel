@@ -26,6 +26,20 @@ def get_repository() -> BaseRepository:
         _CURRENT_REPO = SQLiteRepository()
         return _CURRENT_REPO
 
+    if backend in ["mongodb", "mongo"]:
+        try:
+            from db_mongo import MongoRepository
+            mongo_repo = MongoRepository()
+            mongo_repo.setup_database()
+            _CURRENT_REPO = mongo_repo
+            return _CURRENT_REPO
+        except Exception as exc:
+            import logging
+            logging.getLogger("foodrescue.db").warning(f"MongoDB connection notice ({exc}); falling back to local SQLite.")
+            from db_sqlite import SQLiteRepository
+            _CURRENT_REPO = SQLiteRepository()
+            return _CURRENT_REPO
+
     # Supabase PostgreSQL (Default production backend)
     try:
         from db_supabase import SupabaseRepository
@@ -135,6 +149,28 @@ def update_organization_record(
         accepted_food_types=accepted_food_types,
         capacity=capacity,
         availability=availability,
+        location=location
+    )
+
+
+def create_volunteer_record(
+    volunteer_id: str,
+    name: str,
+    phone: str,
+    service_area: str,
+    transport_mode: str = "Motorbike",
+    availability: str = "immediate, evenings",
+    current_status: str = "available",
+    location: Optional[str] = None
+) -> Dict[str, Any]:
+    return get_repository().create_volunteer_record(
+        volunteer_id=volunteer_id,
+        name=name,
+        phone=phone,
+        service_area=service_area,
+        transport_mode=transport_mode,
+        availability=availability,
+        current_status=current_status,
         location=location
     )
 

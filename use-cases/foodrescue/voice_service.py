@@ -223,9 +223,7 @@ def extract_donation_entities(transcript: str) -> Dict[str, Any]:
         food_type = "Vegetarian Meals"
     elif re.search(r"\b(?:rice|බත්|சோறு|சாதம்)\b", text, re.IGNORECASE):
         food_type = "Rice"
-    elif re.search(r"\b(?:curry|dhal|sambar|roti|rotis|hoppers|string\s+hoppers|pittu|curries)\b", text, re.IGNORECASE):
-        food_type = "Prepared Meals"
-    elif "meals" in text_lower or "meal" in text_lower or "food" in text_lower or "surplus" in text_lower or "உணவு" in text or "ආහාර" in text:
+    elif re.search(r"\b(?:cooked\s+meals?|meal\s+packets?|prepared\s+meals?|lunch\s+packets?|dinner\s+packets?)\b", text, re.IGNORECASE):
         food_type = "Prepared Meals"
     else:
         # Regex search for custom food names (e.g. "I have 30 portions of beef curry", "have soup", "giving cutlets")
