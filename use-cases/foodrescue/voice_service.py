@@ -87,12 +87,14 @@ def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg", language_h
 
     clean_text = (
         sample_text.strip()
-        if len(sample_text) > 5 and not sample_text.startswith("\x00")
-        else "I have 15 packets of rice and curry available from our restaurant available until 7 PM"
+        if len(sample_text) > 5 and not sample_text.startswith("\x00") and not any(ord(c) < 32 and c not in "\n\r\t" for c in sample_text[:10])
+        else ""
     )
-    detected_lang = translation_service.detect_language(clean_text) or "en"
+    if clean_text:
+        detected_lang = translation_service.detect_language(clean_text) or "en"
+        return {"status": "success", "text": clean_text, "language": detected_lang, "provider": "fallback"}
 
-    return {"status": "success", "text": clean_text, "language": detected_lang, "provider": "fallback"}
+    return {"status": "error", "text": "", "reason": "transcription_unavailable"}
 
 
 def extract_donation_entities(transcript: str) -> Dict[str, Any]:

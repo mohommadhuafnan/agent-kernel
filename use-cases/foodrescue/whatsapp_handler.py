@@ -17,6 +17,7 @@ import hashlib
 import logging
 import uuid
 from typing import Optional, Dict, Any, List
+from collections import deque
 from fastapi import APIRouter, Request, HTTPException, Response, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 import httpx
@@ -26,6 +27,10 @@ import database
 import translation_service
 
 logger = logging.getLogger("foodrescue.whatsapp")
+
+# Webhook Idempotency Ring Buffer (prevents Meta webhook retries and duplicate loops)
+PROCESSED_MESSAGE_IDS: set = set()
+PROCESSED_MESSAGE_QUEUE: deque = deque(maxlen=2000)
 
 # Meta Production Configuration Defaults (FoodRescueAI)
 DEFAULT_TEST_PHONE_NUMBER = "+94 75 526 3482"
@@ -1215,11 +1220,17 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                     except Exception:
                         pass
             except Exception as trans_err:
-                logger.warning(f"Voice download or transcription failed: {trans_err}. Using voice fallback.")
-                prompt_text = "I have 15 packets of rice and curry available from our restaurant available until 7 PM"
+                logger.warning(f"Voice download or transcription failed: {trans_err}.")
+                prompt_text = ""
 
         if not prompt_text:
-            prompt_text = "I have 15 packets of food to donate"
+            err_msg = (
+                "🎤 Sorry, I couldn't clearly transcribe your voice message.\n\n"
+                "Please type what you'd like to do (for example: *'I have 20 meal packets to donate'* or reply *'1'*), or try sending your voice note again."
+            )
+            reply_text = translation_service.translate_message_if_needed(err_msg, target_lang=preferred_language)
+            send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
+            return {"status": "processed", "reply": reply_text, "send_status": send_res, "is_voice": True, "voice_transcription_status": "failed"}
 
         is_voice_message = True
         msg_type = "text"  # Proceed to process transcribed text
