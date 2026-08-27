@@ -17,7 +17,7 @@ import hashlib
 import logging
 import uuid
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, Request, HTTPException, Response
+from fastapi import APIRouter, Request, HTTPException, Response, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 import httpx
 from agentkernel.core import Config, ChatService
