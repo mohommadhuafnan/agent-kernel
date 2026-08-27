@@ -31,14 +31,7 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def create_donor_record(
-        self,
-        donor_id: str,
-        name: str,
-        phone: str,
-        location: str,
-        organization_name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def create_donor_record(self, donor_id: str, name: str, phone: str, location: str, organization_name: Optional[str] = None) -> Dict[str, Any]:
         """Create a registered food donor record."""
         pass
 
@@ -62,7 +55,7 @@ class BaseRepository(ABC):
         accepted_food_types: str,
         capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a registered recipient organization record."""
         pass
@@ -77,7 +70,7 @@ class BaseRepository(ABC):
         accepted_food_types: Optional[str] = None,
         capacity: Optional[str] = None,
         availability: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update an existing organization record."""
         pass
@@ -102,7 +95,7 @@ class BaseRepository(ABC):
         transport_mode: str = "Motorbike",
         availability: str = "immediate, evenings",
         current_status: str = "available",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a registered volunteer courier record."""
         pass
@@ -117,11 +110,10 @@ class BaseRepository(ABC):
         transport_mode: Optional[str] = None,
         availability: Optional[str] = None,
         current_status: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update an existing volunteer courier record."""
         pass
-
 
     @abstractmethod
     def create_donation_record(
@@ -134,7 +126,7 @@ class BaseRepository(ABC):
         dietary_info: str,
         location: str,
         available_from: str,
-        deadline: str
+        deadline: str,
     ) -> Dict[str, Any]:
         """Create a new food donation record with status AVAILABLE."""
         pass
@@ -159,7 +151,7 @@ class BaseRepository(ABC):
         dietary_info: Optional[str] = None,
         location: Optional[str] = None,
         available_from: Optional[str] = None,
-        deadline: Optional[str] = None
+        deadline: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Update editable details of an existing donation."""
         pass
@@ -180,15 +172,7 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def create_pickup_task_record(
-        self,
-        task_id: str,
-        donation_id: str,
-        org_id: str,
-        pickup_loc: str,
-        delivery_loc: str,
-        time: str
-    ) -> Dict[str, Any]:
+    def create_pickup_task_record(self, task_id: str, donation_id: str, org_id: str, pickup_loc: str, delivery_loc: str, time: str) -> Dict[str, Any]:
         """Create a pickup task linking donation, donor location, and delivery location."""
         pass
 
@@ -228,14 +212,7 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def create_notification_record(
-        self,
-        notif_id: str,
-        recipient_type: str,
-        recipient_id: str,
-        message: str,
-        channel: str
-    ) -> None:
+    def create_notification_record(self, notif_id: str, recipient_type: str, recipient_id: str, message: str, channel: str) -> None:
         """Create an audit notification record for donor, org, or volunteer."""
         pass
 
@@ -291,7 +268,7 @@ class BaseRepository(ABC):
         transport_mode: str,
         amount: float,
         currency: str = "LKR",
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a volunteer travel reimbursement record with status PENDING."""
         pass
@@ -317,12 +294,7 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def update_reimbursement_status_record(
-        self,
-        reimbursement_id: str,
-        status: str,
-        notes: Optional[str] = None
-    ) -> bool:
+    def update_reimbursement_status_record(self, reimbursement_id: str, status: str, notes: Optional[str] = None) -> bool:
         """Update reimbursement lifecycle status (PENDING, APPROVED, PAID, CANCELLED)."""
         pass
 
@@ -336,7 +308,7 @@ class BaseRepository(ABC):
         latitude: float,
         longitude: float,
         accuracy_m: Optional[float] = None,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Record a live GPS coordinate point for an active pickup task."""
         pass
@@ -354,21 +326,13 @@ class BaseRepository(ABC):
     # Volunteer Availability & Location Coordination
     @abstractmethod
     def update_volunteer_availability(
-        self,
-        volunteer_id: str,
-        status: str,
-        current_location: Optional[str] = None,
-        current_coordinates: Optional[Dict[str, Any]] = None
+        self, volunteer_id: str, status: str, current_location: Optional[str] = None, current_coordinates: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update volunteer availability state (AVAILABLE, BUSY, OFFLINE, ON_PICKUP, ON_DELIVERY) and location."""
         pass
 
     @abstractmethod
-    def get_available_volunteers(
-        self,
-        service_area: Optional[str] = None,
-        min_capacity: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_available_volunteers(self, service_area: Optional[str] = None, min_capacity: Optional[int] = None) -> List[Dict[str, Any]]:
         """Retrieve volunteers currently marked as AVAILABLE, filtered by service area and capacity."""
         pass
 
@@ -383,7 +347,7 @@ class BaseRepository(ABC):
         delivery_distance_km: Optional[float] = None,
         delivery_duration_minutes: Optional[int] = None,
         total_distance_km: Optional[float] = None,
-        estimated_transport_cost: Optional[float] = None
+        estimated_transport_cost: Optional[float] = None,
     ) -> bool:
         """Update logistics coordinates, two-leg routing metrics, and estimated transport cost on a pickup task."""
         pass
@@ -391,12 +355,7 @@ class BaseRepository(ABC):
     # Audit Trail Event Logging
     @abstractmethod
     def create_audit_event_record(
-        self,
-        event_id: str,
-        event_type: str,
-        actor: str,
-        related_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        self, event_id: str, event_type: str, actor: str, related_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Record an operational audit event for system state transitions."""
         pass
@@ -422,7 +381,7 @@ class BaseRepository(ABC):
         user_role: str = "unknown",
         onboarding_completed: bool = False,
         default_location: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create or update a user profile record with language preference, response mode, and onboarding status."""
         pass
@@ -453,7 +412,7 @@ class BaseRepository(ABC):
         default_location: Optional[str] = None,
         active_donation_id: Optional[str] = None,
         active_task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update fields on a persistent user profile."""
         pass
@@ -500,16 +459,14 @@ class BaseRepository(ABC):
 
     @abstractmethod
     def record_message(
-        self,
-        phone: str,
-        sender: str,
-        text: str,
-        is_voice: bool = False,
-        transcript: Optional[str] = None,
-        timestamp: Optional[str] = None
+        self, phone: str, sender: str, text: str, is_voice: bool = False, transcript: Optional[str] = None, timestamp: Optional[str] = None
     ) -> Dict[str, Any]:
         """Record an incoming or outgoing chat message for conversation history tracking."""
         pass
+
+    def claim_whatsapp_message_id(self, message_id: str) -> bool:
+        """Atomically claim a WhatsApp message ID to prevent concurrent duplicate processing."""
+        return True
 
     @abstractmethod
     def get_all_conversations(self) -> List[Dict[str, Any]]:
@@ -552,7 +509,7 @@ class BaseRepository(ABC):
         status: str = "ACTIVE",
         created_at: Optional[str] = None,
         expires_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a new secure handover verification QR code record."""
         pass
@@ -573,21 +530,12 @@ class BaseRepository(ABC):
         pass
 
     @abstractmethod
-    def verify_qr_code_record(
-        self,
-        token: str,
-        volunteer_id: Optional[str] = None,
-        gps_coords: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def verify_qr_code_record(self, token: str, volunteer_id: Optional[str] = None, gps_coords: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Atomically verify a physical handover QR code and advance task lifecycle status."""
         pass
 
     @abstractmethod
-    def get_all_qr_codes(
-        self,
-        status: Optional[str] = None,
-        qr_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_all_qr_codes(self, status: Optional[str] = None, qr_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Retrieve all QR codes with optional status or type filtering."""
         pass
 
@@ -621,7 +569,3 @@ class BaseRepository(ABC):
     def delete_pickup_task_record(self, task_id: str) -> bool:
         """Delete a pickup task record."""
         pass
-
-
-
-

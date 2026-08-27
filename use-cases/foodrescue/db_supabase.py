@@ -25,15 +25,9 @@ class SupabaseRepository(BaseRepository):
         db_url: Optional[str] = None,
         supabase_url: Optional[str] = None,
         supabase_key: Optional[str] = None,
-        connection_instance: Optional[Any] = None
+        connection_instance: Optional[Any] = None,
     ):
-        self._db_url = (
-            db_url
-            or os.environ.get("SUPABASE_DB_URL")
-            or os.environ.get("DATABASE_URL")
-            or os.environ.get("POSTGRES_URL")
-            or ""
-        )
+        self._db_url = db_url or os.environ.get("SUPABASE_DB_URL") or os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or ""
         self._supabase_url = supabase_url or os.environ.get("SUPABASE_URL", "")
         self._supabase_key = (
             supabase_key
@@ -56,6 +50,7 @@ class SupabaseRepository(BaseRepository):
             return None
         try:
             from supabase import create_client
+
             self._supabase_client = create_client(self._supabase_url, self._supabase_key)
             return self._supabase_client
         except Exception as e:
@@ -83,6 +78,7 @@ class SupabaseRepository(BaseRepository):
         # Try psycopg (v3)
         try:
             import psycopg
+
             conn = psycopg.connect(clean_url, autocommit=True, prepare_threshold=None)
             self._connection = conn
             return self._connection
@@ -95,6 +91,7 @@ class SupabaseRepository(BaseRepository):
         try:
             import psycopg2
             import psycopg2.extras
+
             conn = psycopg2.connect(clean_url)
             conn.autocommit = True
             self._connection = conn
@@ -109,6 +106,7 @@ class SupabaseRepository(BaseRepository):
             import pg8000.native
             import urllib.parse
             import ssl
+
             parsed = urllib.parse.urlparse(clean_url)
             unquoted_pw = urllib.parse.unquote(parsed.password or "") if parsed.password else ""
             use_ssl = True if ("supabase" in (parsed.hostname or "") or parsed.port in [5432, 6543]) else None
@@ -119,7 +117,7 @@ class SupabaseRepository(BaseRepository):
                     host=parsed.hostname or "localhost",
                     port=parsed.port or 5432,
                     database=parsed.path.lstrip("/") or "postgres",
-                    ssl_context=ssl.create_default_context() if use_ssl else None
+                    ssl_context=ssl.create_default_context() if use_ssl else None,
                 )
             except Exception:
                 conn = pg8000.native.Connection(
@@ -128,7 +126,7 @@ class SupabaseRepository(BaseRepository):
                     host=parsed.hostname or "localhost",
                     port=parsed.port or 5432,
                     database=parsed.path.lstrip("/") or "postgres",
-                    ssl_context=True if use_ssl else None
+                    ssl_context=True if use_ssl else None,
                 )
             self._connection = conn
             return self._connection
@@ -138,6 +136,7 @@ class SupabaseRepository(BaseRepository):
         # Try SQLAlchemy engine
         try:
             from sqlalchemy import create_engine
+
             engine = create_engine(self._db_url, pool_pre_ping=True)
             self._engine = engine
             return engine.connect()
@@ -315,7 +314,7 @@ class SupabaseRepository(BaseRepository):
     def setup_database(self) -> None:
         """Create PostgreSQL tables and indexes if they do not exist."""
         # 1. Donors
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS donors (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -324,10 +323,10 @@ class SupabaseRepository(BaseRepository):
             location TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 2. Organizations
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS organizations (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -339,10 +338,10 @@ class SupabaseRepository(BaseRepository):
             location TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 3. Volunteers
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS volunteers (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -360,10 +359,10 @@ class SupabaseRepository(BaseRepository):
             last_available_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 4. Donations
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS donations (
             id VARCHAR(64) PRIMARY KEY,
             donor_id VARCHAR(64) NOT NULL,
@@ -378,10 +377,10 @@ class SupabaseRepository(BaseRepository):
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 5. Pickup Tasks
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS pickup_tasks (
             id VARCHAR(64) PRIMARY KEY,
             donation_id VARCHAR(64) NOT NULL,
@@ -409,10 +408,10 @@ class SupabaseRepository(BaseRepository):
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 6. Notifications
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS notifications (
             id VARCHAR(64) PRIMARY KEY,
             recipient_type VARCHAR(64) NOT NULL,
@@ -422,10 +421,10 @@ class SupabaseRepository(BaseRepository):
             status VARCHAR(64) NOT NULL DEFAULT 'SENT',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 7. Audit Events
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS audit_events (
             id VARCHAR(64) PRIMARY KEY,
             event_type VARCHAR(128) NOT NULL,
@@ -434,10 +433,10 @@ class SupabaseRepository(BaseRepository):
             metadata TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 8. Reimbursements
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS reimbursements (
             id VARCHAR(64) PRIMARY KEY,
             pickup_task_id VARCHAR(64) NOT NULL,
@@ -453,10 +452,10 @@ class SupabaseRepository(BaseRepository):
             paid_at TIMESTAMPTZ,
             notes TEXT
         )
-        ''')
+        """)
 
         # 9. Pickup Location History
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS pickup_location_history (
             id VARCHAR(64) PRIMARY KEY,
             pickup_task_id VARCHAR(64) NOT NULL,
@@ -466,10 +465,10 @@ class SupabaseRepository(BaseRepository):
             accuracy_m NUMERIC(10, 2),
             timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 10. Users
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS users (
             phone_number VARCHAR(64) PRIMARY KEY,
             display_name VARCHAR(255),
@@ -486,10 +485,10 @@ class SupabaseRepository(BaseRepository):
             last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             metadata TEXT
         )
-        ''')
+        """)
 
         # 11. Messages
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id VARCHAR(64) PRIMARY KEY,
             phone_number VARCHAR(64) NOT NULL,
@@ -499,19 +498,19 @@ class SupabaseRepository(BaseRepository):
             transcript TEXT,
             timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 12. System Settings
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS system_settings (
             setting_key VARCHAR(128) PRIMARY KEY,
             setting_value TEXT NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        ''')
+        """)
 
         # 13. QR Codes
-        self._execute('''
+        self._execute("""
         CREATE TABLE IF NOT EXISTS qr_codes (
             id VARCHAR(64) PRIMARY KEY,
             task_id VARCHAR(64) NOT NULL,
@@ -529,34 +528,21 @@ class SupabaseRepository(BaseRepository):
             verified_by VARCHAR(128),
             metadata TEXT
         )
-        ''')
+        """)
 
         # Seed default system settings
         default_cost = {
             "base_fare": 100.0,
             "cost_per_km": 80.0,
             "currency": "LKR",
-            "rates_by_vehicle": {
-                "Motorbike": 50.0,
-                "Three-Wheeler": 90.0,
-                "Car": 80.0,
-                "Van": 120.0,
-                "Bicycle": 25.0,
-                "Electric Bike": 25.0
-            },
-            "vehicle_multipliers": {
-                "Motorbike": 1.0,
-                "Bicycle": 0.6,
-                "Car": 1.5,
-                "Van": 2.0,
-                "Three-Wheeler": 1.2
-            }
+            "rates_by_vehicle": {"Motorbike": 50.0, "Three-Wheeler": 90.0, "Car": 80.0, "Van": 120.0, "Bicycle": 25.0, "Electric Bike": 25.0},
+            "vehicle_multipliers": {"Motorbike": 1.0, "Bicycle": 0.6, "Car": 1.5, "Van": 2.0, "Three-Wheeler": 1.2},
         }
         existing_setting = self._fetchone("SELECT setting_key FROM system_settings WHERE setting_key = %s", ("transport_cost",))
         if not existing_setting:
             self._execute(
                 "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s)",
-                ("transport_cost", json.dumps(default_cost), self._now())
+                ("transport_cost", json.dumps(default_cost), self._now()),
             )
 
     def seed_test_data(self) -> None:
@@ -566,33 +552,77 @@ class SupabaseRepository(BaseRepository):
         if donors_count == 0:
             self._execute(
                 "INSERT INTO donors (id, name, phone, organization_name, location, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", now)
+                ("d1", "Grand Hotel", "+94112345678", "Grand Hotel Colombo", "Colombo", now),
             )
             self._execute(
                 "INSERT INTO donors (id, name, phone, organization_name, location, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", now)
+                ("d2", "City Bakery", "+94112345679", "City Bakery Colombo", "Colombo 4", now),
             )
 
         orgs_count = len(self._fetchall("SELECT id FROM organizations"))
         if orgs_count == 0:
             self._execute(
                 "INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                ("o1", "Community Kitchen Colombo", "+94119876543", "Colombo, Dehiwala", "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items", "200 meals", "always", "Colombo 7", now)
+                (
+                    "o1",
+                    "Community Kitchen Colombo",
+                    "+94119876543",
+                    "Colombo, Dehiwala",
+                    "vegetarian, non-vegetarian, lunch packets, cooked meals, bakery items",
+                    "200 meals",
+                    "always",
+                    "Colombo 7",
+                    now,
+                ),
             )
             self._execute(
                 "INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                ("o2", "Hope Food Bank", "+94119876544", "Colombo 3, Colombo 4, Wellawatte", "dry rations, bakery items, vegetarian", "100 meals", "daytime", "Colombo 4", now)
+                (
+                    "o2",
+                    "Hope Food Bank",
+                    "+94119876544",
+                    "Colombo 3, Colombo 4, Wellawatte",
+                    "dry rations, bakery items, vegetarian",
+                    "100 meals",
+                    "daytime",
+                    "Colombo 4",
+                    now,
+                ),
             )
 
         vols_count = len(self._fetchall("SELECT id FROM volunteers"))
         if vols_count == 0:
             self._execute(
                 "INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, availability_status, location, vehicle_capacity, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                ("v1", "Amara Silva", "+94771234567", "Colombo, Colombo 3, Colombo 4, Colombo 7", "Motorbike", "immediate, evenings", "available", "AVAILABLE", "Colombo 3", 25, now)
+                (
+                    "v1",
+                    "Amara Silva",
+                    "+94771234567",
+                    "Colombo, Colombo 3, Colombo 4, Colombo 7",
+                    "Motorbike",
+                    "immediate, evenings",
+                    "available",
+                    "AVAILABLE",
+                    "Colombo 3",
+                    25,
+                    now,
+                ),
             )
             self._execute(
                 "INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability, current_status, availability_status, location, vehicle_capacity, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                ("v2", "Kamal Perera", "+94771234568", "Colombo, Dehiwala, Mount Lavinia", "Three-Wheeler", "weekends, evenings", "available", "AVAILABLE", "Colombo 5", 40, now)
+                (
+                    "v2",
+                    "Kamal Perera",
+                    "+94771234568",
+                    "Colombo, Dehiwala, Mount Lavinia",
+                    "Three-Wheeler",
+                    "weekends, evenings",
+                    "available",
+                    "AVAILABLE",
+                    "Colombo 5",
+                    40,
+                    now,
+                ),
             )
 
     # --- Donors ---
@@ -608,26 +638,28 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM donors")
         for d in rows:
             d_digits = self._normalize_phone(d.get("phone", ""))
-            if d_digits and norm_digits and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:])):
+            if (
+                d_digits
+                and norm_digits
+                and (d_digits == norm_digits or (len(d_digits) >= 9 and len(norm_digits) >= 9 and d_digits[-9:] == norm_digits[-9:]))
+            ):
                 return d
         return None
 
-    def create_donor_record(
-        self,
-        donor_id: str,
-        name: str,
-        phone: str,
-        location: str,
-        organization_name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def create_donor_record(self, donor_id: str, name: str, phone: str, location: str, organization_name: Optional[str] = None) -> Dict[str, Any]:
         now = self._now()
         org_name = organization_name or name
         self._execute(
             "INSERT INTO donors (id, name, phone, organization_name, location, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            (donor_id, name, phone, org_name, location, now)
+            (donor_id, name, phone, org_name, location, now),
         )
         return self.get_donor_record(donor_id) or {
-            "id": donor_id, "name": name, "phone": phone, "organization_name": org_name, "location": location, "created_at": now
+            "id": donor_id,
+            "name": name,
+            "phone": phone,
+            "organization_name": org_name,
+            "location": location,
+            "created_at": now,
         }
 
     # --- Organizations ---
@@ -642,7 +674,11 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM organizations")
         for o in rows:
             o_digits = self._normalize_phone(o.get("phone", ""))
-            if o_digits and norm_digits and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:])):
+            if (
+                o_digits
+                and norm_digits
+                and (o_digits == norm_digits or (len(o_digits) >= 9 and len(norm_digits) >= 9 and o_digits[-9:] == norm_digits[-9:]))
+            ):
                 return o
         return None
 
@@ -655,7 +691,7 @@ class SupabaseRepository(BaseRepository):
         accepted_food_types: str,
         capacity: Optional[str] = None,
         availability: Optional[str] = "daytime",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = self._now()
         loc = location or service_area.split(",")[0].strip()
@@ -664,12 +700,18 @@ class SupabaseRepository(BaseRepository):
         self._execute(
             "INSERT INTO organizations (id, name, phone, service_area, accepted_food_types, capacity, availability, location, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (org_id, name, phone, service_area, accepted_food_types, cap, avail, loc, now)
+            (org_id, name, phone, service_area, accepted_food_types, cap, avail, loc, now),
         )
         return self.get_organization_record(org_id) or {
-            "id": org_id, "name": name, "phone": phone, "service_area": service_area,
-            "accepted_food_types": accepted_food_types, "capacity": cap, "availability": avail,
-            "location": loc, "created_at": now
+            "id": org_id,
+            "name": name,
+            "phone": phone,
+            "service_area": service_area,
+            "accepted_food_types": accepted_food_types,
+            "capacity": cap,
+            "availability": avail,
+            "location": loc,
+            "created_at": now,
         }
 
     def update_organization_record(
@@ -681,7 +723,7 @@ class SupabaseRepository(BaseRepository):
         accepted_food_types: Optional[str] = None,
         capacity: Optional[str] = None,
         availability: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         fields = []
         params = []
@@ -727,7 +769,11 @@ class SupabaseRepository(BaseRepository):
         rows = self._fetchall("SELECT * FROM volunteers")
         for v in rows:
             v_digits = self._normalize_phone(v.get("phone", ""))
-            if v_digits and norm_digits and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:])):
+            if (
+                v_digits
+                and norm_digits
+                and (v_digits == norm_digits or (len(v_digits) >= 9 and len(norm_digits) >= 9 and v_digits[-9:] == norm_digits[-9:]))
+            ):
                 if v.get("current_coordinates"):
                     v["current_coordinates"] = self._json_loads(v["current_coordinates"])
                 return v
@@ -742,7 +788,7 @@ class SupabaseRepository(BaseRepository):
         transport_mode: Optional[str] = "Motorbike",
         availability: Optional[str] = "available",
         current_status: Optional[str] = "available",
-        location: Optional[str] = None
+        location: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = self._now()
         mode = transport_mode or "Motorbike"
@@ -750,12 +796,18 @@ class SupabaseRepository(BaseRepository):
         self._execute(
             "INSERT INTO volunteers (id, name, phone, service_area, transport_mode, availability_status, current_status, location, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (volunteer_id, name, phone, service_area, mode, availability or "available", current_status or "available", loc, now)
+            (volunteer_id, name, phone, service_area, mode, availability or "available", current_status or "available", loc, now),
         )
         return self.get_volunteer_record(volunteer_id) or {
-            "id": volunteer_id, "name": name, "phone": phone, "service_area": service_area,
-            "transport_mode": mode, "availability_status": availability, "current_status": current_status,
-            "location": loc, "created_at": now
+            "id": volunteer_id,
+            "name": name,
+            "phone": phone,
+            "service_area": service_area,
+            "transport_mode": mode,
+            "availability_status": availability,
+            "current_status": current_status,
+            "location": loc,
+            "created_at": now,
         }
 
     def update_volunteer_record(
@@ -810,7 +862,7 @@ class SupabaseRepository(BaseRepository):
         dietary_info: str,
         location: str,
         available_from: str,
-        deadline: str
+        deadline: str,
     ) -> Dict[str, Any]:
         qty = float(quantity)
         if qty <= 0:
@@ -820,13 +872,21 @@ class SupabaseRepository(BaseRepository):
         self._execute(
             "INSERT INTO donations (id, donor_id, food_type, quantity, unit, dietary_information, pickup_location, available_from, pickup_deadline, status, created_at, updated_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (donation_id, donor_id, food_type, qty, unit, dietary_info, location, available_from, deadline, "AVAILABLE", now, now)
+            (donation_id, donor_id, food_type, qty, unit, dietary_info, location, available_from, deadline, "AVAILABLE", now, now),
         )
         return self.get_donation_record(donation_id) or {
-            "id": donation_id, "donor_id": donor_id, "food_type": food_type, "quantity": qty,
-            "unit": unit, "dietary_information": dietary_info, "pickup_location": location,
-            "available_from": available_from, "pickup_deadline": deadline, "status": "AVAILABLE",
-            "created_at": now, "updated_at": now
+            "id": donation_id,
+            "donor_id": donor_id,
+            "food_type": food_type,
+            "quantity": qty,
+            "unit": unit,
+            "dietary_information": dietary_info,
+            "pickup_location": location,
+            "available_from": available_from,
+            "pickup_deadline": deadline,
+            "status": "AVAILABLE",
+            "created_at": now,
+            "updated_at": now,
         }
 
     def get_donation_record(self, donation_id: str) -> Optional[Dict[str, Any]]:
@@ -837,10 +897,7 @@ class SupabaseRepository(BaseRepository):
 
     def update_donation_status_record(self, donation_id: str, status: str) -> bool:
         now = self._now()
-        self._execute(
-            "UPDATE donations SET status = %s, updated_at = %s WHERE id = %s",
-            (status, now, donation_id)
-        )
+        self._execute("UPDATE donations SET status = %s, updated_at = %s WHERE id = %s", (status, now, donation_id))
         don = self.get_donation_record(donation_id)
         return don is not None and don.get("status") == status
 
@@ -853,7 +910,7 @@ class SupabaseRepository(BaseRepository):
         dietary_info: Optional[str] = None,
         location: Optional[str] = None,
         available_from: Optional[str] = None,
-        deadline: Optional[str] = None
+        deadline: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         now = self._now()
         fields = ["updated_at = %s"]
@@ -891,6 +948,7 @@ class SupabaseRepository(BaseRepository):
         all_orgs = self._fetchall("SELECT * FROM organizations")
 
         import routing
+
         target_district = (routing.resolve_district(location) or "").lower()
 
         ranked_orgs = []
@@ -926,10 +984,7 @@ class SupabaseRepository(BaseRepository):
         if not don:
             return False
         now = self._now()
-        self._execute(
-            "UPDATE donations SET status = 'MATCHED', updated_at = %s WHERE id = %s",
-            (now, donation_id)
-        )
+        self._execute("UPDATE donations SET status = 'MATCHED', updated_at = %s WHERE id = %s", (now, donation_id))
         return True
 
     def find_volunteers_by_criteria(self, location: str) -> List[Dict[str, Any]]:
@@ -937,6 +992,7 @@ class SupabaseRepository(BaseRepository):
         all_vols = self._fetchall("SELECT * FROM volunteers WHERE LOWER(current_status) = 'available'")
 
         import routing
+
         target_district = (routing.resolve_district(location) or "").lower()
 
         matched_vols = []
@@ -965,20 +1021,12 @@ class SupabaseRepository(BaseRepository):
 
     # --- Pickup Tasks ---
 
-    def create_pickup_task_record(
-        self,
-        task_id: str,
-        donation_id: str,
-        org_id: str,
-        pickup_loc: str,
-        delivery_loc: str,
-        time: str
-    ) -> Dict[str, Any]:
+    def create_pickup_task_record(self, task_id: str, donation_id: str, org_id: str, pickup_loc: str, delivery_loc: str, time: str) -> Dict[str, Any]:
         now = self._now()
         self._execute(
             "INSERT INTO pickup_tasks (id, donation_id, organization_id, pickup_location, delivery_location, scheduled_time, status, delivery_status, created_at, updated_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, 'PENDING', 'PENDING', %s, %s)",
-            (task_id, donation_id, org_id, pickup_loc, delivery_loc, time, now, now)
+            (task_id, donation_id, org_id, pickup_loc, delivery_loc, time, now, now),
         )
         return self.get_pickup_task_record(task_id) or {}
 
@@ -989,7 +1037,13 @@ class SupabaseRepository(BaseRepository):
                 row["pickup_coordinates"] = self._json_loads(row["pickup_coordinates"])
             if row.get("destination_coordinates"):
                 row["destination_coordinates"] = self._json_loads(row["destination_coordinates"])
-            for f in ["pickup_distance_km", "delivery_distance_km", "total_distance_km", "estimated_transport_cost", "approved_transport_reimbursement"]:
+            for f in [
+                "pickup_distance_km",
+                "delivery_distance_km",
+                "total_distance_km",
+                "estimated_transport_cost",
+                "approved_transport_reimbursement",
+            ]:
                 if row.get(f) is not None:
                     row[f] = float(row[f])
             if "pickup_location_confirmed" in row:
@@ -1044,35 +1098,22 @@ class SupabaseRepository(BaseRepository):
             if curr_vol and curr_status not in ["PENDING", "OFFERED", "OPEN"]:
                 return False
 
-        self._execute(
-            "UPDATE pickup_tasks SET volunteer_id = %s, status = 'ASSIGNED', updated_at = %s WHERE id = %s",
-            (volunteer_id, now, task_id)
-        )
+        self._execute("UPDATE pickup_tasks SET volunteer_id = %s, status = 'ASSIGNED', updated_at = %s WHERE id = %s", (volunteer_id, now, task_id))
         return True
 
     def update_pickup_status_record(self, task_id: str, status: str) -> bool:
         now = self._now()
-        self._execute(
-            "UPDATE pickup_tasks SET status = %s, updated_at = %s WHERE id = %s",
-            (status, now, task_id)
-        )
+        self._execute("UPDATE pickup_tasks SET status = %s, updated_at = %s WHERE id = %s", (status, now, task_id))
         return True
 
     # --- Notifications ---
 
-    def create_notification_record(
-        self,
-        notif_id: str,
-        recipient_type: str,
-        recipient_id: str,
-        message: str,
-        channel: str
-    ) -> None:
+    def create_notification_record(self, notif_id: str, recipient_type: str, recipient_id: str, message: str, channel: str) -> None:
         now = self._now()
         self._execute(
             "INSERT INTO notifications (id, recipient_type, recipient_id, message, channel, status, created_at) "
             "VALUES (%s, %s, %s, %s, %s, 'SENT', %s)",
-            (notif_id, recipient_type, recipient_id, message, channel, now)
+            (notif_id, recipient_type, recipient_id, message, channel, now),
         )
 
     def get_notifications_for_recipient(self, recipient_id: str) -> List[Dict[str, Any]]:
@@ -1126,7 +1167,9 @@ class SupabaseRepository(BaseRepository):
 
         all_orgs = self.get_all_organizations()
         all_vols = self.get_all_volunteers()
-        avail_vols = len([v for v in all_vols if (v.get("current_status", "").lower() == "available" or v.get("availability_status", "").upper() == "AVAILABLE")])
+        avail_vols = len(
+            [v for v in all_vols if (v.get("current_status", "").lower() == "available" or v.get("availability_status", "").upper() == "AVAILABLE")]
+        )
 
         status_distribution = {}
         for d in all_dons:
@@ -1173,13 +1216,24 @@ class SupabaseRepository(BaseRepository):
         transport_mode: str,
         amount: float,
         currency: str = "LKR",
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = self._now()
         self._execute(
             "INSERT INTO reimbursements (id, pickup_task_id, volunteer_id, distance_km, rate_per_km, transport_mode, amount, currency, status, created_at, notes) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PENDING', %s, %s)",
-            (reimbursement_id, pickup_task_id, volunteer_id, float(distance_km), float(rate_per_km), str(transport_mode), float(amount), str(currency), now, notes)
+            (
+                reimbursement_id,
+                pickup_task_id,
+                volunteer_id,
+                float(distance_km),
+                float(rate_per_km),
+                str(transport_mode),
+                float(amount),
+                str(currency),
+                now,
+                notes,
+            ),
         )
         return self.get_reimbursement_record(reimbursement_id) or {}
 
@@ -1221,12 +1275,7 @@ class SupabaseRepository(BaseRepository):
                 r["volunteer_name"] = vol.get("name") if vol else None
         return rows
 
-    def update_reimbursement_status_record(
-        self,
-        reimbursement_id: str,
-        status: str,
-        notes: Optional[str] = None
-    ) -> bool:
+    def update_reimbursement_status_record(self, reimbursement_id: str, status: str, notes: Optional[str] = None) -> bool:
         now = self._now()
         norm_status = str(status).strip().upper()
         fields = ["status = %s"]
@@ -1255,14 +1304,14 @@ class SupabaseRepository(BaseRepository):
         latitude: float,
         longitude: float,
         accuracy_m: Optional[float] = None,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
     ) -> Dict[str, Any]:
         ts = timestamp or self._now()
         acc = float(accuracy_m) if accuracy_m is not None else None
         self._execute(
             "INSERT INTO pickup_location_history (id, pickup_task_id, volunteer_id, latitude, longitude, accuracy_m, timestamp) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (location_id, pickup_task_id, volunteer_id, float(latitude), float(longitude), acc, ts)
+            (location_id, pickup_task_id, volunteer_id, float(latitude), float(longitude), acc, ts),
         )
         return {
             "id": location_id,
@@ -1271,7 +1320,7 @@ class SupabaseRepository(BaseRepository):
             "latitude": float(latitude),
             "longitude": float(longitude),
             "accuracy_m": acc,
-            "timestamp": ts
+            "timestamp": ts,
         }
 
     def get_latest_pickup_location(self, pickup_task_id: str) -> Optional[Dict[str, Any]]:
@@ -1283,7 +1332,9 @@ class SupabaseRepository(BaseRepository):
         return row
 
     def get_pickup_location_history(self, pickup_task_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        rows = self._fetchall(f"SELECT * FROM pickup_location_history WHERE pickup_task_id = %s ORDER BY timestamp DESC LIMIT {int(limit)}", (pickup_task_id,))
+        rows = self._fetchall(
+            f"SELECT * FROM pickup_location_history WHERE pickup_task_id = %s ORDER BY timestamp DESC LIMIT {int(limit)}", (pickup_task_id,)
+        )
         for r in rows:
             for f in ["latitude", "longitude", "accuracy_m"]:
                 if r.get(f) is not None:
@@ -1293,18 +1344,11 @@ class SupabaseRepository(BaseRepository):
     # --- Volunteer Availability & Coordination ---
 
     def update_volunteer_availability(
-        self,
-        volunteer_id: str,
-        status: str,
-        current_location: Optional[str] = None,
-        current_coordinates: Optional[Dict[str, Any]] = None
+        self, volunteer_id: str, status: str, current_location: Optional[str] = None, current_coordinates: Optional[Dict[str, Any]] = None
     ) -> bool:
         norm_status = str(status).strip().upper()
         now = self._now()
-        fields = [
-            "availability_status = %s",
-            "current_status = %s"
-        ]
+        fields = ["availability_status = %s", "current_status = %s"]
         params = [norm_status, norm_status.lower()]
 
         if current_location is not None:
@@ -1321,11 +1365,7 @@ class SupabaseRepository(BaseRepository):
         self._execute(f"UPDATE volunteers SET {', '.join(fields)} WHERE id = %s", tuple(params))
         return True
 
-    def get_available_volunteers(
-        self,
-        service_area: Optional[str] = None,
-        min_capacity: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_available_volunteers(self, service_area: Optional[str] = None, min_capacity: Optional[int] = None) -> List[Dict[str, Any]]:
         rows = self._fetchall("SELECT * FROM volunteers WHERE UPPER(availability_status) = 'AVAILABLE' OR LOWER(current_status) = 'available'")
         vols = []
         for v in rows:
@@ -1353,7 +1393,7 @@ class SupabaseRepository(BaseRepository):
         delivery_distance_km: Optional[float] = None,
         delivery_duration_minutes: Optional[int] = None,
         total_distance_km: Optional[float] = None,
-        estimated_transport_cost: Optional[float] = None
+        estimated_transport_cost: Optional[float] = None,
     ) -> bool:
         now = self._now()
         fields = ["updated_at = %s"]
@@ -1395,28 +1435,15 @@ class SupabaseRepository(BaseRepository):
     # --- Audit Trail ---
 
     def create_audit_event_record(
-        self,
-        event_id: str,
-        event_type: str,
-        actor: str,
-        related_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        self, event_id: str, event_type: str, actor: str, related_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         now = self._now()
         meta_str = self._json_dumps(metadata or {})
         self._execute(
-            "INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (event_id, event_type, actor, related_id, meta_str, now)
+            "INSERT INTO audit_events (id, event_type, actor, related_id, metadata, created_at) " "VALUES (%s, %s, %s, %s, %s, %s)",
+            (event_id, event_type, actor, related_id, meta_str, now),
         )
-        return {
-            "id": event_id,
-            "event_type": event_type,
-            "actor": actor,
-            "related_id": related_id,
-            "metadata": metadata or {},
-            "created_at": now
-        }
+        return {"id": event_id, "event_type": event_type, "actor": actor, "related_id": related_id, "metadata": metadata or {}, "created_at": now}
 
     def get_audit_events_for_task(self, related_id: str) -> List[Dict[str, Any]]:
         rows = self._fetchall("SELECT * FROM audit_events WHERE related_id = %s ORDER BY created_at ASC", (related_id,))
@@ -1598,8 +1625,8 @@ class SupabaseRepository(BaseRepository):
                     now,
                     self._json_dumps(metadata or {}),
                     self._json_dumps({}),
-                    self._json_dumps({})
-                )
+                    self._json_dumps({}),
+                ),
             )
         return self.get_user_by_phone(norm) or {}
 
@@ -1613,7 +1640,7 @@ class SupabaseRepository(BaseRepository):
         default_location: Optional[str] = None,
         active_donation_id: Optional[str] = None,
         active_task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
         now = self._now()
@@ -1636,8 +1663,8 @@ class SupabaseRepository(BaseRepository):
                     False,
                     now,
                     now,
-                    self._json_dumps(metadata or {})
-                )
+                    self._json_dumps(metadata or {}),
+                ),
             )
         else:
             fields = ["last_seen_at = %s"]
@@ -1676,7 +1703,9 @@ class SupabaseRepository(BaseRepository):
         now = self._now()
         existing = self._fetchone("SELECT * FROM users WHERE phone_number = %s", (norm,))
         if existing:
-            self._execute("UPDATE users SET preferred_language = %s, last_seen_at = %s WHERE phone_number = %s", (language.lower().strip(), now, norm))
+            self._execute(
+                "UPDATE users SET preferred_language = %s, last_seen_at = %s WHERE phone_number = %s", (language.lower().strip(), now, norm)
+            )
         else:
             self.create_or_update_user(norm, preferred_language=language.lower().strip())
         return True
@@ -1792,60 +1821,66 @@ class SupabaseRepository(BaseRepository):
         for vol in self.get_all_volunteers():
             v_phone = self._normalize_phone(vol.get("phone", ""))
             if v_phone and v_phone not in seen_phones:
-                users.append({
-                    "phone_number": v_phone,
-                    "display_name": vol.get("name", "Volunteer"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "volunteer",
-                    "onboarding_completed": True,
-                    "default_location": vol.get("service_area") or vol.get("location"),
-                    "created_at": vol.get("created_at") or self._now(),
-                    "last_seen_at": vol.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": v_phone,
+                        "display_name": vol.get("name", "Volunteer"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "volunteer",
+                        "onboarding_completed": True,
+                        "default_location": vol.get("service_area") or vol.get("location"),
+                        "created_at": vol.get("created_at") or self._now(),
+                        "last_seen_at": vol.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(v_phone)
 
         # Include registered orgs not in users
         for org in self.get_all_organizations():
             o_phone = self._normalize_phone(org.get("phone", ""))
             if o_phone and o_phone not in seen_phones:
-                users.append({
-                    "phone_number": o_phone,
-                    "display_name": org.get("name", "Organization"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "organization",
-                    "onboarding_completed": True,
-                    "default_location": org.get("location") or org.get("service_area"),
-                    "created_at": org.get("created_at") or self._now(),
-                    "last_seen_at": org.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": o_phone,
+                        "display_name": org.get("name", "Organization"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "organization",
+                        "onboarding_completed": True,
+                        "default_location": org.get("location") or org.get("service_area"),
+                        "created_at": org.get("created_at") or self._now(),
+                        "last_seen_at": org.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(o_phone)
 
         # Include registered donors not in users
         for don in self.get_all_donors():
             d_phone = self._normalize_phone(don.get("phone", ""))
             if d_phone and d_phone not in seen_phones:
-                users.append({
-                    "phone_number": d_phone,
-                    "display_name": don.get("name", "Donor"),
-                    "preferred_language": "en",
-                    "preferred_response_mode": "text",
-                    "user_role": "donor",
-                    "onboarding_completed": True,
-                    "default_location": don.get("location"),
-                    "created_at": don.get("created_at") or self._now(),
-                    "last_seen_at": don.get("created_at") or self._now(),
-                    "active_draft": {},
-                    "conversation_state": {},
-                    "metadata": {},
-                })
+                users.append(
+                    {
+                        "phone_number": d_phone,
+                        "display_name": don.get("name", "Donor"),
+                        "preferred_language": "en",
+                        "preferred_response_mode": "text",
+                        "user_role": "donor",
+                        "onboarding_completed": True,
+                        "default_location": don.get("location"),
+                        "created_at": don.get("created_at") or self._now(),
+                        "last_seen_at": don.get("created_at") or self._now(),
+                        "active_draft": {},
+                        "conversation_state": {},
+                        "metadata": {},
+                    }
+                )
                 seen_phones.add(d_phone)
 
         return users
@@ -1856,31 +1891,21 @@ class SupabaseRepository(BaseRepository):
     # --- Messages & Conversations ---
 
     def record_message(
-        self,
-        phone: str,
-        sender: str,
-        text: str,
-        is_voice: bool = False,
-        transcript: Optional[str] = None,
-        timestamp: Optional[str] = None
+        self, phone: str, sender: str, text: str, is_voice: bool = False, transcript: Optional[str] = None, timestamp: Optional[str] = None
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
         msg_id = f"msg-{uuid.uuid4().hex[:8]}"
         ts = timestamp or self._now()
         self._execute(
-            "INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (msg_id, norm, sender, text, bool(is_voice), transcript, ts)
+            "INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp) " "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (msg_id, norm, sender, text, bool(is_voice), transcript, ts),
         )
 
         existing = self._fetchone("SELECT * FROM users WHERE phone_number = %s", (norm,))
         if existing:
             self._execute("UPDATE users SET last_seen_at = %s WHERE phone_number = %s", (ts, norm))
         else:
-            self.create_or_update_user(
-                norm,
-                preferred_response_mode="voice" if is_voice else "text"
-            )
+            self.create_or_update_user(norm, preferred_response_mode="voice" if is_voice else "text")
 
         return {
             "id": msg_id,
@@ -1889,8 +1914,31 @@ class SupabaseRepository(BaseRepository):
             "message_text": text,
             "is_voice": bool(is_voice),
             "transcript": transcript,
-            "timestamp": ts
+            "timestamp": ts,
         }
+
+    def claim_whatsapp_message_id(self, message_id: str) -> bool:
+        """Atomically claim a message ID for processing. Returns False if already processed or claimed."""
+        if not message_id:
+            return True
+        try:
+            self._execute("""
+                CREATE TABLE IF NOT EXISTS processed_webhook_messages (
+                    message_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL
+                )
+                """)
+            self._execute(
+                "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (%s, %s)",
+                (message_id, self._now()),
+            )
+            return True
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "unique" in err_str or "duplicate" in err_str or "already exists" in err_str or "primary key" in err_str:
+                logger.info(f"Duplicate WhatsApp message_id '{message_id}' blocked by database constraint.")
+                return False
+            return True
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         users = self.get_all_users()
@@ -1919,19 +1967,21 @@ class SupabaseRepository(BaseRepository):
                             disp_name = org_rec["name"]
                             u_role = "organization"
 
-            conversations.append({
-                "phone_number": norm,
-                "display_name": disp_name,
-                "user_role": u_role,
-                "preferred_language": u.get("preferred_language", "en"),
-                "preferred_response_mode": u.get("preferred_response_mode", "text"),
-                "message_count": msg_count,
-                "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
-                "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
-                "last_message_is_voice": bool(latest_msg.get("is_voice", False)) if latest_msg else False,
-                "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
-                "onboarding_completed": bool(u.get("onboarding_completed", False)),
-            })
+            conversations.append(
+                {
+                    "phone_number": norm,
+                    "display_name": disp_name,
+                    "user_role": u_role,
+                    "preferred_language": u.get("preferred_language", "en"),
+                    "preferred_response_mode": u.get("preferred_response_mode", "text"),
+                    "message_count": msg_count,
+                    "last_message": latest_msg.get("message_text", "") if latest_msg else "Conversation initiated",
+                    "last_message_sender": latest_msg.get("sender", "system") if latest_msg else "system",
+                    "last_message_is_voice": bool(latest_msg.get("is_voice", False)) if latest_msg else False,
+                    "last_activity": latest_msg.get("timestamp") if latest_msg else u.get("last_seen_at", self._now()),
+                    "onboarding_completed": bool(u.get("onboarding_completed", False)),
+                }
+            )
 
         conversations.sort(key=lambda c: str(c.get("last_activity", "")), reverse=True)
         return conversations
@@ -1962,21 +2012,8 @@ class SupabaseRepository(BaseRepository):
             "base_fare": 100.0,
             "cost_per_km": 80.0,
             "currency": "LKR",
-            "rates_by_vehicle": {
-                "Motorbike": 50.0,
-                "Three-Wheeler": 90.0,
-                "Car": 80.0,
-                "Van": 120.0,
-                "Bicycle": 25.0,
-                "Electric Bike": 25.0
-            },
-            "vehicle_multipliers": {
-                "Motorbike": 1.0,
-                "Bicycle": 0.6,
-                "Car": 1.5,
-                "Van": 2.0,
-                "Three-Wheeler": 1.2
-            }
+            "rates_by_vehicle": {"Motorbike": 50.0, "Three-Wheeler": 90.0, "Car": 80.0, "Van": 120.0, "Bicycle": 25.0, "Electric Bike": 25.0},
+            "vehicle_multipliers": {"Motorbike": 1.0, "Bicycle": 0.6, "Car": 1.5, "Van": 2.0, "Three-Wheeler": 1.2},
         }
 
     def update_transport_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -1986,7 +2023,9 @@ class SupabaseRepository(BaseRepository):
         if existing:
             self._execute("UPDATE system_settings SET setting_value = %s, updated_at = %s WHERE setting_key = %s", (val_str, now, "transport_cost"))
         else:
-            self._execute("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s)", ("transport_cost", val_str, now))
+            self._execute(
+                "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s)", ("transport_cost", val_str, now)
+            )
         return settings
 
     # --- QR Code Handover Verification ---
@@ -2005,7 +2044,7 @@ class SupabaseRepository(BaseRepository):
         status: str = "ACTIVE",
         created_at: Optional[str] = None,
         expires_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         now = created_at or self._now()
         meta_str = self._json_dumps(metadata or {})
@@ -2015,13 +2054,40 @@ class SupabaseRepository(BaseRepository):
                 self._execute(
                     "UPDATE qr_codes SET task_id = %s, donation_id = %s, qr_type = %s, token = %s, token_hash = %s, "
                     "donor_id = %s, organization_id = %s, assigned_volunteer_id = %s, status = %s, expires_at = %s, metadata = %s WHERE id = %s",
-                    (task_id, donation_id, qr_type.upper(), token, token_hash, donor_id, organization_id, assigned_volunteer_id, status.upper(), expires_at, meta_str, qr_id)
+                    (
+                        task_id,
+                        donation_id,
+                        qr_type.upper(),
+                        token,
+                        token_hash,
+                        donor_id,
+                        organization_id,
+                        assigned_volunteer_id,
+                        status.upper(),
+                        expires_at,
+                        meta_str,
+                        qr_id,
+                    ),
                 )
             else:
                 self._execute(
                     "INSERT INTO qr_codes (id, task_id, donation_id, qr_type, token, token_hash, donor_id, organization_id, assigned_volunteer_id, status, created_at, expires_at, metadata) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (qr_id, task_id, donation_id, qr_type.upper(), token, token_hash, donor_id, organization_id, assigned_volunteer_id, status.upper(), now, expires_at, meta_str)
+                    (
+                        qr_id,
+                        task_id,
+                        donation_id,
+                        qr_type.upper(),
+                        token,
+                        token_hash,
+                        donor_id,
+                        organization_id,
+                        assigned_volunteer_id,
+                        status.upper(),
+                        now,
+                        expires_at,
+                        meta_str,
+                    ),
                 )
         except Exception:
             return {
@@ -2056,11 +2122,7 @@ class SupabaseRepository(BaseRepository):
             row["metadata"] = self._json_loads(row["metadata"])
         return row
 
-    def get_all_qr_codes(
-        self,
-        status: Optional[str] = None,
-        qr_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def get_all_qr_codes(self, status: Optional[str] = None, qr_type: Optional[str] = None) -> List[Dict[str, Any]]:
         query = "SELECT * FROM qr_codes"
         conditions = []
         params = []
@@ -2079,12 +2141,7 @@ class SupabaseRepository(BaseRepository):
                 r["metadata"] = self._json_loads(r["metadata"])
         return rows
 
-    def verify_qr_code_record(
-        self,
-        token: str,
-        volunteer_id: Optional[str] = None,
-        gps_coords: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def verify_qr_code_record(self, token: str, volunteer_id: Optional[str] = None, gps_coords: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Atomically verify a physical handover QR code and advance task lifecycle status."""
         qr = self.get_qr_code_by_token(token)
         if not qr:
@@ -2122,23 +2179,21 @@ class SupabaseRepository(BaseRepository):
 
             self._execute(
                 "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE'",
-                (now, effective_vol_id, token.strip())
+                (now, effective_vol_id, token.strip()),
             )
             self._execute(
                 "UPDATE pickup_tasks SET status = 'COLLECTED', delivery_status = 'IN_TRANSIT', food_collected_at = %s, updated_at = %s WHERE id = %s",
-                (now, now, task_id)
+                (now, now, task_id),
             )
             if donation_id:
-                self._execute(
-                    "UPDATE donations SET status = 'COLLECTED', updated_at = %s WHERE id = %s",
-                    (now, donation_id)
-                )
+                self._execute("UPDATE donations SET status = 'COLLECTED', updated_at = %s WHERE id = %s", (now, donation_id))
 
             # Ensure active Delivery QR is generated for subsequent organization delivery
             task_qrs = self.get_qr_codes_for_task(task_id)
             dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
             if not dl_qr:
                 import qr_service
+
                 dl_token = qr_service.generate_secure_token("DL")
                 self.create_qr_code_record(
                     qr_id=f"qr-dl-{task_id}",
@@ -2150,7 +2205,7 @@ class SupabaseRepository(BaseRepository):
                     donor_id=task.get("donor_id"),
                     organization_id=task.get("organization_id"),
                     assigned_volunteer_id=effective_vol_id,
-                    status="ACTIVE"
+                    status="ACTIVE",
                 )
 
             self.create_audit_event_record(
@@ -2158,33 +2213,34 @@ class SupabaseRepository(BaseRepository):
                 event_type="PICKUP_QR_VERIFIED",
                 actor=str(effective_vol_id or "volunteer"),
                 related_id=task_id,
-                metadata={"token": token, "gps": gps_coords}
+                metadata={"token": token, "gps": gps_coords},
             )
 
         elif qr_type == "DELIVERY":
             if task.get("status") not in ["COLLECTED", "IN_TRANSIT"]:
                 if task.get("status") in ["DELIVERED", "COMPLETED"]:
                     return {"success": False, "error": "ALREADY_DELIVERED", "message": "This delivery has already been completed."}
-                return {"success": False, "error": "NOT_YET_COLLECTED", "message": "Cannot verify delivery before the food has been collected from the donor."}
+                return {
+                    "success": False,
+                    "error": "NOT_YET_COLLECTED",
+                    "message": "Cannot verify delivery before the food has been collected from the donor.",
+                }
 
             self._execute(
                 "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE'",
-                (now, effective_vol_id, token.strip())
+                (now, effective_vol_id, token.strip()),
             )
             self._execute(
                 "UPDATE pickup_tasks SET status = 'COMPLETED', delivery_status = 'DELIVERED', food_delivered_at = %s, updated_at = %s WHERE id = %s",
-                (now, now, task_id)
+                (now, now, task_id),
             )
             if donation_id:
-                self._execute(
-                    "UPDATE donations SET status = 'DELIVERED', updated_at = %s WHERE id = %s",
-                    (now, donation_id)
-                )
+                self._execute("UPDATE donations SET status = 'DELIVERED', updated_at = %s WHERE id = %s", (now, donation_id))
 
             if effective_vol_id:
                 self._execute(
                     "UPDATE volunteers SET current_status = 'available', availability_status = 'AVAILABLE' WHERE id = %s OR phone = %s",
-                    (effective_vol_id, effective_vol_id)
+                    (effective_vol_id, effective_vol_id),
                 )
 
             self.create_audit_event_record(
@@ -2192,7 +2248,7 @@ class SupabaseRepository(BaseRepository):
                 event_type="DELIVERY_QR_VERIFIED",
                 actor=str(effective_vol_id or "volunteer"),
                 related_id=task_id,
-                metadata={"token": token, "gps": gps_coords}
+                metadata={"token": token, "gps": gps_coords},
             )
 
         updated_task = self.get_pickup_task_record(task_id)
@@ -2270,4 +2326,3 @@ class SupabaseRepository(BaseRepository):
         except Exception as err:
             logger.error(f"Error deleting task {task_id}: {err}")
             return False
-

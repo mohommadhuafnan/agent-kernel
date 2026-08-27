@@ -262,6 +262,14 @@ class SQLiteRepository(BaseRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes (token)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_task ON qr_codes (task_id)")
 
+            # Deduplication Ring Buffer for Webhook Deliveries
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS processed_webhook_messages (
+                message_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+            """)
+
             # Table migrations for existing sqlite databases
             vol_cols = [
                 ("transport_mode", "TEXT DEFAULT 'Motorbike'"),
@@ -2060,6 +2068,26 @@ class SQLiteRepository(BaseRepository):
             "transcript": transcript,
             "timestamp": ts,
         }
+
+    def claim_whatsapp_message_id(self, message_id: str) -> bool:
+        """Atomically claim a message ID for processing. Returns False if already processed or claimed."""
+        if not message_id:
+            return True
+        try:
+            conn = self._get_connection()
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("CREATE TABLE IF NOT EXISTS processed_webhook_messages (message_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)")
+                cursor.execute(
+                    "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (?, ?)",
+                    (message_id, self._now()),
+                )
+            conn.close()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        except Exception:
+            return True
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         conn = self._get_connection()

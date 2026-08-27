@@ -1101,7 +1101,11 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
     # 1. Idempotency Check: Prevent duplicate processing if Meta retries delivery
     if message_id:
         if message_id in PROCESSED_MESSAGE_IDS:
-            logger.info(f"Ignoring duplicate WhatsApp message '{message_id}' from '{from_number}'")
+            logger.info(f"Ignoring duplicate WhatsApp message '{message_id}' from '{from_number}' (in-memory)")
+            return {"status": "ignored", "reason": "duplicate_message_id", "message_id": message_id}
+
+        if not database.claim_whatsapp_message_id(message_id):
+            logger.info(f"Ignoring duplicate WhatsApp message '{message_id}' from '{from_number}' (database constraint)")
             return {"status": "ignored", "reason": "duplicate_message_id", "message_id": message_id}
 
         if len(PROCESSED_MESSAGE_QUEUE) == PROCESSED_MESSAGE_QUEUE.maxlen:

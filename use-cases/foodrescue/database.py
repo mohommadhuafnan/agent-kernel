@@ -608,6 +608,17 @@ def record_message(
     return get_repository().record_message(phone=phone, sender=sender, text=text, is_voice=is_voice, transcript=transcript, timestamp=timestamp)
 
 
+def claim_whatsapp_message_id(message_id: str) -> bool:
+    """Atomically claim a WhatsApp message ID to prevent duplicate processing across serverless instances."""
+    if not message_id:
+        return True
+    try:
+        return get_repository().claim_whatsapp_message_id(message_id)
+    except Exception as e:
+        logger.warning(f"Error claiming message ID {message_id}: {e}")
+        return True
+
+
 def get_all_conversations() -> List[Dict[str, Any]]:
     return get_repository().get_all_conversations()
 
