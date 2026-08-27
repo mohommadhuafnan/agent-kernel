@@ -301,7 +301,7 @@ def get_next_missing_donation_field(profile: Optional[Dict[str, Any]], draft: Op
     return "CONFIRMATION"
 
 
-async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
+async def execute_deterministic_fallback(prompt: str, session_id: str, user_context: Optional[Dict[str, Any]] = None) -> str:
     """Perform deterministic workflow execution when all LLM quotas are exhausted or for offline rule processing."""
     logger.warning(f"[Deterministic Fallback] Executing offline rule engine for session '{session_id}' with prompt: {prompt[:60]}")
 
@@ -309,8 +309,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     clean_p = prompt.strip().lower()
     phone = session_id.split("whatsapp:", 1)[1] if "whatsapp:" in session_id else ""
 
-    # Resolve persistent user profile and language
-    user = database.get_user_by_phone(phone) if phone else None
+    # Resolve persistent user profile and language using context if available
+    user = (user_context.get("user") if user_context else None) or (database.get_user_by_phone(phone) if phone else None)
     detected = translation_service.detect_language(prompt)
     if detected and detected in ["si", "ta"]:
         lang = detected
@@ -2684,14 +2684,16 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     return reply
 
 
-async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Optional[str] = None) -> Dict[str, Any]:
+async def run_resilient_chat(
+    prompt: str, session_id: str, preferred_agent: Optional[str] = None, user_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Execute chat request through stateful coordinator engine and resilient LLM model pool."""
     phone = session_id.split("whatsapp:", 1)[1] if "whatsapp:" in session_id else ""
     clean_p = prompt.strip().lower()
 
     # Check if there is an active workflow, draft, or domain intent
-    active_draft = database.get_draft_donation(phone) if phone else None
-    conv_state = database.get_user_conversation_state(phone) if phone else {}
+    active_draft = (user_context.get("draft") if user_context else None) or (database.get_draft_donation(phone) if phone else None)
+    conv_state = (user_context.get("state") if user_context else None) or (database.get_user_conversation_state(phone) if phone else {})
     curr_q = conv_state.get("current_question", "")
     expected_type = conv_state.get("expected_input_type", "")
     has_active_state = bool(
@@ -2752,7 +2754,7 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
     is_greeting = translation_service.is_greeting_message(clean_p)
     if is_greeting and not has_active_state:
         logger.info(f"[Greeting Engine] Executing greeting/welcome for session '{session_id}' with prompt: '{prompt[:60]}'")
-        fallback_result = await execute_deterministic_fallback(prompt, session_id)
+        fallback_result = await execute_deterministic_fallback(prompt, session_id, user_context=user_context)
         return {
             "status": "success",
             "result": fallback_result,
@@ -2848,7 +2850,7 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
 
     if (has_active_state and not is_explicit_question) or (is_domain_intent and not is_explicit_question):
         logger.info(f"[Stateful Engine] Executing stateful coordinator for session '{session_id}' with prompt: '{prompt[:60]}'")
-        fallback_result = await execute_deterministic_fallback(prompt, session_id)
+        fallback_result = await execute_deterministic_fallback(prompt, session_id, user_context=user_context)
         return {
             "status": "success",
             "result": fallback_result,
@@ -2872,10 +2874,10 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
         try:
             logger.info(f"[Resilient Run] Executing '{agent_name}' with model '{model_name}' for session '{session_id}'")
             # Inject user role context so Gemini answers from the exact role perspective
-            user_obj = database.get_user_by_phone(phone) if phone else None
-            org_obj = database.get_organization_by_phone(phone) if phone else None
-            vol_obj = database.get_volunteer_by_phone(phone) if phone else None
-            donor_obj = database.get_donor_by_phone(phone) if phone else None
+            user_obj = (user_context.get("user") if user_context else None) or (database.get_user_by_phone(phone) if phone else None)
+            org_obj = (user_context.get("organization") if user_context else None) or (database.get_organization_by_phone(phone) if phone else None)
+            vol_obj = (user_context.get("volunteer") if user_context else None) or (database.get_volunteer_by_phone(phone) if phone else None)
+            donor_obj = (user_context.get("donor") if user_context else None) or (database.get_donor_by_phone(phone) if phone else None)
 
             role_ctx = ""
             if org_obj or (user_obj and user_obj.get("user_role") == "organization"):

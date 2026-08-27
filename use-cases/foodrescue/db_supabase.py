@@ -57,10 +57,32 @@ class SupabaseRepository(BaseRepository):
             logger.warning(f"Could not create Supabase Client instance: {e}")
             return None
 
+    def _is_connection_alive(self, conn: Any) -> bool:
+        """Quickly check if cached database connection is open and responsive."""
+        if conn is None:
+            return False
+        if self._is_sqlite(conn):
+            return True
+        try:
+            if hasattr(conn, "closed") and conn.closed:
+                return False
+            if hasattr(conn, "status") and conn.status != 0:  # psycopg2 STATUS_READY is 0
+                return False
+            return True
+        except Exception:
+            return False
+
     def _get_connection(self):
-        """Retrieve or create an active database connection."""
+        """Retrieve or create an active database connection with timeout and keepalive protection."""
         if self._connection is not None:
-            return self._connection
+            if self._is_connection_alive(self._connection):
+                return self._connection
+            try:
+                if hasattr(self._connection, "close"):
+                    self._connection.close()
+            except Exception:
+                pass
+            self._connection = None
 
         if not self._db_url:
             raise ValueError(
@@ -79,7 +101,16 @@ class SupabaseRepository(BaseRepository):
         try:
             import psycopg
 
-            conn = psycopg.connect(clean_url, autocommit=True, prepare_threshold=None)
+            conn = psycopg.connect(
+                clean_url,
+                autocommit=True,
+                prepare_threshold=None,
+                connect_timeout=4,
+                keepalives=1,
+                keepalives_idle=20,
+                keepalives_interval=5,
+                keepalives_count=3,
+            )
             self._connection = conn
             return self._connection
         except ImportError:
@@ -92,7 +123,15 @@ class SupabaseRepository(BaseRepository):
             import psycopg2
             import psycopg2.extras
 
-            conn = psycopg2.connect(clean_url)
+            conn = psycopg2.connect(
+                clean_url,
+                connect_timeout=4,
+                keepalives=1,
+                keepalives_idle=20,
+                keepalives_interval=5,
+                keepalives_count=3,
+                options="-c statement_timeout=5000",
+            )
             conn.autocommit = True
             self._connection = conn
             return self._connection
@@ -118,6 +157,7 @@ class SupabaseRepository(BaseRepository):
                     port=parsed.port or 5432,
                     database=parsed.path.lstrip("/") or "postgres",
                     ssl_context=ssl.create_default_context() if use_ssl else None,
+                    timeout=4.0,
                 )
             except Exception:
                 conn = pg8000.native.Connection(
@@ -127,6 +167,7 @@ class SupabaseRepository(BaseRepository):
                     port=parsed.port or 5432,
                     database=parsed.path.lstrip("/") or "postgres",
                     ssl_context=True if use_ssl else None,
+                    timeout=4.0,
                 )
             self._connection = conn
             return self._connection
@@ -137,7 +178,7 @@ class SupabaseRepository(BaseRepository):
         try:
             from sqlalchemy import create_engine
 
-            engine = create_engine(self._db_url, pool_pre_ping=True)
+            engine = create_engine(self._db_url, pool_pre_ping=True, connect_args={"connect_timeout": 4})
             self._engine = engine
             return engine.connect()
         except Exception as e:
@@ -1897,15 +1938,13 @@ class SupabaseRepository(BaseRepository):
         msg_id = f"msg-{uuid.uuid4().hex[:8]}"
         ts = timestamp or self._now()
         self._execute(
-            "INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp) " "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (msg_id, norm, sender, text, bool(is_voice), transcript, ts),
         )
-
-        existing = self._fetchone("SELECT * FROM users WHERE phone_number = %s", (norm,))
-        if existing:
+        try:
             self._execute("UPDATE users SET last_seen_at = %s WHERE phone_number = %s", (ts, norm))
-        else:
-            self.create_or_update_user(norm, preferred_response_mode="voice" if is_voice else "text")
+        except Exception:
+            pass
 
         return {
             "id": msg_id,
@@ -1922,12 +1961,6 @@ class SupabaseRepository(BaseRepository):
         if not message_id:
             return True
         try:
-            self._execute("""
-                CREATE TABLE IF NOT EXISTS processed_webhook_messages (
-                    message_id TEXT PRIMARY KEY,
-                    created_at TEXT NOT NULL
-                )
-                """)
             self._execute(
                 "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (%s, %s)",
                 (message_id, self._now()),
@@ -1938,6 +1971,22 @@ class SupabaseRepository(BaseRepository):
             if "unique" in err_str or "duplicate" in err_str or "already exists" in err_str or "primary key" in err_str:
                 logger.info(f"Duplicate WhatsApp message_id '{message_id}' blocked by database constraint.")
                 return False
+            # Table might not exist yet if setup_database was not run; try creating once on failure
+            if "does not exist" in err_str or "no such table" in err_str:
+                try:
+                    self._execute("""
+                        CREATE TABLE IF NOT EXISTS processed_webhook_messages (
+                            message_id TEXT PRIMARY KEY,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    """)
+                    self._execute(
+                        "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (%s, %s)",
+                        (message_id, self._now()),
+                    )
+                    return True
+                except Exception:
+                    pass
             return True
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
@@ -2406,11 +2455,59 @@ class SupabaseRepository(BaseRepository):
     def get_user_full_context(self, phone: str) -> Dict[str, Any]:
         """Consolidated single-pass lookup of user, role records, draft, and conversation state."""
         norm = self._normalize_phone(phone)
-        return {
-            "user": self.get_user_by_phone(norm),
-            "volunteer": self.get_volunteer_by_phone(norm),
-            "organization": self.get_organization_by_phone(norm),
-            "donor": self.get_donor_by_phone(norm),
-            "draft": self.get_draft_donation(norm),
-            "state": self.get_user_conversation_state(norm) or {},
-        }
+        raw = str(phone).replace("whatsapp:", "").strip() if phone else ""
+        try:
+            user_rec = self.get_user_by_phone(norm)
+            if not user_rec and raw and raw != norm:
+                user_rec = self.get_user_by_phone(raw)
+
+            draft = {}
+            state = {}
+            if user_rec:
+                draft = (
+                    user_rec.get("active_draft")
+                    if isinstance(user_rec.get("active_draft"), dict)
+                    else (self._json_loads(user_rec.get("active_draft")) if user_rec.get("active_draft") else {})
+                )
+                state = (
+                    user_rec.get("conversation_state")
+                    if isinstance(user_rec.get("conversation_state"), dict)
+                    else (self._json_loads(user_rec.get("conversation_state")) if user_rec.get("conversation_state") else {})
+                )
+
+            vol_rec = None
+            org_rec = None
+            donor_rec = None
+
+            u_role = user_rec.get("user_role") if user_rec else None
+            if u_role == "volunteer":
+                vol_rec = self.get_volunteer_by_phone(norm)
+            elif u_role == "organization":
+                org_rec = self.get_organization_by_phone(norm)
+            elif u_role == "donor":
+                donor_rec = self.get_donor_by_phone(norm)
+            else:
+                vol_rec = self.get_volunteer_by_phone(norm)
+                if not vol_rec:
+                    org_rec = self.get_organization_by_phone(norm)
+                if not vol_rec and not org_rec:
+                    donor_rec = self.get_donor_by_phone(norm)
+
+            return {
+                "user": user_rec,
+                "volunteer": vol_rec,
+                "organization": org_rec,
+                "donor": donor_rec,
+                "draft": draft or {},
+                "state": state or {},
+            }
+        except Exception as e:
+            logger.warning(f"Error in get_user_full_context for {phone}: {e}")
+            return {
+                "user": self.get_user_by_phone(norm),
+                "volunteer": self.get_volunteer_by_phone(norm),
+                "organization": self.get_organization_by_phone(norm),
+                "donor": self.get_donor_by_phone(norm),
+                "draft": self.get_draft_donation(norm) or {},
+                "state": self.get_user_conversation_state(norm) or {},
+            }

@@ -2077,7 +2077,6 @@ class SQLiteRepository(BaseRepository):
             conn = self._get_connection()
             with conn:
                 cursor = conn.cursor()
-                cursor.execute("CREATE TABLE IF NOT EXISTS processed_webhook_messages (message_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)")
                 cursor.execute(
                     "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (?, ?)",
                     (message_id, self._now()),
@@ -2086,7 +2085,23 @@ class SQLiteRepository(BaseRepository):
             return True
         except sqlite3.IntegrityError:
             return False
-        except Exception:
+        except Exception as exc:
+            if "no such table" in str(exc).lower():
+                try:
+                    conn = self._get_connection()
+                    with conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "CREATE TABLE IF NOT EXISTS processed_webhook_messages (message_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)"
+                        )
+                        cursor.execute(
+                            "INSERT INTO processed_webhook_messages (message_id, created_at) VALUES (?, ?)",
+                            (message_id, self._now()),
+                        )
+                    conn.close()
+                    return True
+                except Exception:
+                    pass
             return True
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
@@ -2700,11 +2715,48 @@ class SQLiteRepository(BaseRepository):
     def get_user_full_context(self, phone: str) -> Dict[str, Any]:
         """Consolidated single-pass lookup of user, role records, draft, and conversation state."""
         norm = self._normalize_phone(phone)
-        return {
-            "user": self.get_user_by_phone(norm),
-            "volunteer": self.get_volunteer_by_phone(norm),
-            "organization": self.get_organization_by_phone(norm),
-            "donor": self.get_donor_by_phone(norm),
-            "draft": self.get_draft_donation(norm),
-            "state": self.get_user_conversation_state(norm) or {},
-        }
+        raw = str(phone).replace("whatsapp:", "").strip() if phone else ""
+        try:
+            user = self.get_user_by_phone(norm)
+            if not user and raw and raw != norm:
+                user = self.get_user_by_phone(raw)
+
+            draft = (user.get("active_draft") or {}) if user and isinstance(user.get("active_draft"), dict) else {}
+            state = (user.get("conversation_state") or {}) if user and isinstance(user.get("conversation_state"), dict) else {}
+
+            vol_rec = None
+            org_rec = None
+            donor_rec = None
+
+            u_role = user.get("user_role") if user else None
+            if u_role == "volunteer":
+                vol_rec = self.get_volunteer_by_phone(norm)
+            elif u_role == "organization":
+                org_rec = self.get_organization_by_phone(norm)
+            elif u_role == "donor":
+                donor_rec = self.get_donor_by_phone(norm)
+            else:
+                vol_rec = self.get_volunteer_by_phone(norm)
+                if not vol_rec:
+                    org_rec = self.get_organization_by_phone(norm)
+                if not vol_rec and not org_rec:
+                    donor_rec = self.get_donor_by_phone(norm)
+
+            return {
+                "user": user,
+                "volunteer": vol_rec,
+                "organization": org_rec,
+                "donor": donor_rec,
+                "draft": draft or {},
+                "state": state or {},
+            }
+        except Exception as e:
+            logger.warning(f"Error in get_user_full_context for {phone}: {e}")
+            return {
+                "user": self.get_user_by_phone(norm),
+                "volunteer": self.get_volunteer_by_phone(norm),
+                "organization": self.get_organization_by_phone(norm),
+                "donor": self.get_donor_by_phone(norm),
+                "draft": self.get_draft_donation(norm) or {},
+                "state": self.get_user_conversation_state(norm) or {},
+            }

@@ -40,6 +40,31 @@ DEFAULT_APP_ID = "1591721079088296"
 DEFAULT_BUSINESS_ID = "1697813834850499"
 DEFAULT_API_VERSION = "v24.0"
 
+import time
+
+
+class PerformanceTimer:
+    """Lightweight privacy-safe latency measurement logger."""
+
+    def __init__(self, tag: str = "Turn"):
+        self.tag = tag
+        self.start_time = time.perf_counter()
+        self.last_checkpoint = self.start_time
+        self.checkpoints: List[tuple] = []
+
+    def checkpoint(self, name: str) -> float:
+        now = time.perf_counter()
+        elapsed_ms = (now - self.last_checkpoint) * 1000.0
+        self.checkpoints.append((name, elapsed_ms))
+        self.last_checkpoint = now
+        logger.info(f"[PERF] {name}: {elapsed_ms:.1f}ms")
+        return elapsed_ms
+
+    def finish(self) -> float:
+        total_ms = (time.perf_counter() - self.start_time) * 1000.0
+        logger.info(f"[PERF] total_duration_ms: {total_ms:.1f}ms [{self.tag}]")
+        return total_ms
+
 
 def _clean_val(val: Optional[str], default: str = "") -> str:
     if not val:
@@ -1124,11 +1149,18 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
     tools.set_explicit_session_id(session_id)
 
-    # 1. User Profile Lookup & New User Onboarding Tracking
-    user = database.get_user_by_phone(from_number)
-    vol_rec = database.get_volunteer_by_phone(from_number)
-    org_rec = database.get_organization_by_phone(from_number)
-    donor_rec = database.get_donor_by_phone(from_number)
+    perf = PerformanceTimer(tag=f"Turn-{from_number[-4:] if from_number else 'anon'}")
+    perf.checkpoint("webhook_received")
+
+    # 1. Consolidated User Context Lookup (Single database pass)
+    user_context = database.get_user_full_context(from_number)
+    user = user_context.get("user")
+    vol_rec = user_context.get("volunteer")
+    org_rec = user_context.get("organization")
+    donor_rec = user_context.get("donor")
+    conv_state = user_context.get("state") or {}
+    active_draft = user_context.get("draft") or {}
+    perf.checkpoint("context_loaded")
 
     if not user:
         if vol_rec:
@@ -1166,9 +1198,9 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                 user_role="unknown",
                 onboarding_completed=False,
             )
+        user_context["user"] = user
 
     is_new_user = user is None or (not user.get("onboarding_completed") and not vol_rec and not org_rec and not donor_rec)
-
     preferred_language = user.get("preferred_language", "en") if user else "en"
 
     # Pre-populate session cache with phone number, language, and user profile context
@@ -1180,21 +1212,18 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
         # If user is already registered in DB, inject their profile and role
         if not cache.has("user_role") or not cache.get("user_role"):
-            donor = database.get_donor_by_phone(from_number)
-            org = database.get_organization_by_phone(from_number)
-            vol = database.get_volunteer_by_phone(from_number)
-            if donor:
+            if donor_rec:
                 cache.set("user_role", "donor")
-                cache.set("current_donor_id", donor["id"])
-                cache.set("donor_name", donor.get("name", ""))
-            elif org:
+                cache.set("current_donor_id", donor_rec["id"])
+                cache.set("donor_name", donor_rec.get("name", ""))
+            elif org_rec:
                 cache.set("user_role", "organization")
-                cache.set("current_organization_id", org["id"])
-                cache.set("org_name", org.get("name", ""))
-            elif vol:
+                cache.set("current_organization_id", org_rec["id"])
+                cache.set("org_name", org_rec.get("name", ""))
+            elif vol_rec:
                 cache.set("user_role", "volunteer")
-                cache.set("current_volunteer_id", vol["id"])
-                cache.set("volunteer_name", vol.get("name", ""))
+                cache.set("current_volunteer_id", vol_rec["id"])
+                cache.set("volunteer_name", vol_rec.get("name", ""))
     except Exception as ctx_err:
         logger.debug(f"Session context pre-population notice: {ctx_err}")
 
@@ -1408,22 +1437,27 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
             return {"status": "returning_welcome_sent", "reply": reply_text, "send_status": send_res}
 
-        # Invoke resilient multi-agent execution engine with session continuity
+        # Invoke resilient multi-agent execution engine with session continuity and pre-loaded context
         from resilient_executor import run_resilient_chat
 
+        perf.checkpoint("workflow_detected")
         try:
-            chat_result = await run_resilient_chat(prompt=prompt_text, session_id=session_id, preferred_agent="foodrescue_coordinator")
+            chat_result = await run_resilient_chat(
+                prompt=prompt_text, session_id=session_id, preferred_agent="foodrescue_coordinator", user_context=user_context
+            )
             raw_reply = chat_result.get("result", "Thank you. Your food rescue request was received.")
             reply_text = translation_service.translate_message_if_needed(raw_reply, target_lang=preferred_language)
         except Exception as exc:
             logger.error(f"Error executing resilient agent for {session_id}: {exc}")
             reply_text = translation_service.get_localized_message("error_recovery", lang=preferred_language)
+        perf.checkpoint("response_generated")
 
         # Record agent reply in database for conversation tracking
         try:
             database.record_message(phone=from_number, sender="agent", text=reply_text)
         except Exception:
             pass
+        perf.checkpoint("database_write")
 
         # Audit notification in database
         try:
@@ -1439,6 +1473,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
         # Send response back to user
         send_res = await send_whatsapp_message(to_number=from_number, text=reply_text, reply_to_message_id=message_id)
+        perf.checkpoint("whatsapp_sent")
 
         # Dispatch real-time cross-notifications to linked parties if lifecycle event triggered
         try:
@@ -1446,6 +1481,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
         except Exception as e:
             logger.warning(f"Error during lifecycle cross-notification dispatch: {e}")
 
+        perf.finish()
         return {"status": "processed", "reply": reply_text, "send_status": send_res, "is_voice": is_voice_message}
 
     # 3. Location message (Meta Cloud API location payload)
