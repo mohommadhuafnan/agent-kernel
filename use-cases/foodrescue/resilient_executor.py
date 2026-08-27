@@ -317,6 +317,167 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     else:
         lang = user.get("preferred_language", "en") if user else (detected or "en")
 
+    # 0.5. WhatsApp Self-Service Edit & Delete Profile / Data Management
+    is_delete_org = any(
+        w in clean_p
+        for w in [
+            "delete organization",
+            "delete my organization",
+            "remove organization",
+            "remove my organization",
+            "cancel organization",
+            "unregister organization",
+            "delete org",
+            "remove org",
+            "ආයතනය ඉවත් කරන්න",
+            "நிறுவனத்தை நீக்கு",
+        ]
+    )
+    is_delete_vol = any(
+        w in clean_p
+        for w in [
+            "delete volunteer",
+            "delete my volunteer",
+            "remove volunteer",
+            "remove my volunteer",
+            "unregister volunteer",
+            "leave volunteer",
+            "delete courier",
+            "remove courier",
+            "ස්වේච්ඡා ගිණුම ඉවත් කරන්න",
+            "தன்னார்வலர் கணக்கை நீக்கு",
+        ]
+    )
+    is_delete_don = any(
+        w in clean_p
+        for w in [
+            "delete donation",
+            "cancel donation",
+            "remove donation",
+            "cancel my donation",
+            "delete active donation",
+            "cancel active donation",
+            "පරිත්‍යාගය අවලංගු කරන්න",
+            "தானத்தை ரத்து செய்",
+        ]
+    )
+    is_delete_profile = any(
+        w in clean_p
+        for w in [
+            "delete my profile",
+            "delete profile",
+            "delete my account",
+            "reset my profile",
+            "clear my data",
+            "delete all my data",
+            "ගිණුම මකන්න",
+            "சுයவிவரத்தை நீக்கு",
+        ]
+    )
+    is_edit_org = any(
+        w in clean_p
+        for w in [
+            "edit organization",
+            "update organization",
+            "change organization",
+            "edit my organization",
+            "update my organization",
+            "ආයතනය සංස්කරණය",
+            "நிறுவனத்தை மாற்று",
+        ]
+    )
+    is_edit_vol = any(
+        w in clean_p
+        for w in [
+            "edit volunteer",
+            "update volunteer",
+            "change vehicle",
+            "update vehicle",
+            "change transport",
+            "update transport",
+            "වාහනය වෙනස් කරන්න",
+            "வாகனத்தை மாற்று",
+        ]
+    )
+
+    if is_delete_org:
+        org_rec = database.get_organization_by_phone(phone) if phone else None
+        org_name = org_rec.get("name", "Organization") if org_rec else "your Organization"
+        if phone:
+            database.delete_organization_by_phone(phone)
+        return (
+            f"🗑️ *Organization Profile Removed Successfully*\n\n"
+            f"Your organization profile (**{org_name}**) has been deleted from FoodRescue AI.\n\n"
+            f"You can re-register anytime by sending **2** (Request Food) or **menu**."
+        )
+
+    if is_delete_vol:
+        vol_rec = database.get_volunteer_by_phone(phone) if phone else None
+        vol_name = vol_rec.get("name", "Volunteer") if vol_rec else "Volunteer Courier"
+        if phone:
+            database.delete_volunteer_by_phone(phone)
+        return (
+            f"🗑️ *Volunteer Courier Profile Removed*\n\n"
+            f"Your volunteer courier profile (**{vol_name}**) has been removed from FoodRescue AI. Thank you for your support!\n\n"
+            f"You can rejoin anytime by replying **3** (Volunteer) or **menu**."
+        )
+
+    if is_delete_don:
+        cancelled = database.cancel_active_donation_by_phone(phone) if phone else None
+        if cancelled:
+            f_type = cancelled.get("food_type", "Surplus Food")
+            qty = cancelled.get("quantity", "")
+            unit = cancelled.get("unit", "portions")
+            return (
+                f"🛑 *Donation Cancelled Successfully*\n\n"
+                f"Your active food donation (**{qty} {unit} of {f_type}**) has been cancelled and removed from active rescue dispatch.\n\n"
+                f"To create a new donation, reply **1** or **menu**."
+            )
+        else:
+            return "🛑 *No Active Donation Found*\n\nYou do not have any pending or active food donation. Reply **1** to create a new donation."
+
+    if is_delete_profile:
+        if phone:
+            database.delete_user_record(phone)
+        return (
+            "🗑️ *Account Data Reset Successfully*\n\n"
+            "All your registered profiles, roles, and conversation state have been cleared.\n\n"
+            "Reply **Hi** or **menu** anytime to start fresh with FoodRescue AI!"
+        )
+
+    if is_edit_org:
+        if phone:
+            database.set_user_conversation_state(
+                phone,
+                {
+                    "workflow": "RECIPIENT_REQUEST",
+                    "current_question": "ORG_NAME",
+                    "expected_input_type": "ORG_NAME",
+                    "is_edit_mode": True,
+                },
+            )
+        return "📝 *Update Organization Profile*\n\nPlease reply with your updated **Organization / Charity Name**:"
+
+    if is_edit_vol:
+        if phone:
+            database.set_user_conversation_state(
+                phone,
+                {
+                    "workflow": "VOLUNTEER_REGISTRATION",
+                    "current_question": "VOL_VEHICLE",
+                    "expected_input_type": "VOL_VEHICLE",
+                    "is_edit_mode": True,
+                },
+            )
+        return (
+            "📝 *Update Volunteer Transport Mode*\n\n"
+            "What vehicle mode do you use for food rescue deliveries?\n"
+            "1️⃣ Motorbike / Scooter\n"
+            "2️⃣ Three-Wheeler (Tuk Tuk)\n"
+            "3️⃣ Car / Van\n"
+            "4️⃣ Bicycle / On Foot"
+        )
+
     # 1. Language Selection Intent (explicit change request e.g. 'Tamil', 'Change language to Tamil', 'தமிழ்', 'English please')
     in_lang_menu = False
     state = database.get_user_conversation_state(phone) if phone else {}
@@ -2770,6 +2931,27 @@ async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Opti
             user_lang = user.get("preferred_language", "en") if user else "en"
             if user_lang != "en":
                 reply_text = translation_service.translate_message_if_needed(reply_text, target_lang=user_lang)
+
+            # If user had an active workflow question in progress before asking this question, append a resumption reminder
+            if curr_q:
+                reminders = {
+                    "FOOD_TYPE": "🍱 *To continue your food donation*, what type of surplus food do you have?",
+                    "QUANTITY": "📦 *To continue*, how many packets or portions do you have available?",
+                    "DONOR_NAME": "📍 *To continue*, what is your name or business/hotel name?",
+                    "DISTRICT": "📍 *To continue*, which district in Sri Lanka is the food located in?",
+                    "WHATSAPP_LOCATION": "📍 *To continue*, please share your WhatsApp Location Pin.",
+                    "DEADLINE": "⏰ *To continue*, until what time can the food be collected?",
+                    "VOL_NAME": "🚚 *To continue your volunteer courier registration*, what is your Full Name?",
+                    "VOL_VEHICLE": "🛵 *To continue*, what transport mode do you use (Motorbike, Three-Wheeler, Car)?",
+                    "VOL_DISTRICT": "📍 *To continue*, which district will you be volunteering in?",
+                    "ORG_NAME": "🏢 *To continue your organization request*, what is your Organization / Shelter Name?",
+                    "ORG_DISTRICT": "📍 *To continue*, which district is your organization located in?",
+                    "ORG_CAPACITY": "🍽️ *To continue*, how many daily portions do you need?",
+                    "ACCEPT_TASK": "🚚 *To respond to the pickup task*, reply **1** (Accept) or **2** (Decline).",
+                }
+                step_reminder = reminders.get(curr_q)
+                if step_reminder and step_reminder.lower() not in reply_text.lower():
+                    reply_text = f"{reply_text}\n\n---\n👉 {step_reminder}"
 
             return {
                 "status": "success",

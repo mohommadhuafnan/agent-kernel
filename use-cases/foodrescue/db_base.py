@@ -569,3 +569,23 @@ class BaseRepository(ABC):
     def delete_pickup_task_record(self, task_id: str) -> bool:
         """Delete a pickup task record."""
         pass
+
+    def delete_organization_by_phone(self, phone: str) -> bool:
+        """Delete an organization and associated user role."""
+        return False
+
+    def delete_volunteer_by_phone(self, phone: str) -> bool:
+        """Delete a volunteer and associated user role."""
+        return False
+
+    def delete_donor_by_phone(self, phone: str) -> bool:
+        """Delete a donor and associated user role."""
+        return False
+
+    def cancel_active_donation_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        """Cancel the latest active/pending donation for a donor phone number."""
+        return None
+
+    def get_user_full_context(self, phone: str) -> Dict[str, Any]:
+        """Consolidated single-pass lookup of user, role record, draft, and conversation state."""
+        return {}

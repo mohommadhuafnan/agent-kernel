@@ -2326,3 +2326,91 @@ class SupabaseRepository(BaseRepository):
         except Exception as err:
             logger.error(f"Error deleting task {task_id}: {err}")
             return False
+
+    def delete_organization_by_phone(self, phone: str) -> bool:
+        """Delete an organization and reset user role."""
+        norm = self._normalize_phone(phone)
+        raw = phone.replace("whatsapp:", "").strip()
+        try:
+            self._execute("DELETE FROM organizations WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("UPDATE users SET user_role = 'unknown' WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("DELETE FROM user_conversation_state WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting organization by phone {phone}: {err}")
+            return False
+
+    def delete_volunteer_by_phone(self, phone: str) -> bool:
+        """Delete a volunteer and reset user role."""
+        norm = self._normalize_phone(phone)
+        raw = phone.replace("whatsapp:", "").strip()
+        try:
+            self._execute("DELETE FROM volunteers WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("UPDATE users SET user_role = 'unknown' WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("DELETE FROM user_conversation_state WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting volunteer by phone {phone}: {err}")
+            return False
+
+    def delete_donor_by_phone(self, phone: str) -> bool:
+        """Delete a donor and reset user role."""
+        norm = self._normalize_phone(phone)
+        raw = phone.replace("whatsapp:", "").strip()
+        try:
+            self._execute("DELETE FROM donors WHERE phone = %s OR phone = %s", (norm, raw))
+            self._execute("UPDATE users SET user_role = 'unknown' WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("DELETE FROM draft_donations WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("DELETE FROM user_conversation_state WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            return True
+        except Exception as err:
+            logger.error(f"Error deleting donor by phone {phone}: {err}")
+            return False
+
+    def cancel_active_donation_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        """Cancel/mark cancelled the latest active donation or draft for a donor."""
+        norm = self._normalize_phone(phone)
+        draft = self.get_draft_donation(norm)
+        self.clear_draft_donation(norm)
+        self.clear_user_conversation_state(norm)
+
+        import tools
+
+        sess = tools.get_session_instance(f"whatsapp:{phone}")
+        cached_don_id = sess.get_non_volatile_cache().get("current_donation_id") if sess else None
+
+        donor = self.get_donor_by_phone(norm)
+        try:
+            row = None
+            if cached_don_id:
+                row = self._fetchone("SELECT * FROM donations WHERE id = %s", (cached_don_id,))
+            if not row and donor:
+                row = self._fetchone(
+                    "SELECT * FROM donations WHERE donor_id = %s AND status IN ('AVAILABLE', 'ASSIGNED', 'PENDING') ORDER BY created_at DESC LIMIT 1",
+                    (donor["id"],),
+                )
+            if row:
+                don_id = row["id"]
+                self._execute("UPDATE donations SET status = 'CANCELLED' WHERE id = %s", (don_id,))
+                self._execute("UPDATE pickup_tasks SET status = 'CANCELLED' WHERE donation_id = %s", (don_id,))
+                self._execute("UPDATE qr_codes SET status = 'CANCELLED' WHERE donation_id = %s", (don_id,))
+                row["status"] = "CANCELLED"
+                return row
+            if draft and (draft.get("food_type") or draft.get("quantity")):
+                return draft
+            return None
+        except Exception as err:
+            logger.error(f"Error cancelling donation for {phone}: {err}")
+            return None
+
+    def get_user_full_context(self, phone: str) -> Dict[str, Any]:
+        """Consolidated single-pass lookup of user, role records, draft, and conversation state."""
+        norm = self._normalize_phone(phone)
+        return {
+            "user": self.get_user_by_phone(norm),
+            "volunteer": self.get_volunteer_by_phone(norm),
+            "organization": self.get_organization_by_phone(norm),
+            "donor": self.get_donor_by_phone(norm),
+            "draft": self.get_draft_donation(norm),
+            "state": self.get_user_conversation_state(norm) or {},
+        }

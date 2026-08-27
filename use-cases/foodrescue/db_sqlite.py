@@ -2582,8 +2582,12 @@ class SQLiteRepository(BaseRepository):
         try:
             with conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM users WHERE phone_number = ?", (norm,))
-                return cursor.rowcount > 0
+                cursor.execute("DELETE FROM users WHERE phone_number = ? OR phone_number = ?", (norm, phone))
+                cursor.execute("DELETE FROM donors WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute("DELETE FROM volunteers WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute("DELETE FROM organizations WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute("DELETE FROM messages WHERE phone_number = ? OR phone_number = ?", (norm, phone))
+                return True
         finally:
             conn.close()
 
@@ -2598,3 +2602,109 @@ class SQLiteRepository(BaseRepository):
                 return cursor.rowcount > 0
         finally:
             conn.close()
+
+    def delete_organization_by_phone(self, phone: str) -> bool:
+        """Delete an organization and reset user role."""
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM organizations WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute(
+                    "UPDATE users SET user_role = 'unknown', conversation_state = NULL WHERE phone_number = ? OR phone_number = ?",
+                    (norm, phone),
+                )
+                return True
+        finally:
+            conn.close()
+
+    def delete_volunteer_by_phone(self, phone: str) -> bool:
+        """Delete a volunteer and reset user role."""
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM volunteers WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute(
+                    "UPDATE users SET user_role = 'unknown', conversation_state = NULL WHERE phone_number = ? OR phone_number = ?",
+                    (norm, phone),
+                )
+                return True
+        finally:
+            conn.close()
+
+    def delete_donor_by_phone(self, phone: str) -> bool:
+        """Delete a donor and reset user role."""
+        norm = self._normalize_phone(phone)
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM donors WHERE phone = ? OR phone = ?", (norm, phone))
+                cursor.execute(
+                    "UPDATE users SET user_role = 'unknown', active_draft = NULL, conversation_state = NULL WHERE phone_number = ? OR phone_number = ?",
+                    (norm, phone),
+                )
+                return True
+        finally:
+            conn.close()
+
+    def cancel_active_donation_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        """Cancel/mark cancelled the latest active donation or draft for a donor."""
+        norm = self._normalize_phone(phone)
+        draft = self.get_draft_donation(norm)
+        self.clear_draft_donation(norm)
+        self.clear_user_conversation_state(norm)
+
+        import tools
+
+        sess = tools.get_session_instance(f"whatsapp:{phone}")
+        cached_don_id = sess.get_non_volatile_cache().get("current_donation_id") if sess else None
+
+        donor = self.get_donor_by_phone(norm)
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                don_dict = None
+                if cached_don_id:
+                    cursor.execute("SELECT * FROM donations WHERE id = ?", (cached_don_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        don_dict = dict(row)
+
+                if not don_dict and donor:
+                    cursor.execute(
+                        "SELECT * FROM donations WHERE donor_id = ? AND status IN ('AVAILABLE', 'ASSIGNED', 'PENDING') ORDER BY created_at DESC LIMIT 1",
+                        (donor["id"],),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        don_dict = dict(row)
+
+                if don_dict:
+                    don_id = don_dict["id"]
+                    cursor.execute("UPDATE donations SET status = 'CANCELLED' WHERE id = ?", (don_id,))
+                    cursor.execute("UPDATE pickup_tasks SET status = 'CANCELLED' WHERE donation_id = ?", (don_id,))
+                    cursor.execute("UPDATE qr_codes SET status = 'CANCELLED' WHERE donation_id = ?", (don_id,))
+                    don_dict["status"] = "CANCELLED"
+                    return don_dict
+        finally:
+            conn.close()
+        if draft and (draft.get("food_type") or draft.get("quantity")):
+            return draft
+        return None
+
+    def get_user_full_context(self, phone: str) -> Dict[str, Any]:
+        """Consolidated single-pass lookup of user, role records, draft, and conversation state."""
+        norm = self._normalize_phone(phone)
+        return {
+            "user": self.get_user_by_phone(norm),
+            "volunteer": self.get_volunteer_by_phone(norm),
+            "organization": self.get_organization_by_phone(norm),
+            "donor": self.get_donor_by_phone(norm),
+            "draft": self.get_draft_donation(norm),
+            "state": self.get_user_conversation_state(norm) or {},
+        }

@@ -770,3 +770,23 @@ def delete_user_record(phone: str) -> bool:
 
 def delete_pickup_task_record(task_id: str) -> bool:
     return get_repository().delete_pickup_task_record(task_id)
+
+
+def delete_organization_by_phone(phone: str) -> bool:
+    return get_repository().delete_organization_by_phone(phone)
+
+
+def delete_volunteer_by_phone(phone: str) -> bool:
+    return get_repository().delete_volunteer_by_phone(phone)
+
+
+def delete_donor_by_phone(phone: str) -> bool:
+    return get_repository().delete_donor_by_phone(phone)
+
+
+def cancel_active_donation_by_phone(phone: str) -> Optional[Dict[str, Any]]:
+    return get_repository().cancel_active_donation_by_phone(phone)
+
+
+def get_user_full_context(phone: str) -> Dict[str, Any]:
+    return get_repository().get_user_full_context(phone)
