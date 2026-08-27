@@ -259,6 +259,62 @@ def _get_task_extended_metrics(
     }
 
 
+def get_next_missing_donation_field(profile: Optional[Dict[str, Any]], draft: Optional[Dict[str, Any]]) -> str:
+    """Deterministic calculation of the exact single next missing donation field
+    enforcing the Zero-Repetition rule and strict sequential field progression:
+    1. FOOD_TYPE: What type of food do you have available?
+    2. QUANTITY: How many packets or portions?
+    3. DONOR_NAME: What is your name or business/hotel name? (Skipped if known from user profile or draft)
+    4. DISTRICT: Which district in Sri Lanka is the food located in? (Skipped if known from user profile or draft)
+    5. DEADLINE: When should our courier collect the food today? (Prompted if not already provided)
+    6. WHATSAPP_LOCATION: Mandatory WhatsApp live location pin (📎/➕ -> Location -> Send your current location)
+    7. CONFIRMATION: All fields present -> Show summary confirmation card!
+    """
+    d = draft or {}
+    p = profile or {}
+
+    food_val = d.get("food_type")
+    if not food_val:
+        return "FOOD_TYPE"
+
+    qty_val = d.get("quantity")
+    if qty_val is None or float(qty_val) <= 0:
+        return "QUANTITY"
+
+    donor_name_val = (
+        d.get("donor_name")
+        or d.get("business_name")
+        or (p.get("display_name") if p.get("display_name") and not str(p.get("display_name")).startswith("User_") else None)
+        or p.get("name")
+    )
+    city_val = (
+        d.get("city")
+        or d.get("district")
+        or d.get("location")
+        or p.get("default_location")
+        or p.get("location")
+        or p.get("service_area")
+    )
+    deadline_val = d.get("pickup_deadline")
+
+    # If city and deadline were already provided all-in-one, donor name defaults to "Donor Partner"
+    if not donor_name_val and not (city_val and deadline_val):
+        return "DONOR_NAME"
+
+    if not city_val:
+        return "DISTRICT"
+
+    loc_received = bool(d.get("location_received") or (d.get("latitude") and d.get("longitude")))
+
+    if not deadline_val and not loc_received:
+        return "DEADLINE"
+
+    if not loc_received:
+        return "WHATSAPP_LOCATION"
+
+    return "CONFIRMATION"
+
+
 async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     """Perform deterministic workflow execution when all LLM quotas are exhausted or for offline rule processing."""
     logger.warning(f"[Deterministic Fallback] Executing offline rule engine for session '{session_id}' with prompt: {prompt[:60]}")
@@ -2316,7 +2372,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             )
         return translation_service.get_localized_message("donation_ask_food_type", lang=lang)
 
-    # 9e. Persistent State Resolution & Strict Ordering for Missing Slots
+    # 9e. Deterministic Slot-Filling Progression via get_next_missing_donation_field
     food_val = existing_draft.get("food_type")
     qty_val = existing_draft.get("quantity")
     unit_val = existing_draft.get("unit", "packets")
@@ -2336,11 +2392,6 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
     )
     deadline_val = existing_draft.get("pickup_deadline")
     loc_received = bool(existing_draft.get("location_received") or (existing_draft.get("latitude") and existing_draft.get("longitude")))
-
-    # If all other slots (food, qty, city, deadline) were provided all-in-one, default donor name
-    if not donor_name_val and (city_val and deadline_val):
-        donor_name_val = "Donor Partner"
-        business_name_val = "Donor Partner"
 
     # Step 0: Role-aware guard - Don't route registered volunteers or organizations into donor slot filling
     if (vol_rec or (user and user.get("user_role") == "volunteer")) and not existing_draft.get("food_type"):
@@ -2370,47 +2421,38 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
         )
 
     disp_qty = int(qty_val) if isinstance(qty_val, (int, float)) and qty_val == int(qty_val) else qty_val
+    next_field = get_next_missing_donation_field(user, existing_draft)
 
-    # Step 1: Missing Food Type or Quantity
-    if not food_val:
+    if next_field == "FOOD_TYPE":
         if phone:
             database.set_user_conversation_state(
                 phone, {"workflow": "DONATION", "current_question": "FOOD_TYPE", "expected_input_type": "FOOD_CHOICE"}
             )
-        return translation_service.get_localized_message("donation_ask_food_type_simple", lang=lang)
-
-    if qty_val is None or float(qty_val) <= 0:
+        reply = translation_service.get_localized_message("donation_ask_food_type_simple", lang=lang)
+    elif next_field == "QUANTITY":
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "QUANTITY", "expected_input_type": "QUANTITY"})
-        return translation_service.get_localized_message("slot_ask_quantity", lang=lang, food_type=food_val)
-
-    # Step 2: Missing Donor Name / Business Name
-    if not donor_name_val:
+        reply = translation_service.get_localized_message("slot_ask_quantity", lang=lang, food_type=food_val)
+    elif next_field == "DONOR_NAME":
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DONOR_NAME", "expected_input_type": "NAME"})
-        return translation_service.get_localized_message("donor_ask_name", lang=lang, quantity=disp_qty, unit=unit_val, food_type=food_val)
-
-    # Step 3: Missing District
-    if not city_val:
+        reply = translation_service.get_localized_message("donor_ask_name", lang=lang, quantity=disp_qty, unit=unit_val, food_type=food_val)
+    elif next_field == "DISTRICT":
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DISTRICT", "expected_input_type": "DISTRICT"})
-        return translation_service.get_localized_message(
-            "donor_ask_district", lang=lang, name=donor_name_val, quantity=disp_qty, unit=unit_val, food_type=food_val
+        reply = translation_service.get_localized_message(
+            "donor_ask_district", lang=lang, name=donor_name_val or "Friend", quantity=disp_qty, unit=unit_val, food_type=food_val
         )
-
-    # Step 4: Missing Food Pickup Deadline (Prompt for deadline if not provided)
-    if not deadline_val and not loc_received:
+    elif next_field == "DEADLINE":
         if phone:
             database.set_user_conversation_state(phone, {"workflow": "DONATION", "current_question": "DEADLINE", "expected_input_type": "DEADLINE"})
-        return translation_service.get_localized_message("donor_ask_deadline", lang=lang, city=city_val or "your area")
-
-    # Step 5: Missing Exact WhatsApp Location Pin (MANDATORY before summary / confirmation)
-    if not loc_received:
+        reply = translation_service.get_localized_message("donor_ask_deadline", lang=lang, city=city_val or "your area")
+    elif next_field == "WHATSAPP_LOCATION":
         if phone:
             database.set_user_conversation_state(
                 phone, {"workflow": "DONATION", "current_question": "WHATSAPP_LOCATION", "expected_input_type": "LOCATION"}
             )
-        return translation_service.get_localized_message(
+        reply = translation_service.get_localized_message(
             "donor_ask_location_native",
             lang=lang,
             quantity=disp_qty or 20,
@@ -2419,26 +2461,31 @@ async def execute_deterministic_fallback(prompt: str, session_id: str) -> str:
             city=city_val or "Sri Lanka",
             donor_name=donor_name_val or "Friend",
         )
-
-    # Step 5: All fields present (Food, Qty, Name, District, Live Location Pin) -> Show Summary Confirmation!
-    if phone:
-        database.set_user_conversation_state(
-            phone, {"workflow": "DONATION", "current_question": "CONFIRMATION", "expected_input_type": "CONFIRMATION"}
+    else:  # CONFIRMATION
+        if phone:
+            database.set_user_conversation_state(
+                phone, {"workflow": "DONATION", "current_question": "CONFIRMATION", "expected_input_type": "CONFIRMATION"}
+            )
+        final_deadline = deadline_val or "Immediate"
+        reply = translation_service.get_localized_message(
+            "donation_summary_confirm",
+            lang=lang,
+            donor_name=donor_name_val or "Donor Partner",
+            business_name=business_name_val or donor_name_val or "Donor Partner",
+            food_type=food_val,
+            quantity=disp_qty,
+            unit=unit_val,
+            city=city_val,
+            deadline=final_deadline,
+            contact_phone=phone,
         )
 
-    final_deadline = deadline_val or "Immediate"
-    return translation_service.get_localized_message(
-        "donation_summary_confirm",
-        lang=lang,
-        donor_name=donor_name_val,
-        business_name=business_name_val,
-        food_type=food_val,
-        quantity=disp_qty,
-        unit=unit_val,
-        city=city_val,
-        deadline=final_deadline,
-        contact_phone=phone,
+    logger.info(
+        f"[Turn Debug] phone={phone} | role={user.get('user_role') if user else 'unknown'} | "
+        f"in_text='{clean_p}' | prev_state={curr_q} | draft_keys={list(existing_draft.keys())} -> "
+        f"next_field={next_field} | reply='{reply[:60]}...'"
     )
+    return reply
 
 
 async def run_resilient_chat(prompt: str, session_id: str, preferred_agent: Optional[str] = None) -> Dict[str, Any]:

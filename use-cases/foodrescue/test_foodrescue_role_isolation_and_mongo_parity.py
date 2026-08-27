@@ -335,3 +335,154 @@ async def test_end_to_end_full_lifecycle():
     assert stats["total_donations"] >= 1
     assert stats["total_organizations"] >= 1
     assert stats["total_volunteers"] >= 1
+
+
+def test_get_next_missing_donation_field_unit():
+    """Unit test the deterministic get_next_missing_donation_field helper function."""
+    from resilient_executor import get_next_missing_donation_field
+
+    # 1. Empty draft -> FOOD_TYPE
+    assert get_next_missing_donation_field({}, {}) == "FOOD_TYPE"
+
+    # 2. Food present, no qty -> QUANTITY
+    assert get_next_missing_donation_field({}, {"food_type": "Rice"}) == "QUANTITY"
+    assert get_next_missing_donation_field({}, {"food_type": "Rice", "quantity": 0}) == "QUANTITY"
+
+    # 3. Food and qty present, no name in draft or profile -> DONOR_NAME
+    assert get_next_missing_donation_field({}, {"food_type": "Rice", "quantity": 20}) == "DONOR_NAME"
+    assert get_next_missing_donation_field({"display_name": "User_1234"}, {"food_type": "Rice", "quantity": 20}) == "DONOR_NAME"
+
+    # 4. Food, qty, name present, no district -> DISTRICT
+    assert get_next_missing_donation_field({"display_name": "Kamal"}, {"food_type": "Rice", "quantity": 20}) == "DISTRICT"
+    assert get_next_missing_donation_field({}, {"food_type": "Rice", "quantity": 20, "donor_name": "Kamal"}) == "DISTRICT"
+
+    # 5. Food, qty, name, district present, no deadline -> DEADLINE
+    assert get_next_missing_donation_field({"display_name": "Kamal", "default_location": "Kegalle"}, {"food_type": "Rice", "quantity": 20}) == "DEADLINE"
+    assert get_next_missing_donation_field({}, {"food_type": "Rice", "quantity": 20, "donor_name": "Kamal", "city": "Kegalle"}) == "DEADLINE"
+
+    # 6. Food, qty, name, district, deadline present, no location pin -> WHATSAPP_LOCATION
+    assert get_next_missing_donation_field(
+        {},
+        {"food_type": "Rice", "quantity": 20, "donor_name": "Kamal", "city": "Kegalle", "pickup_deadline": "Today 6 PM"}
+    ) == "WHATSAPP_LOCATION"
+
+    # 7. All present with live location pin -> CONFIRMATION
+    assert get_next_missing_donation_field(
+        {},
+        {"food_type": "Rice", "quantity": 20, "donor_name": "Kamal", "city": "Kegalle", "pickup_deadline": "Today 6 PM", "location_received": True}
+    ) == "CONFIRMATION"
+    assert get_next_missing_donation_field(
+        {},
+        {"food_type": "Rice", "quantity": 20, "donor_name": "Kamal", "city": "Kegalle", "pickup_deadline": "Today 6 PM", "latitude": 7.25, "longitude": 80.34}
+    ) == "CONFIRMATION"
+
+
+@pytest.mark.asyncio
+async def test_returning_donor_skips_known_profile_fields():
+    """Returning donor with known name and district in profile skips directly to deadline/location."""
+    donor_phone = "94773330001"
+    database.create_or_update_user(phone=donor_phone, display_name="Perera Bakery", user_role="donor", default_location="Colombo")
+    database.create_donor_record(donor_id="d-ret-1", name="Perera Bakery", phone=donor_phone, location="Colombo")
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Turn 1: 1
+        r1 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.ret.1", "type": "text", "text": {"body": "1"}
+        })
+        assert "food" in r1["reply"].lower()
+
+        # Turn 2: Biryani 25 packets
+        r2 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.ret.2", "type": "text", "text": {"body": "25 packets of Biryani"}
+        })
+        # Since name and district are in profile, must skip to deadline/location!
+        assert "What is your name" not in r2["reply"]
+        assert "Which district" not in r2["reply"]
+        assert ("deadline" in r2["reply"].lower() or "when" in r2["reply"].lower() or "collect" in r2["reply"].lower() or "location" in r2["reply"].lower())
+
+
+@pytest.mark.asyncio
+async def test_slot_correction_in_flow():
+    """User correcting quantity with 'Actually 40 packets' updates quantity without losing food type or resetting."""
+    donor_phone = "94774440001"
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        # Turn 1: 1
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.cor.1", "type": "text", "text": {"body": "1"}
+        })
+
+        # Turn 2: Rice
+        await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.cor.2", "type": "text", "text": {"body": "Rice"}
+        })
+
+        # Turn 3: 20
+        r3 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.cor.3", "type": "text", "text": {"body": "20"}
+        })
+        assert "name" in r3["reply"].lower()
+
+        # Turn 4: Correction "Actually 40 packets"
+        r4 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.cor.4", "type": "text", "text": {"body": "Actually 40 packets"}
+        })
+
+        draft = database.get_draft_donation(donor_phone)
+        assert draft["food_type"] == "Rice"
+        assert float(draft["quantity"]) == 40.0
+        # Must not restart or ask for food type again!
+        assert "What type of food" not in r4["reply"]
+
+
+@pytest.mark.asyncio
+async def test_idempotent_donation_confirmation():
+    """Sending confirm multiple times only creates a single donation record."""
+    donor_phone = "94775550001"
+
+    # Pre-populate draft with all fields
+    database.save_draft_donation(donor_phone, {
+        "food_type": "Fried Rice",
+        "quantity": 50,
+        "unit": "portions",
+        "donor_name": "Hotel Colombo",
+        "business_name": "Hotel Colombo",
+        "city": "Colombo",
+        "location": "Colombo",
+        "pickup_deadline": "Today before 7 PM",
+        "latitude": 6.9271,
+        "longitude": 79.8612,
+        "location_received": True
+    })
+    database.set_user_conversation_state(donor_phone, {
+        "workflow": "DONATION",
+        "current_question": "CONFIRMATION",
+        "expected_input_type": "CONFIRMATION"
+    })
+
+    with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent"}
+
+        initial_count = len(database.get_all_donations())
+
+        # First confirm
+        r1 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.idemp.1", "type": "text", "text": {"body": "1"}
+        })
+        assert "published" in r1["reply"].lower() or "confirmed" in r1["reply"].lower() or "notified" in r1["reply"].lower()
+
+        after_first_count = len(database.get_all_donations())
+        assert after_first_count == initial_count + 1
+
+        # Second confirm immediately
+        r2 = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": donor_phone, "id": "w.idemp.2", "type": "text", "text": {"body": "1"}
+        })
+        after_second_count = len(database.get_all_donations())
+        # MUST NOT create a duplicate donation!
+        assert after_second_count == after_first_count
+
