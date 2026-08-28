@@ -4,22 +4,23 @@ Provides automatic model pool rotation, rate-limit fallback (429 / RESOURCE_EXHA
 error masking, and deterministic tool fallback so users never experience errors.
 """
 
+import asyncio
+import json
+import logging
 import os
 import re
-import json
 import uuid
-import asyncio
-import logging
-from typing import Optional, Dict, Any, List, Tuple
-from agentkernel.core import ChatService
-from agentkernel.core.model import BaseChatRequest
-import tools
-import database
+from typing import Any, Dict, List, Optional, Tuple
+
 import app
+import database
+import qr_service
+import routing
+import tools
 import translation_service
 import voice_service
-import routing
-import qr_service
+from agentkernel.core import ChatService
+from agentkernel.core.model import BaseChatRequest
 
 logger = logging.getLogger("foodrescue.resilient")
 
@@ -199,19 +200,21 @@ def _get_task_extended_metrics(task: Dict[str, Any], vol_record: Optional[Dict[s
     if not v_coords and vol_loc:
         v_coords = routing.geocode_location(vol_loc)
 
-    # 4. Dynamic Distance Calculation
-    leg1 = 0.0
-    leg2 = 0.0
-    if p_coords and d_coords:
-        leg2 = round(max(0.5, routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
-        if v_coords:
-            leg1 = round(max(0.5, routing.calculate_haversine_distance(v_coords[0], v_coords[1], p_coords[0], p_coords[1]) * 1.25), 1)
-            total_dist = round(max(0.5, leg1 + leg2), 1)
-        else:
-            total_dist = leg2
+    # 4. Standard Consistent Route Distance Calculation (Pickup Point -> Delivery Destination)
+    existing_dist = float(task.get("total_distance_km") or task.get("pickup_distance_km") or 0.0)
+    if existing_dist > 0.0:
+        route_dist = existing_dist
+    elif p_coords and d_coords:
+        route_dist = round(max(0.5, routing.calculate_haversine_distance(p_coords[0], p_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
     else:
-        leg2 = round(max(0.8, (hash(f"{p_loc}_{d_loc}") % 40) / 10.0 + 1.8), 1)
-        total_dist = float(task.get("total_distance_km") or leg2)
+        calc_rd = routing.calculate_road_distance(p_loc, d_loc)
+        route_dist = round(calc_rd, 1) if calc_rd > 0 else 5.0
+
+    total_dist = route_dist
+    leg2 = route_dist
+    leg1 = 0.0
+    if v_coords and p_coords:
+        leg1 = round(max(0.5, routing.calculate_haversine_distance(v_coords[0], v_coords[1], p_coords[0], p_coords[1]) * 1.25), 1)
 
     cost_calc = routing.calculate_transport_estimate(total_dist, vol_mode.lower())
     est_cost = float(cost_calc.get("estimated_support_amount") or (total_dist * routing.get_transport_rate(vol_mode.lower())))
@@ -1063,30 +1066,28 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
 
         # 2. Send full task details & scanner link to Volunteer
         if vol_phone:
-            ext = _get_task_extended_metrics(task, database.get_volunteer_by_phone(vol_phone))
+            ext = _get_task_extended_metrics(
+                task, database.get_volunteer_by_phone(vol_phone) or (database.get_volunteer_record(vol_id) if vol_id else None)
+            )
             vol_user = database.get_user_by_phone(vol_phone)
             v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
             scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
-            v_msg = (
-                f"🎉 *The organization ({ext['recipient_name']}) has accepted your pickup!* 🚚\n\n"
-                f"📍 *1. Donor Pickup Point:*\n"
-                f"• 👤 *Donor*: {ext['donor_name']}\n"
-                f"• 📞 *Contact*: {ext['donor_contact'] or donor_phone}\n"
-                f"• 📍 *Location*: {ext['pickup_location']}\n"
-                f"• 🍱 *Food*: {ext['food_info']}\n"
-                f"• ⏰ *Deadline*: {ext['deadline']}\n"
-                f"• 🗺️ *Directions*: {ext['directions_link']}\n\n"
-                f"🏢 *2. Delivery Destination:*\n"
-                f"• 🏢 *Organization*: {ext['recipient_name']}\n"
-                f"• 📞 *Contact*: {ext['recipient_contact']}\n"
-                f"• 📍 *Location*: {ext['delivery_location']}\n\n"
-                f"📏 *Total Road Distance*: ~{ext['total_dist']} km | 💰 *Transport Support*: LKR {ext['est_cost']}\n\n"
-                f"🔐 *Handover Verification:*\n"
-                f"When you arrive at the donor's location, ask the donor to show their **Pickup QR Code** and scan it:\n"
-                f"👉 📷 *Open Camera Scanner:* {scanner_url}\n\n"
-                f"Once collected, reply *'Collected'*."
+            v_msg = translation_service.get_localized_message(
+                "volunteer_courier_approved_dispatch",
+                lang=v_lang,
+                org_name=ext["recipient_name"],
+                donor_name=ext["donor_name"],
+                donor_phone=ext["donor_contact"] or donor_phone or "Provided upon arrival",
+                pickup_location=ext["pickup_location"],
+                food_info=ext["food_info"],
+                deadline=ext["deadline"],
+                directions_link=ext["directions_link"] or ext["delivery_map"] or "https://maps.google.com",
+                org_phone=ext["recipient_contact"] or "Provided upon arrival",
+                delivery_location=ext["delivery_location"],
+                distance_km=ext["total_dist"],
+                est_cost=ext["est_cost"],
+                scanner_url=scanner_url,
             )
-            v_msg = translation_service.translate_message_if_needed(v_msg, target_lang=v_lang)
             try:
                 import whatsapp_handler
 
@@ -1134,8 +1135,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         food_info = user_state.get("food_info", "Surplus Food")
         org_id = (org_rec.get("id") if org_rec else None) or "o1"
         org_name = (org_rec.get("name") if org_rec else None) or "Recipient Organization"
-        org_loc = (org_rec.get("location") or org_rec.get("service_area") or "Kegalle") if org_rec else "Kegalle"
-        org_clean_dist = routing.resolve_district(org_loc) or "Kegalle"
+        org_loc = (org_rec.get("location") or org_rec.get("service_area") or "") if org_rec else ""
+        org_clean_dist = routing.resolve_district(org_loc) or (org_loc if org_loc else "Colombo")
 
         don = database.get_donation_record(don_id) if don_id else None
         if don:
@@ -1253,7 +1254,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         deadline = don.get("pickup_deadline") if don else "Immediate"
         pickup_loc = don.get("pickup_location") or don.get("location") or "Pickup Location" if don else "Pickup Location"
         deliv_loc = org.get("location") or org.get("service_area") or "Delivery Location" if org else "Delivery Location"
-        don_dist = routing.resolve_district(pickup_loc) or routing.resolve_district(deliv_loc) or "Kegalle"
+        don_dist = (
+            routing.resolve_district(pickup_loc)
+            or routing.resolve_district(deliv_loc)
+            or (pickup_loc if pickup_loc != "Pickup Location" else "Colombo")
+        )
 
         task_id = ""
         if don_id and matched_org_id:
@@ -1272,11 +1277,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             v
             for v in all_vols
             if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
-            and (
-                routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
-                or not v.get("service_area")
-                or v.get("service_area") == "Sri Lanka"
-            )
+            and routing.resolve_district(v.get("service_area") or v.get("location") or "") == don_dist
         ]
 
         if task_id and dist_vols:
@@ -1367,81 +1368,84 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             vol_id = tools._get_context_val("current_volunteer_id", "")
             if not vol_id and existing_vol:
                 vol_id = existing_vol["id"]
-            res_raw = tools.accept_pickup_task_atomic(pickup_task_id=task_id, volunteer_id=vol_id, phone=phone)
-            res = json.loads(res_raw) if isinstance(res_raw, str) else {}
+            if not vol_id and phone:
+                v_by_p = database.get_volunteer_by_phone(phone)
+                if v_by_p:
+                    vol_id = v_by_p["id"]
 
-            if res.get("status") == "already_claimed":
-                if phone:
-                    database.clear_user_conversation_state(phone)
-                return "Sorry, this pickup has already been accepted by another volunteer. 🚚 I'll look for another available task for you."
+            task_rec = database.get_pickup_task_record(task_id) or {"id": task_id}
+            vol_rec = (
+                existing_vol
+                or (database.get_volunteer_by_phone(phone) if phone else None)
+                or (database.get_volunteer_record(vol_id) if vol_id else None)
+            )
+            vol_name = vol_rec.get("name", "Volunteer Courier") if vol_rec else "Volunteer Courier"
+            vol_phone = vol_rec.get("phone", phone) if vol_rec else phone
+            vol_mode = vol_rec.get("transport_mode", "Motorbike") if vol_rec else "Motorbike"
+
+            ext = _get_task_extended_metrics(task_rec, vol_rec)
+            total_dist = ext["total_dist"]
+            est_cost = ext["est_cost"]
+            food_info = ext["food_info"]
+            donor_name = ext["donor_name"]
+            org_name = ext["recipient_name"]
+            org_phone = ext["recipient_contact"]
+
+            if vol_id:
+                database.update_volunteer_availability(vol_id, "BUSY")
 
             if phone:
                 database.clear_user_conversation_state(phone)
 
-            task_rec = database.get_pickup_task_record(task_id) or {"id": task_id}
-            ext = _get_task_extended_metrics(task_rec, existing_vol or (database.get_volunteer_by_phone(phone) if phone else None))
-
-            # Generate or retrieve active Pickup QR Code for this task
-            task_qrs = database.get_qr_codes_for_task(task_id)
-            pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
-            if not pk_qr:
-                pk_token = qr_service.generate_secure_token("PK")
-                pk_qr = database.create_qr_code_record(
-                    qr_id=f"qr-pk-{task_id}",
-                    task_id=task_id,
-                    donation_id=task_rec.get("donation_id") or "don-unknown",
-                    qr_type="PICKUP",
-                    token=pk_token,
-                    token_hash=qr_service.hash_token(pk_token),
-                    donor_id=task_rec.get("donor_id"),
-                    organization_id=task_rec.get("organization_id"),
-                    assigned_volunteer_id=vol_id or (existing_vol.get("id") if existing_vol else None),
-                    status="ACTIVE",
+            # Send Courier Approval Request to Recipient Organization
+            if org_phone:
+                database.set_user_conversation_state(
+                    org_phone,
+                    {
+                        "workflow": "ORGANIZATION",
+                        "current_question": "CONFIRM_VOLUNTEER",
+                        "expected_input_type": "CHOICE",
+                        "task_id": task_id,
+                        "vol_id": vol_id,
+                        "vol_phone": vol_phone,
+                        "vol_name": vol_name,
+                        "vol_mode": vol_mode,
+                        "est_cost": est_cost,
+                        "distance_km": total_dist,
+                    },
                 )
-
-            # Also generate or retrieve active Delivery QR for Organization handover
-            dl_qr = next((q for q in task_qrs if q.get("qr_type") == "DELIVERY" and q.get("status") == "ACTIVE"), None)
-            if not dl_qr:
-                dl_token = qr_service.generate_secure_token("DL")
-                dl_qr = database.create_qr_code_record(
-                    qr_id=f"qr-dl-{task_id}",
-                    task_id=task_id,
-                    donation_id=task_rec.get("donation_id") or "don-unknown",
-                    qr_type="DELIVERY",
-                    token=dl_token,
-                    token_hash=qr_service.hash_token(dl_token),
-                    donor_id=task_rec.get("donor_id"),
-                    organization_id=task_rec.get("organization_id"),
-                    assigned_volunteer_id=vol_id or (existing_vol.get("id") if existing_vol else None),
-                    status="ACTIVE",
+                org_user = database.get_user_by_phone(org_phone)
+                o_lang = org_user.get("preferred_language", "en") if org_user else "en"
+                o_msg = translation_service.get_localized_message(
+                    "org_confirm_courier_request",
+                    lang=o_lang,
+                    vol_name=vol_name,
+                    vol_phone=vol_phone or "+94 77 123 4567",
+                    vehicle_mode=vol_mode,
+                    distance_km=total_dist,
+                    est_cost=est_cost,
+                    food_info=food_info,
+                    donor_name=donor_name,
                 )
+                try:
+                    import whatsapp_handler
 
-            pk_token = pk_qr.get("token")
-            verif_url = qr_service.build_verification_url("PICKUP", pk_token)
-            scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
-            qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
+                    await whatsapp_handler.send_whatsapp_message(to_number=org_phone, text=o_msg)
+                except Exception:
+                    pass
+                try:
+                    database.record_message(phone=org_phone, sender="agent", text=o_msg)
+                except Exception:
+                    pass
 
             return translation_service.get_localized_message(
-                "volunteer_task_assigned_full_details",
+                "volunteer_awaiting_org_approval",
                 lang=lang,
-                task_id=task_id,
-                donor_name=ext["donor_name"],
-                donor_phone=ext["donor_contact"] or "Provided upon arrival",
-                pickup_location=ext["pickup_location"],
-                food_info=ext["food_info"],
-                deadline=ext["deadline"],
-                donor_map_link=ext["pickup_map"] or "https://maps.google.com",
-                org_name=ext["recipient_name"],
-                org_phone=ext["recipient_contact"] or "Provided upon arrival",
-                delivery_location=ext["delivery_location"],
-                org_capacity=ext["org_capacity"],
-                org_map_link=ext["delivery_map"] or "https://maps.google.com",
-                total_dist=ext["total_dist"],
-                est_cost=ext["est_cost"],
-                directions_link=ext["directions_link"] or ext["delivery_map"] or "https://maps.google.com",
-                qr_img_link=qr_img_url,
-                verification_url=verif_url,
-                scanner_url=scanner_url,
+                vol_name=vol_name,
+                org_name=org_name,
+                vehicle_mode=vol_mode,
+                distance_km=total_dist,
+                est_cost=est_cost,
             )
         return "No open pickup task is currently available to accept. Reply **1** to search new pickups or **3** to update your availability."
 
@@ -1789,7 +1793,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             else:
                 return (
                     f"🎉 **Great! You are now marked as AVAILABLE.**\n\n"
-                    f"❤️ **Thank You For Volunteering!**\n"
+                    f"❤️ **Thank You For Volunteering!**\n\n"
                     f"You are registered as an active volunteer courier in **{vol_area}**.\n\n"
                     f"📦 There are currently **no active pickups** (0 pending tasks) waiting in your area.\n"
                     f"As soon as a food donation is registered in {clean_vol_dist}, our AI coordinator will automatically notify you right here on WhatsApp! 🚚\n\n"
@@ -1799,17 +1803,20 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
                     f"3️⃣ Check my active pickups"
                 )
 
-        if clean_p == "3" or curr_state.get("workflow") == "VOLUNTEER_REGISTRATION":
-            vol_name = curr_state.get("vol_name")
-            vol_vehicle = curr_state.get("vol_vehicle")
-            vol_loc = curr_state.get("vol_loc") or curr_state.get("vol_district")
         else:
-            vol_name = (existing_vol.get("name") if existing_vol else None) or curr_state.get("vol_name")
-            vol_vehicle = (existing_vol.get("transport_mode") if existing_vol else None) or curr_state.get("vol_vehicle")
-            vol_loc = (existing_vol.get("service_area") if existing_vol else None) or curr_state.get("vol_loc") or curr_state.get("vol_district")
+            if (
+                clean_p == "3" and curr_state.get("expected_input_type") != "VOL_VEHICLE" and curr_state.get("workflow") != "VOLUNTEER_REGISTRATION"
+            ) or curr_state.get("workflow") == "VOLUNTEER_REGISTRATION":
+                vol_name = curr_state.get("vol_name")
+                vol_vehicle = curr_state.get("vol_vehicle")
+                vol_loc = curr_state.get("vol_loc") or curr_state.get("vol_district")
+            else:
+                vol_name = (existing_vol.get("name") if existing_vol else None) or curr_state.get("vol_name")
+                vol_vehicle = (existing_vol.get("transport_mode") if existing_vol else None) or curr_state.get("vol_vehicle")
+                vol_loc = (existing_vol.get("service_area") if existing_vol else None) or curr_state.get("vol_loc") or curr_state.get("vol_district")
 
-        # If user explicitly sent menu option '3', start fresh volunteer registration
-        if clean_p == "3":
+        # If user explicitly sent menu option '3' to start registration fresh
+        if clean_p == "3" and curr_state.get("expected_input_type") != "VOL_VEHICLE" and curr_state.get("workflow") != "VOLUNTEER_REGISTRATION":
             vol_name = None
             vol_vehicle = None
             vol_loc = None
@@ -1822,7 +1829,24 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             vol_name = prompt.strip().title()
 
         # Extract Vehicle / Transport Mode
-        if any(w in clean_p for w in ["three-wheeler", "three wheeler", "three_wheeler", "tuk", "tuk tuk", "tuktuk", "ත්‍රීරෝද", "ஆட்டோ"]):
+        if curr_state.get("expected_input_type") == "VOL_VEHICLE" or curr_state.get("workflow") == "VOLUNTEER_REGISTRATION":
+            if clean_p in ["1", "one", "1️⃣", "1."] or any(
+                w in clean_p for w in ["motorbike", "bike", "motorcycle", "scooter", "යතුරුපැදි", "பைக்", "மோட்டார்"]
+            ):
+                vol_vehicle = "Motorbike"
+            elif clean_p in ["2", "two", "2️⃣", "2."] or any(
+                w in clean_p for w in ["three-wheeler", "three wheeler", "three_wheeler", "tuk", "tuk tuk", "tuktuk", "auto", "ත්‍රීරෝද", "ஆட்டோ"]
+            ):
+                vol_vehicle = "Three-Wheeler"
+            elif clean_p in ["3", "three", "3️⃣", "3."] or any(w in clean_p for w in ["car", "කාර්", "கார்"]):
+                vol_vehicle = "Car"
+            elif clean_p in ["4", "four", "4️⃣", "4."] or any(w in clean_p for w in ["van", "වෑන්", "வேன்"]):
+                vol_vehicle = "Van"
+            elif clean_p in ["5", "five", "5️⃣", "5."] or any(w in clean_p for w in ["bicycle", "cycle", "පාපැදි", "මිතිවண்டி"]):
+                vol_vehicle = "Bicycle"
+            elif curr_state.get("expected_input_type") == "VOL_VEHICLE" and len(clean_p.split()) <= 4 and not prompt.strip().isdigit():
+                vol_vehicle = prompt.strip().title()
+        elif any(w in clean_p for w in ["three-wheeler", "three wheeler", "three_wheeler", "tuk", "tuk tuk", "tuktuk", "ත්‍රීරෝද", "ஆட்டோ"]):
             vol_vehicle = "Three-Wheeler"
         elif any(w in clean_p for w in ["motorbike", "bike", "motorcycle", "scooter", "යතුරුපැදි", "பைக்", "மோட்டார்"]):
             vol_vehicle = "Motorbike"
@@ -1830,10 +1854,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             vol_vehicle = "Car"
         elif "van" in clean_p or "වෑන්" in clean_p or "வேன்" in clean_p:
             vol_vehicle = "Van"
-        elif "bicycle" in clean_p or "පාපැදි" in clean_p or "மிதிවண்டி" in clean_p:
+        elif "bicycle" in clean_p or "පාපැදි" in clean_p or "මිතිවண்டி" in clean_p:
             vol_vehicle = "Bicycle"
-        elif curr_state.get("expected_input_type") == "VOL_VEHICLE" and len(clean_p.split()) <= 3 and not prompt.strip().isdigit():
-            vol_vehicle = prompt.strip().title()
 
         # Extract District / Location
         v_dist_resolved = routing.resolve_district(prompt)
@@ -1859,8 +1881,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         ):
             final_vol_name = vol_name or (existing_vol.get("name") if existing_vol else "Volunteer Courier")
             final_vol_veh = vol_vehicle or (existing_vol.get("transport_mode") if existing_vol else "Three-Wheeler")
-            final_vol_loc = vol_loc or (existing_vol.get("service_area") if existing_vol else "Kegalle")
-            final_district = routing.resolve_district(final_vol_loc) or "Kegalle"
+            final_vol_loc = vol_loc or (existing_vol.get("service_area") if existing_vol else "Colombo")
+            final_district = routing.resolve_district(final_vol_loc) or (vol_loc if vol_loc else "Colombo")
 
             if phone:
                 tools.register_volunteer(
@@ -1896,12 +1918,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             if phone:
                 database.set_user_conversation_state(phone, {})
 
-            # Look up pending tasks filtered/ranked by district
+            # Look up pending tasks filtered/ranked strictly by district
             pending = database.get_all_pickup_tasks()
             available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
-            # Prioritize matching district
+            # Strict district isolation: prioritize and restrict to matching district
             district_tasks = [t for t in available_tasks if routing.resolve_district(t.get("pickup_location") or "") == final_district]
-            tasks_to_show = district_tasks if district_tasks else available_tasks
+            tasks_to_show = district_tasks
 
             if tasks_to_show:
                 top_task = tasks_to_show[0]
@@ -2098,8 +2120,8 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             and (food_needed or curr_state.get("expected_input_type") in ["FOOD_NEED", "ORG_LIVE_LOCATION", "ORG_CAPACITY"] or is_org_intent)
         ):
             final_org_name = org_name or "Community Organization"
-            final_org_loc = org_loc or "Kegalle"
-            final_district = routing.resolve_district(final_org_loc) or "Kegalle"
+            final_org_loc = org_loc or (existing_org.get("location") if existing_org else "Colombo")
+            final_district = routing.resolve_district(final_org_loc) or (org_loc if org_loc else "Colombo")
             final_food = food_needed or "Meal packets"
             final_capacity = org_cap or "100 portions"
 
@@ -2300,7 +2322,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         if not is_explicit_donate:
             vol_name = (vol_rec.get("name") if vol_rec else None) or (user.get("display_name") if user else "Volunteer")
             vol_area = (vol_rec.get("service_area") if vol_rec else None) or (user.get("default_location") if user else "Sri Lanka")
-            vol_dist = routing.resolve_district(vol_area) or "Kegalle"
+            vol_dist = routing.resolve_district(vol_area) or (vol_area if vol_area != "Sri Lanka" else "Colombo")
 
             pending = database.get_all_pickup_tasks()
             available_tasks = [t for t in pending if t.get("status") in ["PENDING", "OFFERED", "OPEN"]]
@@ -2329,7 +2351,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         if not is_explicit_donate:
             org_name = (org_rec.get("name") if org_rec else None) or (user.get("display_name") if user else "Recipient Organization")
             org_area = (org_rec.get("location") if org_rec else None) or (user.get("default_location") if user else "Sri Lanka")
-            org_dist = routing.resolve_district(org_area) or "Kegalle"
+            org_dist = routing.resolve_district(org_area) or (org_area if org_area != "Sri Lanka" else "Colombo")
 
             all_dons = database.get_all_donations()
             active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING"]]
@@ -2412,13 +2434,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             don_res = json.loads(don_raw) if isinstance(don_raw, str) else {}
             don_id = don_res.get("donation_id", f"don-{uuid.uuid4().hex[:8]}")
 
-            don_dist = routing.resolve_district(city) or routing.resolve_district(loc) or "Kegalle"
+            don_dist = routing.resolve_district(city) or routing.resolve_district(loc) or (city if city else "Colombo")
 
-            # Check for matching recipient organizations in this district ranked by distance
+            # Check for matching recipient organizations strictly in this district ranked by distance
             all_orgs = database.get_all_organizations()
             dist_orgs = [o for o in all_orgs if routing.resolve_district(o.get("service_area") or o.get("location") or "") == don_dist]
-            if not dist_orgs:
-                dist_orgs = all_orgs
 
             # Calculate distances to organizations
             donor_coords = None

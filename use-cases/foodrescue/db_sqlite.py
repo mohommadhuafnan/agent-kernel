@@ -4,12 +4,13 @@ Encapsulates all SQLite storage operations, table setups, transactional CRUD,
 and ranking algorithms.
 """
 
-import sqlite3
-import os
 import datetime
 import json
+import os
+import sqlite3
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from db_base import BaseRepository
 
 DB_PATH = "foodrescue.db"
@@ -1122,6 +1123,7 @@ class SQLiteRepository(BaseRepository):
                 "donations",
                 "audit_events",
                 "users",
+                "processed_webhook_messages",
             ]
             if wipe_all:
                 tables.extend(["volunteers", "organizations", "donors"])

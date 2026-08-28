@@ -116,12 +116,12 @@ async def calculate_task_metrics(
     if not org:
         return {"status": "not_found", "message": f"Organization '{organization_id}' not found."}
 
-    pickup_loc = don.get("pickup_location") or don.get("location") or "Kegalle"
-    delivery_loc = org.get("location") or org.get("service_area") or "Mawanella"
+    pickup_loc = don.get("pickup_location") or don.get("location") or "Colombo"
+    delivery_loc = org.get("location") or org.get("service_area") or "Colombo"
     vol_mode = (vol.get("transport_mode") if vol else None) or "Motorbike"
 
-    p_coords = routing.geocode_location(pickup_loc) or (7.2520, 80.3464)
-    d_coords = routing.geocode_location(delivery_loc) or (7.2513, 80.4432)
+    p_coords = routing.geocode_location(pickup_loc) or (6.9271, 79.8612)
+    d_coords = routing.geocode_location(delivery_loc) or (6.9300, 79.8650)
 
     route_calc = await calculate_route(
         pickup_latitude=p_coords[0],

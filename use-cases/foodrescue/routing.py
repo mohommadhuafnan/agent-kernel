@@ -8,11 +8,12 @@ Provides:
 5. Known landmark geocoordinates registry for Sri Lanka / Colombo.
 """
 
-import os
-import math
 import logging
+import math
+import os
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
 
 logger = logging.getLogger("foodrescue.routing")
@@ -783,6 +784,7 @@ def geocode_location(location_text: str) -> Optional[Tuple[float, float]]:
 
     # Check individual words or comma-separated segments exact match first (e.g. "Galigamuwa, Kegalle" -> "galigamuwa")
     import re
+
     segments = [s.strip() for s in re.split(r"[,/|\-]+", loc_clean) if s.strip()]
     for seg in segments:
         if seg in KNOWN_COORDINATES:
@@ -1105,9 +1107,33 @@ async def compute_two_leg_route(
 GoogleRoutesProvider = GraphHopperRouteProvider
 
 
+def calculate_road_distance(origin: Any, destination: Any) -> float:
+    """Calculate synchronous road distance (km) between origin and destination using geocoded coordinates with road factor 1.25."""
+    o_coords = None
+    d_coords = None
+    if isinstance(origin, (tuple, list)) and len(origin) >= 2:
+        o_coords = (float(origin[0]), float(origin[1]))
+    elif isinstance(origin, dict) and (origin.get("latitude") or origin.get("lat")):
+        o_coords = (float(origin.get("latitude") or origin.get("lat")), float(origin.get("longitude") or origin.get("lng")))
+    elif isinstance(origin, str):
+        o_coords = geocode_location(origin)
+
+    if isinstance(destination, (tuple, list)) and len(destination) >= 2:
+        d_coords = (float(destination[0]), float(destination[1]))
+    elif isinstance(destination, dict) and (destination.get("latitude") or destination.get("lat")):
+        d_coords = (float(destination.get("latitude") or destination.get("lat")), float(destination.get("longitude") or destination.get("lng")))
+    elif isinstance(destination, str):
+        d_coords = geocode_location(destination)
+
+    if o_coords and d_coords:
+        return round(max(0.5, calculate_haversine_distance(o_coords[0], o_coords[1], d_coords[0], d_coords[1]) * 1.25), 1)
+    return 5.0
+
+
 def generate_map_link(*args, **kwargs) -> str:
     """Generate a map search link for coordinates or a location query string."""
     import urllib.parse
+
     if len(args) == 2:
         lat, lng = args
         return f"https://www.google.com/maps/search/?api=1&query={float(lat):.6f},{float(lng):.6f}"
@@ -1132,7 +1158,7 @@ def generate_map_link(*args, **kwargs) -> str:
 
 def generate_directions_link(*args, **kwargs) -> str:
     """Generate a turn-by-turn Google Maps directions URL between two locations.
-    
+
     Supports:
     - 4 floats: generate_directions_link(origin_lat, origin_lng, dest_lat, dest_lng)
     - 2 arguments (strings/coords/dicts): generate_directions_link(origin, destination)
@@ -1141,8 +1167,10 @@ def generate_directions_link(*args, **kwargs) -> str:
 
     if len(args) == 4:
         o_lat, o_lng, d_lat, d_lng = args
-        return f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
-    
+        return (
+            f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
+        )
+
     if len(args) == 2:
         orig, dest = args
         # Check if orig/dest are coords
@@ -1167,8 +1195,10 @@ def generate_directions_link(*args, **kwargs) -> str:
             d_coords = geocode_location(dest)
 
         if o_coords and d_coords:
-            return f"https://www.google.com/maps/dir/?api=1&origin={o_coords[0]:.6f},{o_coords[1]:.6f}&destination={d_coords[0]:.6f},{d_coords[1]:.6f}"
-        
+            return (
+                f"https://www.google.com/maps/dir/?api=1&origin={o_coords[0]:.6f},{o_coords[1]:.6f}&destination={d_coords[0]:.6f},{d_coords[1]:.6f}"
+            )
+
         orig_str = urllib.parse.quote(str(orig).strip(), safe="")
         dest_str = urllib.parse.quote(str(dest).strip(), safe="")
         return f"https://www.google.com/maps/dir/?api=1&origin={orig_str}&destination={dest_str}"
@@ -1179,6 +1209,8 @@ def generate_directions_link(*args, **kwargs) -> str:
     d_lat = kwargs.get("dest_lat") or kwargs.get("dest_latitude")
     d_lng = kwargs.get("dest_lng") or kwargs.get("dest_longitude")
     if o_lat is not None and o_lng is not None and d_lat is not None and d_lng is not None:
-        return f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
+        return (
+            f"https://www.google.com/maps/dir/?api=1&origin={float(o_lat):.6f},{float(o_lng):.6f}&destination={float(d_lat):.6f},{float(d_lng):.6f}"
+        )
 
     return "https://maps.google.com"

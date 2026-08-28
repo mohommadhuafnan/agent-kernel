@@ -656,23 +656,20 @@ async def test_kegalle_multi_party_asynchronous_lifecycle_chain():
         # Mushan MUST receive the pickup offer for Kegalle!
         assert "pickup available" in r_v5["reply"].lower() or "accept" in r_v5["reply"].lower()
 
-        # 4. Volunteer accepts the task
+        # 4. Volunteer accepts the task -> Volunteer gets waiting notification
         v6 = {"from": vol_phone, "id": "v6", "type": "text", "text": {"body": "Accept"}}
         r_v6 = await whatsapp_handler.process_incoming_whatsapp_message(v6)
-        assert "accepted" in r_v6["reply"].lower() or "assigned" in r_v6["reply"].lower() or "collected" in r_v6["reply"].lower()
+        assert "wait" in r_v6["reply"].lower() or "confirming" in r_v6["reply"].lower() or "pickup request received" in r_v6["reply"].lower()
 
-        # Org MUST receive cross-notification that volunteer was assigned
+        # Org MUST receive courier confirmation request with volunteer details
         org_notifs = [
             m
             for m in sent_messages
-            if m["to"] == org_phone and ("mushan" in m["text"].lower() or "courier" in m["text"].lower() or "dispatched" in m["text"].lower())
+            if m["to"] == org_phone and ("mushan" in m["text"].lower() or "courier" in m["text"].lower() or "car" in m["text"].lower())
         ]
         assert len(org_notifs) >= 1
 
-        # Donor MUST receive cross-notification that courier is on the way
-        donor_assign_notifs = [
-            m
-            for m in sent_messages
-            if m["to"] == donor_phone and ("mushan" in m["text"].lower() or "assigned" in m["text"].lower() or "courier" in m["text"].lower())
-        ]
-        assert len(donor_assign_notifs) >= 1
+        # 5. Org accepts courier
+        o5 = {"from": org_phone, "id": "o5", "type": "text", "text": {"body": "Accept"}}
+        r_o5 = await whatsapp_handler.process_incoming_whatsapp_message(o5)
+        assert "confirmed" in r_o5["reply"].lower() or "approved" in r_o5["reply"].lower() or "✅" in r_o5["reply"]

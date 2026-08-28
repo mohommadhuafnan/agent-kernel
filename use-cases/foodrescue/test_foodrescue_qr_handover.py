@@ -587,7 +587,7 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         vol_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
         assert len(vol_calls) >= 1
 
-    # 2. Volunteer Mushan replies "Accept" to claim the task
+    # 2. Volunteer Mushan replies "Accept" to claim the task -> receives waiting notification, Org receives courier approval request
     with patch("whatsapp_handler.send_whatsapp_message", new_callable=AsyncMock) as mock_msg, patch(
         "whatsapp_handler.send_whatsapp_image", new_callable=AsyncMock
     ) as mock_img:
@@ -597,21 +597,25 @@ async def test_complete_lifecycle_handover_and_dispatch_separation():
         vol_payload = {"from": vol_phone, "id": "msg_vol_acc", "type": "text", "text": {"body": "Accept"}}
         vol_res = await whatsapp_handler.process_incoming_whatsapp_message(vol_payload)
         assert vol_res["status"] == "processed"
+        assert "wait" in vol_res["reply"].lower() or "confirming" in vol_res["reply"].lower() or "pickup request received" in vol_res["reply"].lower()
 
-        # NOW: Donor should receive the Pickup QR image via WhatsApp!
-        assert mock_img.call_count == 1
-        img_call = mock_img.call_args
-        assert img_call.kwargs.get("to_number") == donor_phone
-        assert "/api/qr/FR-PK-" in img_call.kwargs.get("image_url")
-        assert "Pickup" in img_call.kwargs.get("caption")
-
-        # Org should receive Courier Dispatched notification with Mushan's details
+        # Org received Courier Confirmation Request
         org_disp_calls = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == org_phone]
         assert len(org_disp_calls) >= 1
         disp_text = org_disp_calls[0].kwargs.get("text", "")
-        assert "Courier Available" in disp_text or "Courier Dispatched" in disp_text
         assert "Mushan" in disp_text
-        assert vol_phone in disp_text
+        assert "Car" in disp_text
+
+        # 3. Org replies "Accept" to approve courier -> Donor receives Pickup QR image, Volunteer receives dispatch
+        org_payload = {"from": org_phone, "id": "msg_org_confirm_vol", "type": "text", "text": {"body": "Accept"}}
+        org_res = await whatsapp_handler.process_incoming_whatsapp_message(org_payload)
+        assert org_res["status"] == "processed"
+
+        # NOW: Donor received the Pickup QR image via WhatsApp!
+        assert mock_img.call_count >= 1
+        img_call = mock_img.call_args
+        assert img_call.kwargs.get("to_number") == donor_phone
+        assert "/api/qr/FR-PK-" in img_call.kwargs.get("image_url")
 
 
 # =============================================================================

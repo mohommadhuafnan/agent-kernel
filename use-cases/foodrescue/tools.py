@@ -1,10 +1,11 @@
+import asyncio
 import json
 import uuid
-import asyncio
-from typing import Optional, Dict, Any, List, Tuple
-from agentkernel.core import ToolContext, Session
+from typing import Any, Dict, List, Optional, Tuple
+
 import database
 import routing
+from agentkernel.core import Session, ToolContext
 
 _orig_json_dumps = json.dumps
 
@@ -393,7 +394,7 @@ def create_pickup_task(
     if not clean_org_id:
         clean_org_id = "o1"
     clean_pickup_loc = (
-        str(pickup_location).strip() if pickup_location and str(pickup_location).strip() else _get_context_val("current_location", "Kegalle")
+        str(pickup_location).strip() if pickup_location and str(pickup_location).strip() else _get_context_val("current_location", "Colombo")
     )
     clean_time = (
         str(scheduled_time).strip() if scheduled_time and str(scheduled_time).strip() else _get_context_val("current_pickup_deadline", "Immediate")
@@ -868,8 +869,9 @@ def calculate_route(origin: Optional[str] = None, destination: Optional[str] = N
     target_dest = str(destination).strip() if destination and str(destination).strip() else "Colombo 7"
     target_mode = str(transport_mode).strip().lower() if transport_mode and str(transport_mode).strip() else "motorbike"
 
-    import routing
     import asyncio
+
+    import routing
 
     try:
         # Run asynchronous route computation synchronously for ADK tool execution
@@ -1173,7 +1175,7 @@ def register_organization(
     clean_area = str(service_area).strip() if service_area and str(service_area).strip() else clean_loc
     clean_types = str(accepted_food_types).strip()
     clean_phone = str(phone).strip() if phone and str(phone).strip() else _get_context_val("whatsapp_phone", "")
-    clean_dist = district or routing.resolve_district(clean_loc or clean_area) or "Kegalle"
+    clean_dist = district or routing.resolve_district(clean_loc or clean_area) or (clean_loc if clean_loc else "Colombo")
     clean_cap = str(capacity).strip() if capacity and str(capacity).strip() else "As needed"
 
     existing = database.get_organization_by_phone(clean_phone) if clean_phone else None
@@ -1267,7 +1269,9 @@ def register_volunteer(
         clean_mode = str(transport_mode).strip().title() if transport_mode else "Motorbike"
 
     clean_avail = str(availability).strip() if availability and str(availability).strip() else "immediate, evenings"
-    clean_district = str(district).strip() if district else routing.resolve_district(clean_loc or clean_area) or "Kegalle"
+    clean_district = (
+        str(district).strip() if district else routing.resolve_district(clean_loc or clean_area) or (clean_loc if clean_loc else "Colombo")
+    )
 
     existing = database.get_volunteer_by_phone(clean_phone) if clean_phone else None
     if existing:

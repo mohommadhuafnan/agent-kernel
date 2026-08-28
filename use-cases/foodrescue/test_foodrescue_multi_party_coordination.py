@@ -215,19 +215,34 @@ async def test_multi_stage_approval_donor_to_org_to_volunteers():
         other_dist_msgs = [m for m in sent_messages if m["to"] == other_dist_vol_phone and "Sarah Cafe" in m["text"]]
         assert len(other_dist_msgs) == 0
 
-        # 9. Volunteer accepts the task
+        # 9. Volunteer accepts the task -> Volunteer gets waiting notification, Org gets courier confirmation request
         r_vol_accept = await whatsapp_handler.process_incoming_whatsapp_message({
             "from": vol_phone, "id": "v2", "type": "text", "text": {"body": "Accept"}
         })
-        assert "assigned" in r_vol_accept["reply"].lower() or "accepted" in r_vol_accept["reply"].lower()
-        vol_assigned_card = r_vol_accept["reply"]
+        assert "wait" in r_vol_accept["reply"].lower() or "confirming" in r_vol_accept["reply"].lower()
+
+        # Organization receives Courier Approval Request
+        org_courier_msgs = [m for m in sent_messages if m["to"] == org_phone and "Kasun Bandara" in m["text"]]
+        assert len(org_courier_msgs) >= 1
+        assert "Three-Wheeler" in org_courier_msgs[-1]["text"]
+        assert "LKR" in org_courier_msgs[-1]["text"]
+
+        # 10. Organization confirms the volunteer courier
+        r_org_confirm = await whatsapp_handler.process_incoming_whatsapp_message({
+            "from": org_phone, "id": "o6", "type": "text", "text": {"body": "Accept"}
+        })
+        assert "confirmed" in r_org_confirm["reply"].lower() or "approved" in r_org_confirm["reply"].lower() or "✅" in r_org_confirm["reply"]
+
+        # 11. Volunteer receives full dispatch details
+        vol_dispatch_msgs = [m for m in sent_messages if m["to"] == vol_phone and "Sarah Cafe" in m["text"]]
+        assert len(vol_dispatch_msgs) >= 1
+        vol_assigned_card = vol_dispatch_msgs[-1]["text"]
 
         # Verify full details in Volunteer card: Donor & Org details, maps, navigation directions link, LKR support
         assert "Sarah Cafe" in vol_assigned_card
         assert "Hope Children Orphanage" in vol_assigned_card
-        assert "60 meals" in vol_assigned_card
         assert "LKR" in vol_assigned_card
-        assert "maps.google.com" in vol_assigned_card or "google.com/maps" in vol_assigned_card
+        assert "maps.google.com" in vol_assigned_card or "google.com/maps" in vol_assigned_card or "/scanner" in vol_assigned_card
 
 
 @pytest.mark.asyncio

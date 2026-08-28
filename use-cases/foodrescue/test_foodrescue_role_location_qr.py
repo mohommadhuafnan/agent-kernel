@@ -18,6 +18,7 @@ import whatsapp_handler
 @pytest.fixture(autouse=True)
 def setup_test_db():
     database.setup_database()
+    database.reset_database_data(wipe_all=True)
     database.seed_test_data()
     tools.clear_session_store()
     whatsapp_handler.clear_processed_message_cache()
@@ -157,22 +158,30 @@ async def test_donor_receives_pickup_qr_image_and_volunteer_receives_scan_verifi
         mock_msg.return_value = {"status": "sent"}
         mock_img.return_value = {"status": "sent"}
 
+        # Step 1: Volunteer accepts -> receives waiting notification
         vol_payload = {"from": vol_phone, "id": "msg_vol_1", "type": "text", "text": {"body": "Accept"}}
         res = await whatsapp_handler.process_incoming_whatsapp_message(vol_payload)
 
         assert res["status"] == "processed"
         reply = res["reply"]
+        assert "wait" in reply.lower() or "confirming" in reply.lower() or "Hope Charity" in reply
 
-        # 1. Returned message to volunteer contains route details and Mobile Camera Scanner link to scan donor screen
-        assert "/scanner" in reply or "scanner" in reply
-        assert f"task-{uid}" in reply
-        # Anti-cheat check: direct token verification URL is not leaked to volunteer
-        assert "FR-PK-" not in reply or "/api/qr/" not in reply
+        # Step 2: Recipient Organization confirms courier
+        org_payload = {"from": org_phone, "id": "msg_org_1", "type": "text", "text": {"body": "Accept"}}
+        res_org = await whatsapp_handler.process_incoming_whatsapp_message(org_payload)
+        assert res_org["status"] == "processed"
 
-        # 2. Donor received WhatsApp image message containing the Pickup QR Code to display on screen
+        # Donor received WhatsApp image message containing the Pickup QR Code to display on screen
         donor_img_calls = [c for c in mock_img.call_args_list if c.kwargs.get("to_number") == donor_phone]
         assert len(donor_img_calls) >= 1
         assert "/api/qr/FR-PK-" in donor_img_calls[0].kwargs.get("image_url")
+
+        # Volunteer received message containing route details and Mobile Camera Scanner link to scan donor screen
+        vol_msgs = [c for c in mock_msg.call_args_list if c.kwargs.get("to_number") == vol_phone]
+        assert len(vol_msgs) >= 1
+        vol_card = vol_msgs[-1].kwargs.get("text")
+        assert "/scanner" in vol_card or "scanner" in vol_card
+        assert "FR-PK-" not in vol_card or "/api/qr/" not in vol_card
 
 
 @pytest.mark.asyncio

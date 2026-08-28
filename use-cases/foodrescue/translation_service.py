@@ -6,14 +6,15 @@ Provides:
 3. Language preference resolution and fallback handling.
 """
 
+import collections
+import json
+import logging
 import os
 import re
-import json
 import string
-import collections
-import logging
+from typing import Any, Dict, List, Optional
+
 import requests
-from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("foodrescue.translation")
 
@@ -1546,6 +1547,111 @@ LOCALIZED_MESSAGES: Dict[str, Dict[str, str]] = {
             "🍱 **உணவு:** {food_info}\n"
             "🚚 **தன்னார்வலர்:** {volunteer_name}\n"
             "🆔 **பணி எண்:** {task_id}"
+        ),
+    },
+    "volunteer_awaiting_org_approval": {
+        "en": (
+            "⏳ *Pickup Request Received!*\n\n"
+            "Thank you, **{vol_name}**! We have sent your courier offer ({vehicle_mode}, route: ~{distance_km} km, transport support: LKR {est_cost}) to **{org_name}** for approval.\n\n"
+            "Please wait a moment — as soon as the recipient organization confirms, we will send you the exact donor pickup address, turn-by-turn route map, and QR scanner! 🚚"
+        ),
+        "si": (
+            "⏳ *භාරගැනීමේ ඉල්ලීම ලැබිණි!*\n\n"
+            "ස්තූතියි, **{vol_name}**! ඔබගේ කුරියර් ඉල්ලීම ({vehicle_mode}, මාර්ග දුර: ~{distance_km} km, ප්‍රවාහන සහනාධාරය: රු. {est_cost}) අනුමත කිරීම සඳහා **{org_name}** වෙත යොමු කර ඇත.\n\n"
+            "කරුණාකර මොහොතක් රැඳී සිටින්න — සංවිධානය තහවුරු කළ වහාම ආහාර ලබාගැනීමේ ලිපිනය, මාර්ග සිතියම සහ QR ස්කෑනරය ඔබට ලැබෙනු ඇත! 🚚"
+        ),
+        "ta": (
+            "⏳ *பணி கோரிக்கை பெறப்பட்டது!*\n\n"
+            "நன்றி, **{vol_name}**! உங்கள் கூரியர் விபரங்கள் ({vehicle_mode}, தூரம்: ~{distance_km} km, கட்டணம்: LKR {est_cost}) ஒப்புதலுக்காக **{org_name}** அமைப்பிற்கு அனுப்பப்பட்டுள்ளது.\n\n"
+            "தயவுசெய்து காத்திருக்கவும் — அமைப்பு உறுதி செய்தவுடன் முழு விபரங்களும் உங்களுக்கு அனுப்பப்படும்! 🚚"
+        ),
+    },
+    "org_confirm_courier_request": {
+        "en": (
+            "🚚 *Volunteer Courier Approval Request!*\n\n"
+            "Volunteer courier **{vol_name}** has offered to pick up and deliver your surplus food donation ({food_info} from **{donor_name}**).\n\n"
+            "• 👤 *Courier*: {vol_name} ({vol_phone})\n"
+            "• 🛵 *Vehicle Mode*: **{vehicle_mode}**\n"
+            "• 📏 *Delivery Route Distance*: **~{distance_km} km**\n"
+            "• 💰 *Transport Support Fee*: **LKR {est_cost}**\n\n"
+            "👉 Reply *'Accept'* (or *'1'*) to confirm this courier and dispatch them for pickup."
+        ),
+        "si": (
+            "🚚 *ආහාර බෙදාහැරීම සඳහා ස්වේච්ඡා කුරියර්වරයෙකුගේ ඉල්ලීම!*\n\n"
+            "**{donor_name}** වෙතින් ලැබෙන ආහාර පරිත්‍යාගය ({food_info}) රැගෙන ඒමට ස්වේච්ඡා කුරියර් **{vol_name}** ඉදිරිපත්ව ඇත.\n\n"
+            "• 👤 *කුරියර්*: {vol_name} ({vol_phone})\n"
+            "• 🛵 *වාහන මාදිලිය*: **{vehicle_mode}**\n"
+            "• 📏 *බෙදාහැරීමේ මාර්ග දුර*: **~{distance_km} km**\n"
+            "• 💰 *ප්‍රවාහන සහනාධාර මුදල*: **රු. {est_cost}**\n\n"
+            "👉 මෙම කුරියර්වරයා තහවුරු කර ගමන ආරම්භ කිරීමට *'Accept'* (හෝ *'1'*) යොමු කරන්න."
+        ),
+        "ta": (
+            "🚚 *உணவு டெலிவரிக்கான கூரியர் ஒப்புதல் கோரிக்கை!*\n\n"
+            "**{donor_name}** இடமிருந்து வரும் உணவு நன்கொடையை ({food_info}) எடுத்துவர **{vol_name}** முன்வந்துள்ளார்.\n\n"
+            "• 👤 *கூரியர்*: {vol_name} ({vol_phone})\n"
+            "• 🛵 *வாகனம்*: **{vehicle_mode}**\n"
+            "• 📏 *டெலிவரி தூரம்*: **~{distance_km} km**\n"
+            "• 💰 *போக்குவரத்து கட்டணம்*: **LKR {est_cost}**\n\n"
+            "👉 இந்த கூரியரை உறுதிப்படுத்த *'Accept'* (அல்லது *'1'*) எனப் பதிலளிக்கவும்."
+        ),
+    },
+    "volunteer_courier_approved_dispatch": {
+        "en": (
+            "🎉 *The recipient organization ({org_name}) has approved your delivery!* 🚚\n\n"
+            "📍 *1. Donor Pickup Point:*\n"
+            "• 👤 *Donor*: {donor_name}\n"
+            "• 📞 *Contact*: {donor_phone}\n"
+            "• 📍 *Location*: {pickup_location}\n"
+            "• 🍱 *Food*: {food_info}\n"
+            "• ⏰ *Deadline*: {deadline}\n"
+            "• 🗺️ *Directions*: {directions_link}\n\n"
+            "🏢 *2. Delivery Destination:*\n"
+            "• 🏢 *Organization*: {org_name}\n"
+            "• 📞 *Contact*: {org_phone}\n"
+            "• 📍 *Location*: {delivery_location}\n\n"
+            "📏 *Total Road Distance*: ~{distance_km} km | 💰 *Transport Support*: LKR {est_cost}\n\n"
+            "🔐 *Handover Verification:*\n"
+            "When you arrive at the donor's location, ask the donor to show their **Pickup QR Code** and scan it:\n"
+            "👉 📷 *Open Camera Scanner:* {scanner_url}\n\n"
+            "Once collected, reply *'Collected'*."
+        ),
+        "si": (
+            "🎉 *භාරගන්නා සංවිධානය ({org_name}) ඔබගේ ගමන අනුමත කර ඇත!* 🚚\n\n"
+            "📍 *1. ආහාර ලබාගැනීමේ ස්ථානය:*\n"
+            "• 👤 *පරිත්‍යාගශීලියා*: {donor_name}\n"
+            "• 📞 *දුරකථන*: {donor_phone}\n"
+            "• 📍 *ලිපිනය*: {pickup_location}\n"
+            "• 🍱 *ආහාර*: {food_info}\n"
+            "• ⏰ *වේලාව*: {deadline}\n"
+            "• 🗺️ *මාර්ග සිතියම*: {directions_link}\n\n"
+            "🏢 *2. බෙදාහැරීමේ ස්ථානය:*\n"
+            "• 🏢 *සංවිධානය*: {org_name}\n"
+            "• 📞 *දුරකථන*: {org_phone}\n"
+            "• 📍 *ලිපිනය*: {delivery_location}\n\n"
+            "📏 *මාර්ග දුර*: ~{distance_km} km | 💰 *ප්‍රවාහන සහනාධාරය*: රු. {est_cost}\n\n"
+            "🔐 *ආහාර ලබාගැනීම තහවුරු කිරීම:*\n"
+            "පරිත්‍යාගශීලියා වෙත ගිය පසු ඔවුන්ගේ **Pickup QR Code** එක ස්කෑන් කරන්න:\n"
+            "👉 📷 *කැමරා ස්කෑනරය:* {scanner_url}\n\n"
+            "ආහාර ලබාගත් පසු *'Collected'* එවන්න."
+        ),
+        "ta": (
+            "🎉 *பெறுநர் அமைப்பு ({org_name}) உங்கள் டெலிவரியை உறுதி செய்துள்ளது!* 🚚\n\n"
+            "📍 *1. உணவு பெறும் இடம்:*\n"
+            "• 👤 *வழங்குநர்*: {donor_name}\n"
+            "• 📞 *தொடர்பு*: {donor_phone}\n"
+            "• 📍 *முகவரி*: {pickup_location}\n"
+            "• 🍱 *உணவு*: {food_info}\n"
+            "• ⏰ *நேரம்*: {deadline}\n"
+            "• 🗺️ *வழிகாட்டி*: {directions_link}\n\n"
+            "🏢 *2. டெலிவரி சேருமிடம்:*\n"
+            "• 🏢 *அமைப்பு*: {org_name}\n"
+            "• 📞 *தொடர்பு*: {org_phone}\n"
+            "• 📍 *முகவரி*: {delivery_location}\n\n"
+            "📏 *பாதை தூரம்*: ~{distance_km} km | 💰 *கட்டணம்*: LKR {est_cost}\n\n"
+            "🔐 *ஒப்படைப்பு சரிபார்ப்பு:*\n"
+            "வழங்குநரின் இடத்திற்குச் சென்றதும் அவரது **Pickup QR Code** ஐ ஸ்கேன் செய்யவும்:\n"
+            "👉 📷 *கேமரா ஸ்கேனர்:* {scanner_url}\n\n"
+            "உணவைப் பெற்றதும் *'Collected'* எனப் பதிலளிக்கவும்."
         ),
     },
     "volunteer_ask_pickup_qr": {

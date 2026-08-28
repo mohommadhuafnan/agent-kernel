@@ -33,14 +33,13 @@ async def find_nearby_organizations(
     """
     logger.info(f"MCP_TOOL_CALLED: find_nearby_organizations near ({latitude}, {longitude})")
     target_food = food_type or "All"
-    target_dist = district or routing.resolve_district(f"{latitude},{longitude}") or "Kegalle"
+    target_dist = district or routing.resolve_district(f"{latitude},{longitude}") or "Colombo"
 
     # Query matching organizations from database
     orgs = database.find_organizations_by_criteria(target_food, target_dist)
     if not orgs:
-        # Fallback to all organizations if district query returns none
-        all_orgs = database.get_all_organizations()
-        orgs = all_orgs
+        # Strict district search
+        orgs = []
 
     if not orgs:
         logger.info("MCP_TOOL_SUCCESS: find_nearby_organizations returned 0 organizations (database empty)")
@@ -49,7 +48,7 @@ async def find_nearby_organizations(
     # Calculate distance to each organization and rank
     ranked_list = []
     for org in orgs:
-        org_loc = org.get("location") or org.get("service_area") or "Kegalle"
+        org_loc = org.get("location") or org.get("service_area") or target_dist
         org_coords = routing.geocode_location(org_loc)
         dist_km = 5.0
         if org_coords:
@@ -102,7 +101,7 @@ async def find_nearby_volunteers(
 
     ranked_list = []
     for vol in avail_vols:
-        vol_loc = vol.get("service_area") or vol.get("location") or vol.get("current_location") or "Kegalle"
+        vol_loc = vol.get("service_area") or vol.get("location") or vol.get("current_location") or (district or "Colombo")
         vol_coords = None
         cur_c = vol.get("current_coordinates") or {}
         if cur_c.get("latitude") and cur_c.get("longitude"):
@@ -143,11 +142,11 @@ async def match_donation(donation_id: str) -> Dict[str, Any]:
             "message": f"Donation '{clean_don_id}' not found in database."
         }
 
-    pickup_loc = don.get("pickup_location") or don.get("location") or "Kegalle"
+    pickup_loc = don.get("pickup_location") or don.get("location") or "Colombo"
     food_type = don.get("food_type", "All")
     qty = float(don.get("quantity", 30))
-    district = routing.resolve_district(pickup_loc) or "Kegalle"
-    pickup_coords = routing.geocode_location(pickup_loc) or (7.2512, 80.3464)
+    district = routing.resolve_district(pickup_loc) or "Colombo"
+    pickup_coords = routing.geocode_location(pickup_loc) or (6.9271, 79.8612)
 
     ranked_orgs = await find_nearby_organizations(
         latitude=pickup_coords[0],

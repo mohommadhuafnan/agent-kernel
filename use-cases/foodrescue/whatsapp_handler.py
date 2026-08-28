@@ -9,28 +9,45 @@ Provides the Meta WhatsApp Business Cloud API transport adapter for FoodRescue A
 - Outgoing message delivery via Meta Graph API v24.0
 """
 
+import hashlib
+import hmac
+import json
+import logging
 import os
 import re
-import json
-import hmac
-import hashlib
-import logging
 import uuid
-from typing import Optional, Dict, Any, List
 from collections import deque
-from fastapi import APIRouter, Request, HTTPException, Response, BackgroundTasks
-from fastapi.responses import PlainTextResponse
-import httpx
-from agentkernel.core import Config, ChatService
-from agentkernel.core.model import BaseChatRequest
+from typing import Any, Dict, List, Optional
+
 import database
+import httpx
+import qr_service
+import routing
 import translation_service
+from agentkernel.core import ChatService, Config
+from agentkernel.core.model import BaseChatRequest
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 
 logger = logging.getLogger("foodrescue.whatsapp")
 
 # Webhook Idempotency Ring Buffer (prevents Meta webhook retries and duplicate loops)
 PROCESSED_MESSAGE_IDS: set = set()
 PROCESSED_MESSAGE_QUEUE: deque = deque(maxlen=2000)
+
+
+def clear_processed_message_cache():
+    """Clear in-memory and database processed message cache for tests."""
+    PROCESSED_MESSAGE_IDS.clear()
+    PROCESSED_MESSAGE_QUEUE.clear()
+    try:
+        conn = database.get_repository()._get_connection()
+        with conn:
+            conn.cursor().execute("DELETE FROM processed_webhook_messages")
+        conn.close()
+    except Exception:
+        pass
+
 
 # Meta Production Configuration Defaults (FoodRescueAI)
 DEFAULT_TEST_PHONE_NUMBER = "+94 75 526 3482"
@@ -571,6 +588,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             task_id = target_task["id"]
             if vol:
                 database.assign_volunteer_record(task_id, vol["id"])
+                database.update_volunteer_availability(vol["id"], "BUSY")
             else:
                 database.assign_volunteer_record(task_id, f"vol-{from_number}")
             database.clear_user_conversation_state(from_number)
@@ -581,66 +599,53 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             donor_name = donor.get("name") if donor else (don.get("donor_name") if don else "Donor Partner")
             org_id = target_task.get("organization_id")
             org = database.get_organization_record(org_id) if org_id else None
+            org_name = org.get("name", "Recipient Organization") if org else "Recipient Organization"
+            org_phone = org.get("phone") if org else None
 
             food_info = _format_food_info(don)
 
-            # Generate or retrieve active Pickup QR for this task
-            import qr_service
+            import resilient_executor
 
-            task_qrs = database.get_qr_codes_for_task(task_id)
-            pk_qr = next((q for q in task_qrs if q.get("qr_type") == "PICKUP" and q.get("status") == "ACTIVE"), None)
-            if not pk_qr:
-                pk_token = qr_service.generate_secure_token("PK")
-                pk_qr = database.create_qr_code_record(
-                    qr_id=f"qr-pk-{task_id}",
-                    task_id=task_id,
-                    donation_id=don_id or "don-unknown",
-                    qr_type="PICKUP",
-                    token=pk_token,
-                    token_hash=qr_service.hash_token(pk_token),
-                    donor_id=donor.get("id") if donor else (don.get("donor_id") if don else None),
-                    organization_id=org_id,
-                    assigned_volunteer_id=vol.get("id") if vol else None,
-                    status="ACTIVE",
-                )
-            pk_token = pk_qr.get("token")
-            verif_url = qr_service.build_verification_url("PICKUP", pk_token)
-            qr_img_url = f"{qr_service.get_base_url()}/api/qr/{pk_token}.png"
+            ext = resilient_executor._get_task_extended_metrics(target_task, vol)
+            total_dist = ext.get("total_dist", 5.0)
+            est_cost = ext.get("est_cost", 350)
 
-            # 1. Notify Donor with Pickup QR Image & Instructions
-            donor_phone = donor.get("phone") if donor else (don.get("donor_phone") if don else None)
-            if donor_phone:
-                donor_user = database.get_user_by_phone(donor_phone)
-                d_lang = donor_user.get("preferred_language", "en") if donor_user else "en"
-                d_msg = translation_service.get_localized_message(
-                    "donor_pickup_qr_instructions",
-                    lang=d_lang,
-                    volunteer_name=vol_name,
-                    transport_mode=vol_mode,
-                    volunteer_phone=vol_phone or "+94 77 123 4567",
-                    food_info=food_info,
-                    task_id=task_id,
-                )
-                try:
-                    await send_whatsapp_image(to_number=donor_phone, image_url=qr_img_url, caption=d_msg)
-                except Exception as e:
-                    logger.warning(f"Failed to send WhatsApp donor QR assignment notification: {e}")
-                try:
-                    database.record_message(phone=donor_phone, sender="agent", text=f"{d_msg}\n\n📷 [Pickup QR Code Image]({qr_img_url})")
-                except Exception:
-                    pass
+            # 1. Send Waiting Message to Volunteer
+            vol_user = database.get_user_by_phone(from_number)
+            v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
+            v_wait_msg = translation_service.get_localized_message(
+                "volunteer_awaiting_org_approval",
+                lang=v_lang,
+                vol_name=vol_name,
+                org_name=org_name,
+                vehicle_mode=vol_mode,
+                distance_km=total_dist,
+                est_cost=est_cost,
+            )
+            try:
+                await send_whatsapp_message(to_number=from_number, text=v_wait_msg)
+            except Exception as e:
+                logger.warning(f"Failed to send volunteer waiting notification: {e}")
+            try:
+                database.record_message(phone=from_number, sender="agent", text=v_wait_msg)
+            except Exception:
+                pass
 
             # 2. Notify Recipient Organization to approve/confirm courier
-            org_phone = org.get("phone") if org else None
             if org_phone:
                 org_user = database.get_user_by_phone(org_phone)
                 o_lang = org_user.get("preferred_language", "en") if org_user else "en"
-                o_msg = (
-                    f"🚚 *Volunteer Courier Available for Your Food Delivery!*\n\n"
-                    f"Volunteer courier **{vol_name}** (Vehicle: **{vol_mode}**, Phone: **{vol_phone}**) has offered to pick up and deliver your surplus food donation ({food_info} from **{donor_name}**).\n\n"
-                    f"👉 Reply *'Accept'* (or *'1'*) to confirm this volunteer courier."
+                o_msg = translation_service.get_localized_message(
+                    "org_confirm_courier_request",
+                    lang=o_lang,
+                    vol_name=vol_name,
+                    vol_phone=vol_phone or "+94 77 123 4567",
+                    vehicle_mode=vol_mode,
+                    distance_km=total_dist,
+                    est_cost=est_cost,
+                    food_info=food_info,
+                    donor_name=donor_name,
                 )
-                o_msg = translation_service.translate_message_if_needed(o_msg, target_lang=o_lang)
                 database.set_user_conversation_state(
                     org_phone,
                     {
@@ -652,30 +657,16 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                         "vol_name": vol_name,
                         "vol_phone": vol_phone,
                         "vol_mode": vol_mode,
+                        "est_cost": est_cost,
+                        "distance_km": total_dist,
                     },
                 )
                 try:
                     await send_whatsapp_message(to_number=org_phone, text=o_msg)
                 except Exception as e:
-                    logger.warning(f"Failed to send WhatsApp organization assignment notification: {e}")
+                    logger.warning(f"Failed to send WhatsApp organization courier confirmation request: {e}")
                 try:
                     database.record_message(phone=org_phone, sender="agent", text=o_msg)
-                except Exception:
-                    pass
-
-            # 3. Send Pickup QR scanning instructions directly to Volunteer (if dispatched as cross-notification)
-            if vol_phone and vol_phone != from_number:
-                vol_user = database.get_user_by_phone(vol_phone)
-                v_lang = vol_user.get("preferred_language", "en") if vol_user else "en"
-                v_instr = translation_service.get_localized_message("volunteer_ask_pickup_qr", lang=v_lang)
-                scanner_url = qr_service.build_scanner_url("PICKUP", task_id=task_id)
-                v_caption = f"🔐 *Pickup Verification* (Task: `{task_id}`)\n\n{v_instr}\n\n👉 📷 *Open Camera Scanner:* {scanner_url}"
-                try:
-                    await send_whatsapp_message(to_number=vol_phone, text=v_caption)
-                except Exception as e:
-                    logger.warning(f"Failed to send volunteer pickup scan instructions: {e}")
-                try:
-                    database.record_message(phone=vol_phone, sender="agent", text=f"{v_instr}\n\n👉 📷 *Open Camera Scanner:* {scanner_url}")
                 except Exception:
                     pass
 
@@ -693,9 +684,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             pickup_loc = top_don.get("pickup_location") or top_don.get("location") or "Pickup Location"
             deadline = top_don.get("pickup_deadline") or "Immediate"
 
-            import routing
-
-            don_dist = routing.resolve_district(pickup_loc) or "Kegalle"
+            don_dist = routing.resolve_district(pickup_loc) or (pickup_loc if pickup_loc != "Pickup Location" else "Colombo")
             donor_coords = None
             if top_don.get("latitude") and top_don.get("longitude"):
                 try:
@@ -716,8 +705,6 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
 
             all_orgs = database.get_all_organizations()
             dist_orgs = [o for o in all_orgs if routing.resolve_district(o.get("service_area") or o.get("location") or "") == don_dist]
-            if not dist_orgs:
-                dist_orgs = all_orgs
 
             for org in dist_orgs:
                 o_phone = org.get("phone")
@@ -744,7 +731,8 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                             max(0.5, routing.calculate_haversine_distance(donor_coords[0], donor_coords[1], o_coords[0], o_coords[1]) * 1.25), 1
                         )
                     else:
-                        d_km = round(max(0.8, (hash(f"{pickup_loc}_{o_loc}") % 40) / 10.0 + 1.5), 1)
+                        calc_rd = routing.calculate_road_distance(pickup_loc, o_loc)
+                        d_km = round(calc_rd, 1) if calc_rd > 0 else 5.0
 
                     org_user = database.get_user_by_phone(o_phone)
                     o_lang = org_user.get("preferred_language", "en") if org_user else "en"
@@ -807,9 +795,11 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             food_info = _format_food_info(don)
             deadline = (don.get("pickup_deadline") if don else None) or top_task.get("scheduled_time") or "Immediate"
 
-            import routing
-
-            task_dist = routing.resolve_district(donor_loc) or routing.resolve_district(org.get("location") if org else "") or "Kegalle"
+            task_dist = (
+                routing.resolve_district(donor_loc)
+                or routing.resolve_district(org.get("location") if org else "")
+                or (donor_loc if donor_loc != "Pickup Location" else "Colombo")
+            )
 
             # Case A: Donor accepted the match (from_number != org_phone) -> Notify Org with full donor details
             if org_phone and org_phone != from_number:
@@ -847,17 +837,13 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
                 except Exception as e:
                     logger.warning(f"Failed to send donor org accepted notification: {e}")
 
-            # Search best available volunteer in this district to offer the pickup task
+            # Search best available volunteer strictly in this district to offer the pickup task
             all_vols = database.get_all_volunteers()
             dist_vols = [
                 v
                 for v in all_vols
                 if (v.get("current_status", "").upper() in ["AVAILABLE", "ACTIVE", ""] or v.get("status", "").upper() in ["AVAILABLE", "ACTIVE", ""])
-                and (
-                    routing.resolve_district(v.get("service_area") or v.get("location") or "") == task_dist
-                    or not v.get("service_area")
-                    or v.get("service_area") == "Sri Lanka"
-                )
+                and routing.resolve_district(v.get("service_area") or v.get("location") or "") == task_dist
             ]
             import resilient_executor
 
@@ -1566,8 +1552,8 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             vol_rec = database.get_volunteer_by_phone(from_number)
             if not vol_rec:
                 v_name_reg = conv_state.get("vol_name") or cache.get("volunteer_name") or "Volunteer Courier"
-                v_veh_reg = conv_state.get("vol_vehicle") or "Car"
-                v_dist_reg = conv_state.get("vol_district") or conv_state.get("vol_loc") or "Kegalle"
+                v_veh_reg = conv_state.get("vol_vehicle") or "Motorbike"
+                v_dist_reg = conv_state.get("vol_district") or conv_state.get("vol_loc") or (loc_name if loc_name != "Shared Location" else "Colombo")
                 tools.register_volunteer(name=v_name_reg, transport_mode=v_veh_reg, service_area=v_dist_reg, phone=from_number)
                 database.update_user_profile(phone=from_number, display_name=v_name_reg, user_role="volunteer", default_location=v_dist_reg)
                 vol_rec = database.get_volunteer_by_phone(from_number)
@@ -1583,9 +1569,9 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                 phone=from_number,
             )
             vol_name = (vol_rec.get("name") if vol_rec else None) or cache.get("volunteer_name", "Volunteer Courier")
-            vol_veh = (vol_rec.get("transport_mode") if vol_rec else None) or "Car"
-            vol_dist = (vol_rec.get("service_area") if vol_rec else None) or "Kegalle"
-            clean_vol_dist = routing.resolve_district(vol_dist) or "Kegalle"
+            vol_veh = (vol_rec.get("transport_mode") if vol_rec else None) or "Motorbike"
+            vol_dist = (vol_rec.get("service_area") if vol_rec else None) or (conv_state.get("vol_district") if conv_state else "Colombo")
+            clean_vol_dist = routing.resolve_district(vol_dist) or (vol_dist if vol_dist else "Colombo")
 
             # Check if volunteer is currently executing an active assigned task
             v_tasks = database.get_pickup_tasks_for_volunteer(vol_id) if vol_id else []
@@ -1695,7 +1681,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             org_rec = database.get_organization_by_phone(from_number)
             if not org_rec:
                 o_name_reg = conv_state.get("org_name") or cache.get("org_name") or "Recipient Organization"
-                o_dist_reg = conv_state.get("district") or conv_state.get("city") or "Kegalle"
+                o_dist_reg = conv_state.get("district") or conv_state.get("city") or (loc_name if loc_name != "Shared Location" else "Colombo")
                 o_loc_reg = loc_address or loc_name or conv_state.get("city") or o_dist_reg
                 o_cap_reg = conv_state.get("org_capacity") or cache.get("org_capacity") or "100 portions"
                 tools.register_organization(
@@ -1721,8 +1707,8 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                 phone=from_number,
             )
             org_name = org_rec.get("name", "Recipient Organization") if org_rec else "Recipient Organization"
-            org_dist = (org_rec.get("service_area") or org_rec.get("location") or "Kegalle") if org_rec else "Kegalle"
-            org_clean_dist = routing.resolve_district(org_dist) or "Kegalle"
+            org_dist = (org_rec.get("service_area") or org_rec.get("location") or "") if org_rec else ""
+            org_clean_dist = routing.resolve_district(org_dist) or (org_dist if org_dist else "Colombo")
             org_cap = org_rec.get("capacity", "100 portions") if org_rec else "100 portions"
 
             # Check if there are unfulfilled donations in this district

@@ -195,16 +195,40 @@ async def test_volunteer_accept_triggers_volunteer_courier_details():
         },
     )
 
-    # 4. Volunteer sends "accept task"
+    # 4. Volunteer sends "accept task" -> Receives waiting notification
     vol_reply = await resilient_executor.run_resilient_chat(prompt="accept task", session_id=f"whatsapp:{vol_phone}")
     assert vol_reply["status"] == "success"
     reply_text = vol_reply["result"]
 
-    # Verify courier card components
-    assert any(w in reply_text.lower() for w in ["task assigned", "pickup task assigned", "assigned & accepted"])
-    assert "turn-by-turn navigation" in reply_text.lower() or "directions" in reply_text.lower() or "google.com" in reply_text
-    assert "transport support" in reply_text.lower() or "lkr" in reply_text.lower()
-    assert "open camera scanner" in reply_text.lower() or "scanner" in reply_text.lower() or "qr" in reply_text.lower()
+    assert any(w in reply_text.lower() for w in ["wait", "confirming", "pickup request received", "sunil perera"])
+    assert "lkr" in reply_text.lower()
+    assert "three-wheeler" in reply_text.lower()
+
+    # 5. Org receives confirmation request and approves courier
+    org_user = database.get_organization_record(org_id)
+    org_phone_val = (org_user.get("phone") if org_user else None) or f"+947766{uid[:5]}"
+    if not org_user:
+        database.create_organization_record(org_id=org_id, name="Recipient Org", phone=org_phone_val, service_area="Kegalle", accepted_food_types="Meals")
+        database.create_or_update_user(phone=org_phone_val, display_name="Recipient Org", user_role="organization")
+
+    database.set_user_conversation_state(
+        org_phone_val,
+        {
+            "workflow": "ORGANIZATION",
+            "current_question": "CONFIRM_VOLUNTEER",
+            "expected_input_type": "CHOICE",
+            "task_id": task_id,
+            "volunteer_phone": vol_phone,
+            "volunteer_name": "Sunil Perera",
+            "vehicle_mode": "Three-Wheeler",
+            "distance_km": 14.6,
+            "est_cost": 1414,
+        }
+    )
+    org_confirm_reply = await resilient_executor.run_resilient_chat(prompt="Accept", session_id=f"whatsapp:{org_phone_val}")
+    assert org_confirm_reply["status"] == "success"
+    org_text = org_confirm_reply["result"]
+    assert "confirmed" in org_text.lower() or "approved" in org_text.lower() or "✅" in org_text
 
 
 @pytest.mark.asyncio
