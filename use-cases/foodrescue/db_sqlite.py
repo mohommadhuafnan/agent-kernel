@@ -2035,11 +2035,29 @@ class SQLiteRepository(BaseRepository):
         import uuid
 
         norm = self._normalize_phone(phone)
-        msg_id = f"msg-{uuid.uuid4().hex[:8]}"
+        clean_text = (text or "").strip()
         ts = timestamp or self._now()
         conn = self._get_connection()
         with conn:
             cursor = conn.cursor()
+            # Deduplication check
+            cursor.execute("SELECT id, phone_number, sender, message_text, is_voice, transcript, timestamp FROM messages WHERE phone_number = ? ORDER BY timestamp DESC LIMIT 3", (norm,))
+            recent = cursor.fetchall()
+            for r in recent:
+                rd = dict(r)
+                if rd.get("sender") == sender and (rd.get("message_text") or "").strip() == clean_text:
+                    conn.close()
+                    return {
+                        "id": rd["id"],
+                        "phone_number": norm,
+                        "sender": sender,
+                        "message_text": text,
+                        "is_voice": bool(rd.get("is_voice", is_voice)),
+                        "transcript": rd.get("transcript") or transcript,
+                        "timestamp": rd.get("timestamp") or ts,
+                    }
+
+            msg_id = f"msg-{uuid.uuid4().hex[:8]}"
             cursor.execute(
                 """
             INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp)
@@ -2183,7 +2201,7 @@ class SQLiteRepository(BaseRepository):
 
         return conversations
 
-    def get_conversation_messages(self, phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_conversation_messages(self, phone: str, limit: int = 200) -> List[Dict[str, Any]]:
         norm = self._normalize_phone(phone)
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -2194,6 +2212,10 @@ class SQLiteRepository(BaseRepository):
         for r in rows:
             d = dict(r)
             d["is_voice"] = bool(d.get("is_voice", 0))
+            if msgs:
+                prev = msgs[-1]
+                if prev.get("sender") == d.get("sender") and (prev.get("message_text") or "").strip() == (d.get("message_text") or "").strip():
+                    continue
             msgs.append(d)
         return msgs
 

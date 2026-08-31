@@ -85,22 +85,29 @@ async def serve_static(file_path: str):
 @router.get("/api/stats")
 async def get_dashboard():
     """Get comprehensive aggregated dashboard KPIs, operational metrics, and activity stream."""
-    stats = database.get_dashboard_stats()
     all_users = database.get_all_users()
     all_orgs = database.get_all_organizations()
     all_vols = database.get_all_volunteers()
-    avail_vols = database.get_available_volunteers()
     all_tasks = database.get_all_pickup_tasks()
     all_dons = database.get_all_donations()
     recent_events = database.get_all_audit_events(limit=15)
 
+    avail_vols = [
+        v for v in all_vols
+        if (v.get("current_status", "").lower() == "available" or v.get("availability_status", "").upper() == "AVAILABLE")
+    ]
     pending_donations = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING"]]
     active_pickups = [t for t in all_tasks if t.get("status") in ["ASSIGNED", "EN_ROUTE", "COLLECTED", "PICKED_UP"]]
     completed_pickups = [t for t in all_tasks if t.get("status") in ["COMPLETED", "DELIVERED"]]
 
-    total_qty = float(stats.get("total_food_quantity", 0.0) or 0.0)
+    total_qty = sum(float(d.get("quantity", 0.0) or 0.0) for d in all_dons)
     food_rescued_kg = round(total_qty * 0.45, 1)
     co2_saved_kg = round(total_qty * 2.5, 1)
+
+    status_distribution = {}
+    for d in all_dons:
+        st = d.get("status", "AVAILABLE")
+        status_distribution[st] = status_distribution.get(st, 0) + 1
 
     enriched_stats = {
         "total_donations": len(all_dons),
@@ -117,7 +124,7 @@ async def get_dashboard():
         "registered_organizations": len(all_orgs),
         "active_users": len(all_users),
         "pending_actions": len(pending_donations),
-        "status_distribution": stats.get("status_distribution", {}),
+        "status_distribution": status_distribution,
         "recent_activity": recent_events,
         "system_health": "operational",
         "backend": (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).lower()

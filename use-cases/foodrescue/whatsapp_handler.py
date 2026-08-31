@@ -1117,6 +1117,12 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
     message_id = message.get("id", "")
     msg_type = message.get("type", "unknown")
 
+    if not message_id and from_number:
+        import time
+        msg_body_snippet = (message.get("text", {}) or {}).get("body", "") or msg_type
+        message_id = f"auto_{hashlib.md5(f'{from_number}_{msg_body_snippet}_{int(time.time() // 3)}'.encode()).hexdigest()[:12]}"
+        message["id"] = message_id
+
     if not from_number:
         logger.warning(f"Received WhatsApp message without sender phone number: {message}")
         return {"status": "ignored", "reason": "no_sender"}

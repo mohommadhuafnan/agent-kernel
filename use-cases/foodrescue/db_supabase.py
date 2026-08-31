@@ -1935,8 +1935,27 @@ class SupabaseRepository(BaseRepository):
         self, phone: str, sender: str, text: str, is_voice: bool = False, transcript: Optional[str] = None, timestamp: Optional[str] = None
     ) -> Dict[str, Any]:
         norm = self._normalize_phone(phone)
-        msg_id = f"msg-{uuid.uuid4().hex[:8]}"
+        clean_text = (text or "").strip()
         ts = timestamp or self._now()
+
+        # Prevent duplicate recording if identical message exists for same phone & sender
+        recent = self._fetchall(
+            "SELECT id, phone_number, sender, message_text, is_voice, transcript, timestamp FROM messages WHERE phone_number = %s ORDER BY timestamp DESC LIMIT 3",
+            (norm,),
+        )
+        for r in recent:
+            if r.get("sender") == sender and (r.get("message_text") or "").strip() == clean_text:
+                return {
+                    "id": r["id"],
+                    "phone_number": norm,
+                    "sender": sender,
+                    "message_text": text,
+                    "is_voice": bool(r.get("is_voice", is_voice)),
+                    "transcript": r.get("transcript") or transcript,
+                    "timestamp": r.get("timestamp") or ts,
+                }
+
+        msg_id = f"msg-{uuid.uuid4().hex[:8]}"
         self._execute(
             "INSERT INTO messages (id, phone_number, sender, message_text, is_voice, transcript, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (msg_id, norm, sender, text, bool(is_voice), transcript, ts),
@@ -1991,27 +2010,31 @@ class SupabaseRepository(BaseRepository):
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         users = self.get_all_users()
-        conversations = []
+        donors_by_phone = {self._normalize_phone(d.get("phone")): d for d in self.get_all_donors() if d.get("phone")}
+        vols_by_phone = {self._normalize_phone(v.get("phone")): v for v in self.get_all_volunteers() if v.get("phone")}
+        orgs_by_phone = {self._normalize_phone(o.get("phone")): o for o in self.get_all_organizations() if o.get("phone")}
 
+        conversations = []
         for u in users:
             norm = u["phone_number"]
             latest_msg = self._fetchone("SELECT * FROM messages WHERE phone_number = %s ORDER BY timestamp DESC LIMIT 1", (norm,))
-            msg_count = len(self._fetchall("SELECT id FROM messages WHERE phone_number = %s", (norm,)))
+            msg_count_row = self._fetchone("SELECT COUNT(id) as cnt FROM messages WHERE phone_number = %s", (norm,))
+            msg_count = int(msg_count_row.get("cnt", 0)) if msg_count_row else 0
 
             disp_name = u.get("display_name") or f"User_{norm[-4:]}"
             u_role = u.get("user_role", "unknown")
             if not disp_name or disp_name.startswith("User_") or u_role in ["unknown", None, ""]:
-                donor_rec = self.get_donor_by_phone(norm)
+                donor_rec = donors_by_phone.get(norm)
                 if donor_rec and donor_rec.get("name"):
                     disp_name = donor_rec["name"]
                     u_role = "donor"
                 else:
-                    vol_rec = self.get_volunteer_by_phone(norm)
+                    vol_rec = vols_by_phone.get(norm)
                     if vol_rec and vol_rec.get("name"):
                         disp_name = vol_rec["name"]
                         u_role = "volunteer"
                     else:
-                        org_rec = self.get_organization_by_phone(norm)
+                        org_rec = orgs_by_phone.get(norm)
                         if org_rec and org_rec.get("name"):
                             disp_name = org_rec["name"]
                             u_role = "organization"
@@ -2035,12 +2058,18 @@ class SupabaseRepository(BaseRepository):
         conversations.sort(key=lambda c: str(c.get("last_activity", "")), reverse=True)
         return conversations
 
-    def get_conversation_messages(self, phone: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_conversation_messages(self, phone: str, limit: int = 200) -> List[Dict[str, Any]]:
         norm = self._normalize_phone(phone)
         rows = self._fetchall(f"SELECT * FROM messages WHERE phone_number = %s ORDER BY timestamp ASC LIMIT {int(limit)}", (norm,))
+        deduped = []
         for r in rows:
             r["is_voice"] = bool(r.get("is_voice", False))
-        return rows
+            if deduped:
+                prev = deduped[-1]
+                if prev.get("sender") == r.get("sender") and (prev.get("message_text") or "").strip() == (r.get("message_text") or "").strip():
+                    continue
+            deduped.append(r)
+        return deduped
 
     def get_all_audit_events(self, limit: int = 100) -> List[Dict[str, Any]]:
         rows = self._fetchall(f"SELECT * FROM audit_events ORDER BY created_at DESC LIMIT {int(limit)}")

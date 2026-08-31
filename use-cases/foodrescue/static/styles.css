@@ -400,6 +400,51 @@ html {
   font-size: 10px;
 }
 
+/* Header Live Date & Time Display */
+.header-datetime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.header-datetime-pill:hover {
+  border-color: var(--brand-border);
+  background-color: var(--bg-subtle);
+}
+
+.header-datetime-pill .dt-icon {
+  color: var(--brand-primary);
+  flex-shrink: 0;
+}
+
+.header-datetime-pill .dt-date {
+  color: var(--text-main);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-datetime-pill .dt-sep {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.header-datetime-pill .dt-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--brand-primary);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
 /* Pulse Animation */
 @keyframes pulseGlow {
   0% { transform: scale(0.95); opacity: 0.8; }
@@ -1016,6 +1061,9 @@ html {
 .conversation-main {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background-color: #efeae2; /* Authentic WhatsApp subtle background */
   background-image: radial-gradient(#d1d5db 0.75px, transparent 0.75px);
   background-size: 16px 16px;
@@ -1029,6 +1077,7 @@ html {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .chat-user-info {
@@ -1053,12 +1102,33 @@ html {
 }
 
 .chat-messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.38);
 }
 
 .message-bubble {

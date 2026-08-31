@@ -102,8 +102,39 @@ const App = (function () {
     // Initial Data Fetch
     await fetchAllData();
 
+    // Start Live Header Clock
+    setupLiveClock();
+
     // Start Real-Time Synchronizer Loop
     startSyncPolling();
+  }
+
+  // Live Clock Controller
+  function setupLiveClock() {
+    updateLiveClock();
+    setInterval(updateLiveClock, 1000);
+  }
+
+  function updateLiveClock() {
+    const now = new Date();
+    const dateElem = document.getElementById('live-header-date');
+    const timeElem = document.getElementById('live-header-time');
+    if (dateElem) {
+      dateElem.textContent = now.toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+    if (timeElem) {
+      timeElem.textContent = now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
   }
 
   // Navigation Setup
@@ -325,73 +356,86 @@ const App = (function () {
     }
   }
 
-  // Data Fetchers with Mutex Guard to prevent overlapping race conditions
+  // Fast Data Fetchers with Promise.all Parallelization and Mutex Guard
   async function fetchAllData() {
     if (state.isSyncing) return;
     state.isSyncing = true;
     try {
-      // 1. Always fetch primary dashboard aggregated stats
-      const statsRes = await safeFetch('/api/dashboard');
-      if (statsRes && statsRes.stats) {
-        state.stats = statsRes.stats;
-      }
-
-      // 2. Fetch data required for active tab and general view
       const tab = state.activeTab;
+      const promises = [
+        safeFetch('/api/dashboard').then(res => {
+          if (res && res.stats) state.stats = res.stats;
+        })
+      ];
 
       if (tab === 'dashboard' || tab === 'live-operations') {
-        const opsRes = await safeFetch('/api/live-operations');
-        if (opsRes && Array.isArray(opsRes.operations)) state.liveOperations = opsRes.operations;
-        const eventsRes = await safeFetch('/api/agent-events');
-        if (eventsRes && Array.isArray(eventsRes.events)) state.agentEvents = eventsRes.events;
+        promises.push(safeFetch('/api/live-operations').then(res => {
+          if (res && Array.isArray(res.operations)) state.liveOperations = res.operations;
+        }));
+        promises.push(safeFetch('/api/agent-events').then(res => {
+          if (res && Array.isArray(res.events)) state.agentEvents = res.events;
+        }));
       }
 
       if (tab === 'donations' || tab === 'dashboard') {
-        const donsRes = await safeFetch('/api/donations');
-        if (donsRes && Array.isArray(donsRes.donations)) state.donations = donsRes.donations;
-        const donorsRes = await safeFetch('/api/donors');
-        if (donorsRes && Array.isArray(donorsRes.donors)) state.donors = donorsRes.donors;
+        promises.push(safeFetch('/api/donations').then(res => {
+          if (res && Array.isArray(res.donations)) state.donations = res.donations;
+        }));
+        promises.push(safeFetch('/api/donors').then(res => {
+          if (res && Array.isArray(res.donors)) state.donors = res.donors;
+        }));
       }
 
       if (tab === 'organizations' || tab === 'dashboard') {
-        const orgsRes = await safeFetch('/api/organizations');
-        if (orgsRes && Array.isArray(orgsRes.organizations)) state.organizations = orgsRes.organizations;
+        promises.push(safeFetch('/api/organizations').then(res => {
+          if (res && Array.isArray(res.organizations)) state.organizations = res.organizations;
+        }));
       }
 
       if (tab === 'volunteers' || tab === 'dashboard') {
-        const volsRes = await safeFetch('/api/volunteers');
-        if (volsRes && Array.isArray(volsRes.volunteers)) state.volunteers = volsRes.volunteers;
+        promises.push(safeFetch('/api/volunteers').then(res => {
+          if (res && Array.isArray(res.volunteers)) state.volunteers = res.volunteers;
+        }));
       }
 
       if (tab === 'users' || tab === 'dashboard') {
-        const usersRes = await safeFetch('/api/users');
-        if (usersRes && Array.isArray(usersRes.users)) state.users = usersRes.users;
+        promises.push(safeFetch('/api/users').then(res => {
+          if (res && Array.isArray(res.users)) state.users = res.users;
+        }));
       }
 
       if (tab === 'conversations') {
-        const convsRes = await safeFetch('/api/conversations');
-        if (convsRes && Array.isArray(convsRes.conversations)) state.conversations = convsRes.conversations;
+        promises.push(safeFetch('/api/conversations').then(res => {
+          if (res && Array.isArray(res.conversations)) state.conversations = res.conversations;
+        }));
       }
 
       if (tab === 'pickups') {
-        const pickupsRes = await safeFetch('/api/pickups');
-        if (pickupsRes && Array.isArray(pickupsRes.pickup_tasks)) state.pickups = pickupsRes.pickup_tasks;
+        promises.push(safeFetch('/api/pickups').then(res => {
+          if (res && Array.isArray(res.pickup_tasks)) state.pickups = res.pickup_tasks;
+        }));
       }
 
       if (tab === 'notifications') {
-        const notifsRes = await safeFetch('/api/notifications');
-        if (notifsRes && Array.isArray(notifsRes.notifications)) state.notifications = notifsRes.notifications;
+        promises.push(safeFetch('/api/notifications').then(res => {
+          if (res && Array.isArray(res.notifications)) state.notifications = res.notifications;
+        }));
       }
 
       if (tab === 'reports') {
-        const reportsRes = await safeFetch('/api/reports');
-        if (reportsRes && reportsRes.summary) state.reports = reportsRes;
+        promises.push(safeFetch('/api/reports').then(res => {
+          if (res && res.summary) state.reports = res;
+        }));
       }
 
       if (tab === 'settings') {
-        const settingsRes = await safeFetch('/api/settings');
-        if (settingsRes && settingsRes.transport_cost) state.settings = settingsRes;
+        promises.push(safeFetch('/api/settings').then(res => {
+          if (res && res.transport_cost) state.settings = res;
+        }));
       }
+
+      // Fetch all required data concurrently in parallel
+      await Promise.all(promises);
 
       updateBadges();
       renderCurrentTab();
@@ -833,8 +877,20 @@ const App = (function () {
 
   async function loadConversationMessages(phone, scrollBottom = true) {
     try {
-      const res = await fetch(`/api/conversations/${encodeURIComponent(phone)}/messages`).then(r => r.json());
-      const msgs = res.messages || [];
+      const res = await fetch(`/api/conversations/${encodeURIComponent(phone)}/messages?limit=300`).then(r => r.json());
+      const rawMsgs = res.messages || [];
+
+      // Deduplicate consecutive duplicate messages
+      const msgs = [];
+      for (const m of rawMsgs) {
+        if (msgs.length > 0) {
+          const prev = msgs[msgs.length - 1];
+          if (prev.sender === m.sender && (prev.message_text || '').trim() === (m.message_text || '').trim()) {
+            continue;
+          }
+        }
+        msgs.push(m);
+      }
       state.activeMessages = msgs;
 
       // Update Header Bar
@@ -847,18 +903,23 @@ const App = (function () {
       setText('chat-badge-mode', `${(user.preferred_response_mode || 'text').toUpperCase()} MODE`);
 
       const container = document.getElementById('chat-messages-container');
+      if (!container) return;
 
       if (!msgs || msgs.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
             No messages exchanged yet with <strong>${phone}</strong>.<br>
-            Use the input below to simulate an incoming WhatsApp message.
+            Use WhatsApp to chat with FoodRescue AI.
           </div>
         `;
         return;
       }
 
-      container.innerHTML = msgs.map(m => {
+      // Track scroll position before DOM update
+      const previousScrollTop = container.scrollTop;
+      const isNearBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 60;
+
+      const renderedHtml = msgs.map(m => {
         const isUser = m.sender === 'user';
         return `
           <div class="message-bubble ${isUser ? 'bubble-user' : 'bubble-agent'}">
@@ -869,8 +930,14 @@ const App = (function () {
         `;
       }).join('');
 
-      if (scrollBottom) {
+      if (container.innerHTML !== renderedHtml) {
+        container.innerHTML = renderedHtml;
+      }
+
+      if (scrollBottom || isNearBottom) {
         container.scrollTop = container.scrollHeight;
+      } else {
+        container.scrollTop = previousScrollTop;
       }
     } catch (err) {
       console.error('Failed to load conversation messages:', err);
