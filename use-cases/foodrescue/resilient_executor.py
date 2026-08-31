@@ -1998,16 +1998,35 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             return translation_service.get_localized_message("vol_ask_district", lang=lang, vol_name=vol_name)
 
     # 7. Recipient Organization Workflow ("2", "request food", "need food", "community organization", "shelter", "hope food")
-    is_org_inventory_query = clean_p in [
-        "view all",
-        "view all available donations",
-        "view available",
-        "all donations",
-        "view donations",
-        "available donations",
-        "surplus food",
-        "inventory",
-    ]
+    is_org_inventory_query = (
+        clean_p
+        in [
+            "view all",
+            "view all available donations",
+            "view available",
+            "all donations",
+            "view donations",
+            "available donations",
+            "surplus food",
+            "inventory",
+        ]
+        or any(
+            q in clean_p
+            for q in [
+                "is any donation available",
+                "is any food available",
+                "are there any donations",
+                "any donation available",
+                "any donations available",
+                "available food",
+                "available donations",
+                "what food is available",
+                "check available",
+                "show available",
+                "available surplus",
+            ]
+        )
+    )
     is_org_menu_opt = clean_p in ["2", "request food", "request available food", "need food", "food request", "community organization", "shelter"]
     is_org_intent = any(
         m in clean_p
@@ -2037,11 +2056,38 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
             database.create_or_update_user(phone=phone, user_role="organization")
         existing_org = database.get_organization_by_phone(phone) if phone else None
 
-        # 7a. User explicitly asked to view all available donations across the network
-        if is_org_inventory_query and existing_org:
+        # 7a. User explicitly asked to view available donations across the network
+        if is_org_inventory_query:
             all_dons = database.get_all_donations()
             active_dons = [d for d in all_dons if d.get("status") in ["AVAILABLE", "MATCHED", "PICKUP_PENDING", "PICKUP_ASSIGNED"]]
-            if active_dons:
+
+            user_dist = (
+                (existing_org.get("service_area") or existing_org.get("location"))
+                if existing_org
+                else (user.get("default_location") if user else None)
+            )
+            clean_dist = routing.resolve_district(user_dist) if user_dist else None
+            dist_matches = (
+                [d for d in active_dons if routing.resolve_district(d.get("pickup_location") or "") == clean_dist]
+                if clean_dist
+                else []
+            )
+
+            if dist_matches:
+                lines = []
+                for idx, don in enumerate(dist_matches[:5], 1):
+                    f_type = don.get("food_type", "Prepared Meals")
+                    qty_d = don.get("quantity", 0)
+                    unit_d = don.get("unit", "portions")
+                    loc_d = don.get("pickup_location", clean_dist)
+                    lines.append(f"{idx}️⃣ **{qty_d} {unit_d} — {f_type}** (📍 {loc_d})")
+                items_str = "\n".join(lines)
+                return (
+                    f"🍱 **Available Surplus Donations in {clean_dist} District:**\n\n"
+                    f"{items_str}\n\n"
+                    f"📍 Please share your organization's delivery location (Tap ➕ → Location → Send your current location 📍) to reserve food!"
+                )
+            elif active_dons:
                 lines = []
                 for idx, don in enumerate(active_dons[:5], 1):
                     f_type = don.get("food_type", "Prepared Meals")
@@ -2050,10 +2096,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
                     loc_d = don.get("pickup_location", "Sri Lanka")
                     lines.append(f"{idx}️⃣ **{qty_d} {unit_d} — {f_type}** (📍 {loc_d})")
                 items_str = "\n".join(lines)
+                loc_hint = f"in **{clean_dist} District**" if clean_dist else "in your immediate area"
                 return (
-                    f"📦 **Available Surplus Food Donations Across Network:**\n\n"
+                    f"📦 **Currently Available Surplus Donations in the Network:**\n\n"
                     f"{items_str}\n\n"
-                    f"📍 Please share your organization's delivery location using WhatsApp (Tap ➕ → Location → Send your current location 📍) to reserve food!"
+                    f"🔍 *Note:* There are currently 0 active donations {loc_hint}. As soon as a local donor in {clean_dist or 'your district'} posts surplus food, our AI will alert you and dispatch a courier immediately!\n\n"
+                    f"📍 *Tip:* Share your WhatsApp live location pin (Tap ➕ → Location) anytime so your exact delivery location is saved!"
                 )
             else:
                 return (
@@ -2108,9 +2156,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
         # Extract Food Need
         food_match = re.search(r"(?:we\s+need|need)\s*([^\n\r\.]+)", prompt, re.IGNORECASE)
         if food_match:
-            food_needed = food_match.group(1).strip()
+            cand_food = food_match.group(1).strip()
+            if not any(q in cand_food.lower() for q in ["available", "donation", "what", "is any", "?", "help", "menu", "status"]):
+                food_needed = cand_food
         elif curr_state.get("expected_input_type") in ["FOOD_NEED", "ORG_LIVE_LOCATION"]:
-            food_needed = prompt.strip()
+            if not any(q in clean_p for q in ["available", "donation", "is any", "what", "?", "help", "menu", "status"]):
+                food_needed = prompt.strip()
 
         # If all details are present, register & match!
         if (

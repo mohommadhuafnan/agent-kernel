@@ -444,7 +444,79 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "akkaraipattu": "Ampara",
     "pottuvil": "Ampara",
     "sainthamaruthu": "Ampara",
+    "oluvil": "Ampara",
+    "south eastern university": "Ampara",
+    "seusl": "Ampara",
+    "nintavur": "Ampara",
+    "addalaichenai": "Ampara",
+    "thirukkovil": "Ampara",
+    "maruthamunai": "Ampara",
+    "navithanveli": "Ampara",
+    "eravur": "Batticaloa",
+    "kattankudy": "Batticaloa",
+    "lahugala": "Ampara",
+    "damana": "Ampara",
+    "uhana": "Ampara",
+    "mahaoya": "Ampara",
+    "padiyathalawa": "Ampara",
 }
+
+# Centroid coordinates for all 25 Administrative Districts of Sri Lanka
+DISTRICT_CENTROIDS: Dict[str, Tuple[float, float]] = {
+    "Colombo": (6.9271, 79.8612),
+    "Gampaha": (7.0840, 79.9943),
+    "Kalutara": (6.5854, 79.9607),
+    "Kandy": (7.2906, 80.6337),
+    "Matale": (7.4675, 80.6234),
+    "Nuwara Eliya": (6.9497, 80.7891),
+    "Galle": (6.0535, 80.2210),
+    "Matara": (5.9549, 80.5550),
+    "Hambantota": (6.1429, 81.1212),
+    "Jaffna": (9.6615, 80.0255),
+    "Kilinochchi": (9.3803, 80.3770),
+    "Mannar": (8.9810, 79.9044),
+    "Vavuniya": (8.7542, 80.4982),
+    "Mullaitivu": (9.2671, 80.8142),
+    "Batticaloa": (7.7310, 81.6747),
+    "Ampara": (7.2912, 81.6724),
+    "Trincomalee": (8.5874, 81.2152),
+    "Kurunegala": (7.4863, 80.3623),
+    "Puttalam": (8.0362, 79.8283),
+    "Anuradhapura": (8.3114, 80.4037),
+    "Polonnaruwa": (7.9403, 81.0188),
+    "Badulla": (6.9934, 81.0550),
+    "Monaragala": (6.8728, 81.3507),
+    "Ratnapura": (6.6828, 80.4037),
+    "Kegalle": (7.2513, 80.3464),
+}
+
+
+def get_district_from_coordinates(lat: float, lng: float) -> str:
+    """Dynamically determine the Sri Lankan district for given GPS coordinates based on proximity."""
+    if lat is None or lng is None:
+        return "Colombo"
+    # 1. First check known town landmark registry within 20 km
+    best_dist = float("inf")
+    best_district = None
+    for town_name, (k_lat, k_lng) in KNOWN_COORDINATES.items():
+        d = calculate_haversine_distance(lat, lng, k_lat, k_lng)
+        if d < best_dist:
+            best_dist = d
+            d_res = resolve_district(town_name)
+            if d_res:
+                best_district = d_res
+    if best_district and best_dist <= 20.0:
+        return best_district
+
+    # 2. Check distance against all 25 district administrative centroids
+    centroid_dist = float("inf")
+    centroid_district = "Colombo"
+    for dist_name, (c_lat, c_lng) in DISTRICT_CENTROIDS.items():
+        d = calculate_haversine_distance(lat, lng, c_lat, c_lng)
+        if d < centroid_dist:
+            centroid_dist = d
+            centroid_district = dist_name
+    return centroid_district
 
 
 def resolve_district(location_or_town_text: Optional[str], fallback_to_raw: bool = False) -> Optional[str]:
@@ -483,24 +555,11 @@ def resolve_district(location_or_town_text: Optional[str], fallback_to_raw: bool
         if len(town) >= 4 and re.search(r"\b" + re.escape(town) + r"\b", clean):
             return dist
 
-    # Check if text contains coordinates or map URL (e.g. 7.222, 80.474 -> Kegalle)
+    # Check if text contains coordinates or map URL (e.g. 7.222, 80.474 -> Kegalle, 7.297, 81.860 -> Ampara)
     coords = extract_coordinates_from_text(raw)
     if coords:
         lat, lng = coords
-        # Find nearest known landmark in KNOWN_COORDINATES
-        best_dist = float("inf")
-        best_name = None
-        for name, (k_lat, k_lng) in KNOWN_COORDINATES.items():
-            dist_sq = (lat - k_lat) ** 2 + (lng - k_lng) ** 2
-            if dist_sq < best_dist:
-                best_dist = dist_sq
-                best_name = name
-        if best_name:
-            for dist in SRI_LANKA_DISTRICTS:
-                if dist.lower() == best_name.lower() or dist.lower() in best_name.split():
-                    return dist
-            if best_name in TOWN_TO_DISTRICT_MAP:
-                return TOWN_TO_DISTRICT_MAP[best_name]
+        return get_district_from_coordinates(lat, lng)
 
     if fallback_to_raw:
         return raw.title()
@@ -701,6 +760,15 @@ KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
     "batticaloa": (7.7310, 81.6747),
     "ampara": (7.2912, 81.6724),
     "kalmunai": (7.4167, 81.8333),
+    "oluvil": (7.2975, 81.8607),
+    "south eastern university": (7.2975, 81.8607),
+    "seusl": (7.2975, 81.8607),
+    "sammanthurai": (7.3667, 81.8000),
+    "akkaraipattu": (7.2167, 81.8500),
+    "pottuvil": (6.8711, 81.8294),
+    "sainthamaruthu": (7.3917, 81.8417),
+    "nintavur": (7.3500, 81.8500),
+    "addalaichenai": (7.2500, 81.8500),
 }
 
 
