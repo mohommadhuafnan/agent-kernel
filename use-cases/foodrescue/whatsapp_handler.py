@@ -31,22 +31,7 @@ from fastapi.responses import PlainTextResponse
 
 logger = logging.getLogger("foodrescue.whatsapp")
 
-# Webhook Idempotency Ring Buffer (prevents Meta webhook retries and duplicate loops)
-PROCESSED_MESSAGE_IDS: set = set()
-PROCESSED_MESSAGE_QUEUE: deque = deque(maxlen=2000)
 
-
-def clear_processed_message_cache():
-    """Clear in-memory and database processed message cache for tests."""
-    PROCESSED_MESSAGE_IDS.clear()
-    PROCESSED_MESSAGE_QUEUE.clear()
-    try:
-        conn = database.get_repository()._get_connection()
-        with conn:
-            conn.cursor().execute("DELETE FROM processed_webhook_messages")
-        conn.close()
-    except Exception:
-        pass
 
 
 # Meta Production Configuration Defaults (FoodRescueAI)
@@ -299,8 +284,6 @@ async def send_whatsapp_image(
             return await send_whatsapp_message(to_number=clean_to, text=fallback_text)
 
 
-# In-memory bounded FIFO dedup cache for processed Meta message IDs
-from collections import deque
 
 PROCESSED_MESSAGE_IDS: set = set()
 PROCESSED_MESSAGE_QUEUE: deque = deque(maxlen=5000)
@@ -313,11 +296,33 @@ def clear_processed_message_cache() -> None:
     PROCESSED_MESSAGE_QUEUE.clear()
 
 
-async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: str, from_number: str) -> None:
+async def dispatch_lifecycle_cross_notifications(
+    prompt_text: str, reply_text: str, from_number: str, user_context: Optional[Dict[str, Any]] = None
+) -> None:
     """Send real-time WhatsApp cross-notifications to linked parties (Donor, Recipient, Volunteer)
     during key lifecycle events: Task Accepted, Food Collected, Food Delivered, and Donation Matched.
     """
     clean_p = prompt_text.strip().lower()
+    r_lower = reply_text.lower()
+
+    # Fast-path filter: check if this message could plausibly be a lifecycle trigger
+    lifecycle_keywords = [
+        "delivered", "food delivered", "dropped off", "delivery completed", "delivery done",
+        "භාරදුන්නා", "බෙදාහැරියා", "වழங்கினேன்", "டெலிவரி",
+        "collected", "got the food", "food collected", "picked up", "pickup completed",
+        "ආහාර ලබාගත්තා", "ලබාගත්තා", "உணவு சேகரித்தேன்", "சேகரித்தேன்",
+        "accept", "1", "yes", "ok", "i'll take it", "ill take it", "take it", "i can do it",
+        "accept task", "accept pickup", "accept offer", "accept donation", "accept request",
+        "claim", "agree", "start", "on the way", "පිළිගන්නවා", "භාරගන්නවා", "ஏற்கிறேன்", "ஆம்", "ஏற்றுக்கொள்கிறேன்"
+    ]
+    lifecycle_reply_keywords = [
+        "delivered", "completed", "distributed", "reimbursement", "thank you for helping rescue",
+        "collected", "in transit", "picked_up", "pickup confirmed", "deliver the meals to",
+        "task assigned", "pickup task assigned", "task accepted", "task claimed", "assigned & accepted",
+        "භාරගන්නා ලදී", "කාර්ය අංකය", "ஒதுக்கப்பட்டது", "பணி எண்"
+    ]
+    if not (any(k in clean_p for k in lifecycle_keywords) or any(rk in r_lower for rk in lifecycle_reply_keywords)):
+        return
 
     # 1. Volunteer Confirms Delivery ("Delivered", "Food delivered", "Dropped off")
     is_delivered_intent = any(
@@ -333,7 +338,7 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             "වழங்கினேன்",
             "டெலிவரி",
         ]
-    ) and any(w in reply_text.lower() for w in ["delivered", "completed", "distributed", "reimbursement", "thank you for helping rescue"])
+    ) and any(w in r_lower for w in ["delivered", "completed", "distributed", "reimbursement", "thank you for helping rescue"])
 
     # 2. Volunteer Confirms Collection ("Collected", "Got the food")
     is_collected_intent = any(
@@ -349,14 +354,14 @@ async def dispatch_lifecycle_cross_notifications(prompt_text: str, reply_text: s
             "உணவு சேகரித்தேன்",
             "சேகரித்தேன்",
         ]
-    ) and any(w in reply_text.lower() for w in ["collected", "in transit", "picked_up", "pickup confirmed", "deliver the meals to"])
+    ) and any(w in r_lower for w in ["collected", "in transit", "picked_up", "pickup confirmed", "deliver the meals to"])
 
     # 3. Volunteer Accepts Task ("Accept", "1", "I'll take it", etc.)
-    conv_state = database.get_user_conversation_state(from_number) or {}
+    conv_state = (user_context.get("state") if user_context else None) or database.get_user_conversation_state(from_number) or {}
     is_accept_state = conv_state.get("current_question") == "ACCEPT_TASK"
-    vol_rec = database.get_volunteer_by_phone(from_number)
-    org_rec = database.get_organization_by_phone(from_number)
-    donor_rec = database.get_donor_by_phone(from_number)
+    vol_rec = (user_context.get("volunteer") if user_context else None) or database.get_volunteer_by_phone(from_number)
+    org_rec = (user_context.get("organization") if user_context else None) or database.get_organization_by_phone(from_number)
+    donor_rec = (user_context.get("donor") if user_context else None) or database.get_donor_by_phone(from_number)
     is_org_user = org_rec is not None or conv_state.get("workflow") == "ORGANIZATION" or conv_state.get("current_question") == "ACCEPT_DONATION_OFFER"
     is_donor_user = donor_rec is not None or conv_state.get("workflow") == "DONATION" or conv_state.get("current_question") == "ACCEPT_ORGANIZATION"
     is_vol_user = (vol_rec is not None or conv_state.get("workflow") == "VOLUNTEER") and not is_org_user and not is_donor_user
@@ -1317,7 +1322,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
                 pass
 
         # Check if user was in language menu
-        conv_state = database.get_user_conversation_state(from_number)
+        conv_state = (user_context.get("state") if user_context else None) or database.get_user_conversation_state(from_number) or {}
         in_lang_menu = bool(
             conv_state.get("workflow") == "LANGUAGE"
             or conv_state.get("current_question") == "LANGUAGE_MENU"
@@ -1386,7 +1391,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
         # Check First-Time User Onboarding or Greeting / Menu Request
         is_greeting = translation_service.is_greeting_message(clean_lower)
-        active_draft = database.get_draft_donation(from_number)
+        active_draft = (user_context.get("draft") if user_context else None) or database.get_draft_donation(from_number) or {}
         has_active_food_draft = bool(active_draft and active_draft.get("food_type"))
 
         if is_new_user and not is_voice_message:
@@ -1449,8 +1454,7 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
             chat_result = await run_resilient_chat(
                 prompt=prompt_text, session_id=session_id, preferred_agent="foodrescue_coordinator", user_context=user_context
             )
-            raw_reply = chat_result.get("result", "Thank you. Your food rescue request was received.")
-            reply_text = translation_service.translate_message_if_needed(raw_reply, target_lang=preferred_language)
+            reply_text = chat_result.get("result", "Thank you. Your food rescue request was received.")
         except Exception as exc:
             logger.error(f"Error executing resilient agent for {session_id}: {exc}")
             reply_text = translation_service.get_localized_message("error_recovery", lang=preferred_language)
@@ -1481,7 +1485,9 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
 
         # Dispatch real-time cross-notifications to linked parties if lifecycle event triggered
         try:
-            await dispatch_lifecycle_cross_notifications(prompt_text=prompt_text, reply_text=reply_text, from_number=from_number)
+            await dispatch_lifecycle_cross_notifications(
+                prompt_text=prompt_text, reply_text=reply_text, from_number=from_number, user_context=user_context
+            )
         except Exception as e:
             logger.warning(f"Error during lifecycle cross-notification dispatch: {e}")
 
@@ -1519,11 +1525,11 @@ async def process_incoming_whatsapp_message(message: Dict[str, Any], raw_value: 
         sess = tools.get_session_instance(session_id)
         cache = sess.get_non_volatile_cache()
         user_role = cache.get("user_role") if cache.has("user_role") else None
-        conv_state = database.get_user_conversation_state(from_number) or {}
+        conv_state = (user_context.get("state") if user_context else None) or database.get_user_conversation_state(from_number) or {}
         active_don_id = cache.get("current_donation_id") if cache.has("current_donation_id") else None
         active_task_id = cache.get("current_task_id") if cache.has("current_task_id") else None
 
-        active_draft = database.get_draft_donation(from_number)
+        active_draft = (user_context.get("draft") if user_context else None) or database.get_draft_donation(from_number) or {}
         has_active_food_draft = bool(active_draft and active_draft.get("food_type"))
         in_donation_workflow = bool(
             conv_state.get("workflow") == "DONATION"

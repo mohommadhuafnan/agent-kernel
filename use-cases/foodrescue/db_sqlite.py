@@ -2122,7 +2122,7 @@ class SQLiteRepository(BaseRepository):
                     return True
                 except Exception:
                     pass
-            return True
+            return False
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         conn = self._get_connection()

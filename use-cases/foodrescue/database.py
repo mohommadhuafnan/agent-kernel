@@ -4,11 +4,14 @@ Dispatches all database operations to the active repository backend
 (Supabase PostgreSQL or SQLite) based on the FOODRESCUE_DATABASE environment variable.
 """
 
+import logging
 import os
 import sys
 import threading
 from typing import List, Dict, Any, Optional
 from db_base import BaseRepository
+
+logger = logging.getLogger("foodrescue.db")
 
 DB_PATH = "foodrescue.db"
 _CURRENT_REPO: Optional[BaseRepository] = None
@@ -22,54 +25,51 @@ def get_repository() -> BaseRepository:
         return _CURRENT_REPO
 
     with _REPO_LOCK:
+        # Double-checked locking: re-check after acquiring the lock
         if _CURRENT_REPO is not None:
             return _CURRENT_REPO
 
         backend = (os.environ.get("FOODRESCUE_DATABASE") or os.environ.get("FOODRESCUE_DB_BACKEND", "supabase")).strip().lower()
 
-    if backend in ["mongodb", "mongo"]:
-        try:
-            from db_mongo import MongoRepository
+        if backend in ["mongodb", "mongo"]:
+            try:
+                from db_mongo import MongoRepository
 
-            mongo_repo = MongoRepository()
-            mongo_repo.setup_database()
-            _CURRENT_REPO = mongo_repo
-            return _CURRENT_REPO
-        except Exception as exc:
-            import logging
+                mongo_repo = MongoRepository()
+                mongo_repo.setup_database()
+                _CURRENT_REPO = mongo_repo
+                return _CURRENT_REPO
+            except Exception as exc:
+                logger.warning(f"MongoDB connection notice ({exc}); falling back to local SQLite.")
+                from db_sqlite import SQLiteRepository
 
-            logging.getLogger("foodrescue.db").warning(f"MongoDB connection notice ({exc}); falling back to local SQLite.")
+                _CURRENT_REPO = SQLiteRepository()
+                return _CURRENT_REPO
+
+        # Supabase PostgreSQL (Default production backend)
+        from db_supabase import SupabaseRepository
+
+        supabase_repo = SupabaseRepository()
+
+        # If Supabase URL is not configured (e.g. offline unit tests without env vars), use local SQLite
+        if not supabase_repo._db_url:
+            # Prevent silent SQLite fallback in production when Supabase is requested
+            if backend == "supabase" and "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
+                if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+                    raise ValueError("SUPABASE_DB_URL is missing on serverless deployment. Cannot silently fall back to ephemeral SQLite.")
+
             from db_sqlite import SQLiteRepository
 
             _CURRENT_REPO = SQLiteRepository()
             return _CURRENT_REPO
 
-    # Supabase PostgreSQL (Default production backend)
-    from db_supabase import SupabaseRepository
+        try:
+            supabase_repo.setup_database()
+        except Exception as exc:
+            logger.warning(f"Supabase database setup notice ({exc}); proceeding with Supabase backend.")
 
-    supabase_repo = SupabaseRepository()
-
-    # If Supabase URL is not configured (e.g. offline unit tests without env vars), use local SQLite
-    if not supabase_repo._db_url:
-        # Prevent silent SQLite fallback in production when Supabase is requested
-        if backend == "supabase" and "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
-            if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-                raise ValueError("SUPABASE_DB_URL is missing on serverless deployment. Cannot silently fall back to ephemeral SQLite.")
-
-        from db_sqlite import SQLiteRepository
-
-        _CURRENT_REPO = SQLiteRepository()
+        _CURRENT_REPO = supabase_repo
         return _CURRENT_REPO
-
-    try:
-        supabase_repo.setup_database()
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("foodrescue.db").warning(f"Supabase database setup notice ({exc}); proceeding with Supabase backend.")
-
-    _CURRENT_REPO = supabase_repo
-    return _CURRENT_REPO
 
 
 def set_repository(repo: Optional[BaseRepository]) -> None:
@@ -326,49 +326,7 @@ def get_all_volunteers() -> List[Dict[str, Any]]:
     return get_repository().get_all_volunteers()
 
 
-def create_volunteer_record(
-    volunteer_id: str,
-    name: str,
-    phone: str,
-    service_area: str,
-    transport_mode: str = "Motorbike",
-    availability: str = "immediate, evenings",
-    current_status: str = "available",
-    location: Optional[str] = None,
-) -> Dict[str, Any]:
-    return get_repository().create_volunteer_record(
-        volunteer_id=volunteer_id,
-        name=name,
-        phone=phone,
-        service_area=service_area,
-        transport_mode=transport_mode,
-        availability=availability,
-        current_status=current_status,
-        location=location,
-    )
 
-
-def update_volunteer_record(
-    volunteer_id: str,
-    name: Optional[str] = None,
-    phone: Optional[str] = None,
-    service_area: Optional[str] = None,
-    transport_mode: Optional[str] = None,
-    availability: Optional[str] = None,
-    current_status: Optional[str] = None,
-    location: Optional[str] = None,
-    **kwargs: Any,
-) -> Optional[Dict[str, Any]]:
-    return get_repository().update_volunteer_record(
-        volunteer_id=volunteer_id,
-        name=name,
-        phone=phone,
-        service_area=service_area,
-        transport_mode=transport_mode,
-        availability=availability,
-        current_status=current_status,
-        location=location,
-    )
 
 
 def get_all_pickup_tasks() -> List[Dict[str, Any]]:
@@ -609,14 +567,19 @@ def record_message(
 
 
 def claim_whatsapp_message_id(message_id: str) -> bool:
-    """Atomically claim a WhatsApp message ID to prevent duplicate processing across serverless instances."""
+    """Atomically claim a WhatsApp message ID to prevent duplicate processing across serverless instances.
+
+    Returns True if the message is new and should be processed.
+    Returns False if the message is a duplicate OR if the database is unavailable
+    (safe default: skip processing; Meta will retry the webhook).
+    """
     if not message_id:
         return True
     try:
         return get_repository().claim_whatsapp_message_id(message_id)
     except Exception as e:
-        logger.warning(f"Error claiming message ID {message_id}: {e}")
-        return True
+        logger.error(f"Database error claiming message ID {message_id}: {e} — treating as duplicate for safety")
+        return False
 
 
 def get_all_conversations() -> List[Dict[str, Any]]:

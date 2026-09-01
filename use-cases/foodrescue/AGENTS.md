@@ -172,23 +172,4 @@ FoodRescue AI strictly separates the state and workflows of different user roles
 
 ---
 
-## Security Rules
 
-1. **Never Commit Secrets:**
-   * Never commit real API keys, Meta access tokens, Supabase service-role keys, or database passwords to git.
-   * Always use `.env.example` placeholders for documentation.
-2. **Sanitized Public Endpoints:**
-   * Public context inspection endpoints (`/api/session-context/{session_id}`) must strip any internal token or secret fields before returning data.
-
----
-
-## Do Not Do
-
-* ❌ **Do not describe MongoDB as the production database.** Production is Supabase PostgreSQL.
-* ❌ **Do not hardcode food items, quantities, user names, or locations.** Always use dynamic user inputs.
-* ❌ **Do not allow donor state to leak into volunteer or organization sessions, or vice versa.**
-* ❌ **Do not remove or alter the two-stage QR verification flow (`Pickup QR` → `Delivery QR`).**
-* ❌ **Do not expose API keys, database credentials, or Meta access tokens in code, tests, or documentation.**
-* ❌ **Do not modify the database schema without checking and updating SQL migrations.**
-* ❌ **Do not return static fake data in dashboard API responses.**
-* ❌ **Do not commit changes without running the automated pytest suite.**

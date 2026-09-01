@@ -2097,7 +2097,7 @@ def translate_text(text: str, target_lang: str, source_lang: Optional[str] = Non
             logger.info(f"Submitting text ({len(text)} chars) to VALSEA AI Translation API [target={target_lang}]...")
             headers = {"Authorization": f"Bearer {valsea_key}", "Content-Type": "application/json"}
             payload = {"text": text, "target_language": target_lang, "source_language": source_lang or "auto", "model": "valsea-translate"}
-            resp = requests.post(VALSEA_TRANSLATION_ENDPOINT, headers=headers, json=payload, timeout=15)
+            resp = requests.post(VALSEA_TRANSLATION_ENDPOINT, headers=headers, json=payload, timeout=3.0)
             if resp.status_code == 200:
                 res_json = resp.json()
                 translated = res_json.get("translated_text") or res_json.get("text") or res_json.get("translation")

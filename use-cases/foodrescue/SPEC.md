@@ -154,7 +154,7 @@ Language preference (`en`, `si`, `ta`) and response mode (`text`, `voice`) are p
 4. **Interactive Location Sharing:** The donor is prompted to share their WhatsApp location pin for accurate GPS dispatch.
 5. **Confirmation Summary:** A summary card is displayed:
    ```text
-   📦 Donation Summary
+    Donation Summary
    • Food: 30 portions of Vegetable Fried Rice (Vegetarian)
    • Location: Colombo 03
    • Available Until: 8:00 PM
@@ -170,7 +170,7 @@ Language preference (`en`, `si`, `ta`) and response mode (`text`, `voice`) are p
 1. **Registration:** Recipient organization registers via WhatsApp (name, service area, accepted food types, daily capacity, delivery location).
 2. **Offer Broadcast:** When a matching donation is published in their district, the organization receives an offer notification:
    ```text
-   🏢 New Food Donation Available in Colombo!
+     New Food Donation Available in Colombo!
    • Food: 30 portions of Vegetable Fried Rice
    • Donor: Cinnamon Grand Kitchen (Colombo 03)
    • Distance: ~3.2 km

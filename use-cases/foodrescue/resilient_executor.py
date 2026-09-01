@@ -484,7 +484,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
 
     # 1. Language Selection Intent (explicit change request e.g. 'Tamil', 'Change language to Tamil', 'தமிழ்', 'English please')
     in_lang_menu = False
-    state = database.get_user_conversation_state(phone) if phone else {}
+    state = (user_context.get("state") if user_context else None) or (database.get_user_conversation_state(phone) if phone else {})
     if state.get("workflow") == "LANGUAGE" or state.get("current_question") == "LANGUAGE_MENU":
         in_lang_menu = True
 
@@ -604,12 +604,12 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
     # =========================================================================
     # 5.5 GREETINGS & MAIN MENU (Early dispatch when not in active workflow)
     # =========================================================================
-    curr_state = database.get_user_conversation_state(phone) if phone else {}
+    curr_state = (user_context.get("state") if user_context else None) or (database.get_user_conversation_state(phone) if phone else {})
     in_active_workflow = bool(curr_state.get("workflow"))
     is_greeting_word = translation_service.is_greeting_message(clean_p)
-    vol_rec = database.get_volunteer_by_phone(phone) if phone else None
-    org_rec = database.get_organization_by_phone(phone) if phone else None
-    donor_rec = database.get_donor_by_phone(phone) if phone else None
+    vol_rec = (user_context.get("volunteer") if user_context else None) or (database.get_volunteer_by_phone(phone) if phone else None)
+    org_rec = (user_context.get("organization") if user_context else None) or (database.get_organization_by_phone(phone) if phone else None)
+    donor_rec = (user_context.get("donor") if user_context else None) or (database.get_donor_by_phone(phone) if phone else None)
 
     # Handle volunteer availability declaration ("AVAILABLE", "I am free", "online", "BUSY") for volunteers
     clean_p_norm = clean_p.rstrip(".!?,;:")
@@ -769,9 +769,9 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
     # =========================================================================
     # 5.6 ROLE-AWARE CONTEXTUAL QUESTIONS
     # =========================================================================
-    vol_rec = database.get_volunteer_by_phone(phone) if phone else None
-    org_rec = database.get_organization_by_phone(phone) if phone else None
-    donor_rec = database.get_donor_by_phone(phone) if phone else None
+    vol_rec = (user_context.get("volunteer") if user_context else None) or (database.get_volunteer_by_phone(phone) if phone else None)
+    org_rec = (user_context.get("organization") if user_context else None) or (database.get_organization_by_phone(phone) if phone else None)
+    donor_rec = (user_context.get("donor") if user_context else None) or (database.get_donor_by_phone(phone) if phone else None)
 
     is_food_or_task_query = any(
         w in clean_p
@@ -910,7 +910,7 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
     # 6. VOLUNTEER COURIER COORDINATION & PROGRESSIVE ONBOARDING
     # =========================================================================
     in_vol_workflow = curr_state.get("workflow") in ["VOLUNTEER", "VOLUNTEER_REGISTRATION"]
-    existing_vol = database.get_volunteer_by_phone(phone) if phone else None
+    existing_vol = (user_context.get("volunteer") if user_context else None) or (database.get_volunteer_by_phone(phone) if phone else None)
 
     # 6a. Option 1 / View Available Tasks for Volunteer
     is_vol_view_tasks = clean_p in ["1", "view available tasks", "view tasks", "available tasks", "pending tasks", "check tasks"] and (
@@ -955,11 +955,11 @@ async def execute_deterministic_fallback(prompt: str, session_id: str, user_cont
                 "You are marked as **AVAILABLE**, and our AI coordinator will notify you immediately the moment a food pickup is ready nearby! ❤️"
             )
 
-    user_state = database.get_user_conversation_state(phone) if phone else {}
+    user_state = (user_context.get("state") if user_context else None) or (database.get_user_conversation_state(phone) if phone else {})
     curr_q = user_state.get("current_question")
-    org_rec = database.get_organization_by_phone(phone) if phone else None
-    donor_rec = database.get_donor_by_phone(phone) if phone else None
-    existing_vol = database.get_volunteer_by_phone(phone) if phone else None
+    org_rec = (user_context.get("organization") if user_context else None) or (database.get_organization_by_phone(phone) if phone else None)
+    donor_rec = (user_context.get("donor") if user_context else None) or (database.get_donor_by_phone(phone) if phone else None)
+    existing_vol = (user_context.get("volunteer") if user_context else None) or (database.get_volunteer_by_phone(phone) if phone else None)
     user_role = user.get("user_role") if user else None
 
     is_org_user = bool(
@@ -3118,8 +3118,8 @@ async def run_resilient_chat(
 
             full_prompt = f"{role_ctx}{prompt}" if role_ctx and not prompt.startswith("[User Role:") else prompt
             req = BaseChatRequest(agent=agent_name, prompt=full_prompt, session_id=session_id)
-            # Cap individual agent execution at 8.0s to avoid hanging on slow retries
-            chat_result = await asyncio.wait_for(chat_service.process_async_chat_request(req), timeout=8.0)
+            # Cap individual agent execution at 5.0s to avoid hanging on slow retries
+            chat_result = await asyncio.wait_for(chat_service.process_async_chat_request(req), timeout=5.0)
 
             if isinstance(chat_result, dict):
                 reply_text = chat_result.get("result", "")
@@ -3145,7 +3145,7 @@ async def run_resilient_chat(
                 continue
 
             # If user has a preferred language that is not English, translate the reply
-            user = database.get_user_by_phone(phone) if phone else None
+            user = (user_context.get("user") if user_context else None) or (database.get_user_by_phone(phone) if phone else None)
             user_lang = user.get("preferred_language", "en") if user else "en"
             if user_lang != "en":
                 reply_text = translation_service.translate_message_if_needed(reply_text, target_lang=user_lang)

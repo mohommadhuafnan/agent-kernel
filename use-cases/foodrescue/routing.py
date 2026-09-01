@@ -265,7 +265,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "bandarawela": "Badulla",
     "haputale": "Badulla",
     "ella": "Badulla",
-    "w強limada": "Badulla",
     "welimada": "Badulla",
     "mahiyanganaya": "Badulla",
     # Anuradhapura District
@@ -309,7 +308,6 @@ TOWN_TO_DISTRICT_MAP: Dict[str, str] = {
     "marawila": "Puttalam",
     "dankotuwa": "Puttalam",
     "wennappuwa": "Puttalam",
-    "an無いamaduwa": "Puttalam",
     "anamaduwa": "Puttalam",
     # Hambantota District
     "hambantota": "Hambantota",
@@ -927,9 +925,6 @@ def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: fl
     return round(R * c, 2)
 
 
-def generate_map_link(latitude: float, longitude: float, label: Optional[str] = None) -> str:
-    """Generate a privacy-safe Google Maps search query link for coordinates."""
-    return f"https://www.google.com/maps/search/?api=1&query={latitude:.6f},{longitude:.6f}"
 
 
 def calculate_transport_cost(distance_km: float, transport_mode: str = "motorbike") -> Dict[str, Any]:

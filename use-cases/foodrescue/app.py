@@ -9,16 +9,6 @@ import database
 # Initialize database to make sure tables and indexes exist
 database.setup_database()
 
-
-# Model candidate pool (prioritized by highest quota and reliability)
-MODEL_CANDIDATES = [
-    os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3.6-flash",
-]
-
 # Shared instruction prompt for FoodRescue coordination
 COORDINATOR_INSTRUCTION = """You are the FoodRescue AI Coordinator, an intelligent conversational assistant dedicated to surplus food rescue and logistics coordination across WhatsApp and web channels.
 Your mission is to connect Donors (hotels, restaurants, bakeries, individuals), Recipient Organizations (community kitchens, shelters, food banks), and Volunteer Couriers smoothly and reliably.

@@ -40,6 +40,7 @@ class SupabaseRepository(BaseRepository):
         self._connection: Optional[Any] = connection_instance
         self._engine: Optional[Any] = None
         self._supabase_client: Optional[Any] = None
+        self._schema_initialized: bool = False
         self._lock = threading.RLock()
 
     def get_supabase_client(self) -> Optional[Any]:
@@ -354,6 +355,8 @@ class SupabaseRepository(BaseRepository):
 
     def setup_database(self) -> None:
         """Create PostgreSQL tables and indexes if they do not exist."""
+        if self._schema_initialized:
+            return
         # 1. Donors
         self._execute("""
         CREATE TABLE IF NOT EXISTS donors (
@@ -585,6 +588,7 @@ class SupabaseRepository(BaseRepository):
                 "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (%s, %s, %s)",
                 ("transport_cost", json.dumps(default_cost), self._now()),
             )
+        self._schema_initialized = True
 
     def seed_test_data(self) -> None:
         """Seed master test data if tables are empty."""
@@ -2006,7 +2010,7 @@ class SupabaseRepository(BaseRepository):
                     return True
                 except Exception:
                     pass
-            return True
+            return False
 
     def get_all_conversations(self) -> List[Dict[str, Any]]:
         users = self.get_all_users()
@@ -2255,10 +2259,14 @@ class SupabaseRepository(BaseRepository):
             if task.get("status") in ["COLLECTED", "IN_TRANSIT", "DELIVERED", "COMPLETED"]:
                 return {"success": False, "error": "ALREADY_COLLECTED", "message": "This donation has already been collected."}
 
-            self._execute(
-                "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE'",
+            # Atomic claim: UPDATE only if status is still ACTIVE, then verify exactly one row was affected
+            claimed = self._fetchall(
+                "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE' RETURNING id",
                 (now, effective_vol_id, token.strip()),
             )
+            if not claimed:
+                return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
             self._execute(
                 "UPDATE pickup_tasks SET status = 'COLLECTED', delivery_status = 'IN_TRANSIT', food_collected_at = %s, updated_at = %s WHERE id = %s",
                 (now, now, task_id),
@@ -2304,10 +2312,14 @@ class SupabaseRepository(BaseRepository):
                     "message": "Cannot verify delivery before the food has been collected from the donor.",
                 }
 
-            self._execute(
-                "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE'",
+            # Atomic claim: UPDATE only if status is still ACTIVE, then verify exactly one row was affected
+            claimed = self._fetchall(
+                "UPDATE qr_codes SET status = 'VERIFIED', verified_at = %s, verified_by = %s WHERE token = %s AND status = 'ACTIVE' RETURNING id",
                 (now, effective_vol_id, token.strip()),
             )
+            if not claimed:
+                return {"success": False, "error": "ALREADY_USED", "message": "This handover QR code has already been verified."}
+
             self._execute(
                 "UPDATE pickup_tasks SET status = 'COMPLETED', delivery_status = 'DELIVERED', food_delivered_at = %s, updated_at = %s WHERE id = %s",
                 (now, now, task_id),
@@ -2437,9 +2449,7 @@ class SupabaseRepository(BaseRepository):
         raw = phone.replace("whatsapp:", "").strip()
         try:
             self._execute("DELETE FROM donors WHERE phone = %s OR phone = %s", (norm, raw))
-            self._execute("UPDATE users SET user_role = 'unknown' WHERE phone_number = %s OR phone_number = %s", (norm, raw))
-            self._execute("DELETE FROM draft_donations WHERE phone_number = %s OR phone_number = %s", (norm, raw))
-            self._execute("DELETE FROM user_conversation_state WHERE phone_number = %s OR phone_number = %s", (norm, raw))
+            self._execute("UPDATE users SET user_role = 'unknown', active_draft = '{}', conversation_state = '{}' WHERE phone_number = %s OR phone_number = %s", (norm, raw))
             return True
         except Exception as err:
             logger.error(f"Error deleting donor by phone {phone}: {err}")

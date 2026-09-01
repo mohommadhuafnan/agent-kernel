@@ -40,7 +40,6 @@ Before you begin development, ensure you have the following installed:
    git checkout -b feature/your-feature-name
    ```
 
-
 ## Development
 
 1. **Run the dev setup script** from the repo root to install prerequisites (pyenv, Python 3.12, uv) and sync the `ak-py` virtual environment:
